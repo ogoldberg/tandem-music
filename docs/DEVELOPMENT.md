@@ -66,7 +66,7 @@ Do not treat an HTTP 200 response from the root or READY build as validation of 
 
 ## Persistence and media
 
-Projects are local JSON exports/browser drafts, not cloud-saved. `/api/tune` and other audio routes accept in-memory uploads; Vercel functions have ephemeral filesystems. There is an unused legacy SQLite helper in the backend, not an active production store. Cloud sync requires authenticated object storage and project ownership before enabling it.
+Projects are local JSON exports/browser drafts, not cloud-saved. `/api/tune` and other audio routes accept in-memory uploads; Vercel functions have ephemeral filesystems. Cloud sync requires authenticated object storage and project ownership before enabling it.
 
 ## Cost and security
 

@@ -46,7 +46,7 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - `transcription.js` lazily imports Spotify Basic Pitch and its model. It resamples input AudioBuffer to **22,050 Hz** to avoid the previously reported 48-kHz error and returns `{m,t,d}`.
 - The fallback `/api/analyze` uses autocorrelation for notes and energy-onset/spectral-centroid heuristics for drums. Both need quality evaluation.
 - `polish.js` (in the browser) only changes EQ/gate/dynamics; it **does not** tune pitch. It replaced `/api/polish` in PERF.1 so recordings of any length are polished without an upload.
-- `/api/tune` uses `world_tuning.py`, changing F0 while retaining WORLD's spectral envelope and aperiodicity. Default chromatic snapping; edited notes may be supplied as JSON targets. It accepts short isolated singing only; results can contain artifacts. The earlier `vocal_tuning.py` prototype is kept as a reference, not the active engine.
+- `/api/tune` uses `world_tuning.py`, changing F0 while retaining WORLD's spectral envelope and aperiodicity. Default chromatic snapping; edited notes may be supplied as JSON targets. It accepts short isolated singing only; results can contain artifacts.
 
 ## LLM orchestration
 `invoke_llm` supports `openai-compatible` (including gateways and local OpenAI-style endpoints), `anthropic`, and `gemini`, selected through environment variables. Models return JSON; `normalize_actions` allowlists edit types and clamps values. Melody lock rejects AI modifications to melody note events by default. The client applies the validated actions with undo.
@@ -57,7 +57,7 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 - Browser: microphone capture, display, editable music, Basic Pitch transcription, playback/export, local draft.
 - Backend: voice DSP, tuning, text-model invocation, action validation and expense guard.
 - External model host: optional text LLM; keys stored server-side. Browser never receives `TANDEM_API_KEY`.
-- No account system/cloud projects: the SQLite helper is unused, and serverless storage must be treated as ephemeral.
+- No account system/cloud projects: there is no server-side database, and serverless storage must be treated as ephemeral.
 
 ## File map
 | File | Purpose |
@@ -67,7 +67,6 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | tandem_backend.py | FastAPI, DSP, LLM adapters, validation |
 | world_tuning.py | WORLD tuning |
 | request_guards.py | Rate limits (Upstash Redis), body-size caps |
-| vocal_tuning.py | Earlier experimental pitch shifter, not the active route |
 | api/index.py | Vercel FastAPI entry |
 | requirements.txt | Python dependencies including pyworld-prebuilt |
 | tests/ | Python and Node checks |

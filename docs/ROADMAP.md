@@ -46,7 +46,7 @@ This is the working task list, in strategic order: protect the deployment, prove
   - **Acceptance:** a recording longer than 90 s tunes end to end; tests show chunk boundaries add no clicks or gaps (crossfade continuity) and that each chunk's detected/edited note targets are offset to the chunk's start time.
 - [ ] **QA.1** *(HUMAN)* Run the manual acceptance matrix in `docs/TESTING.md` on macOS Chrome, macOS Safari and Android Chrome
   - **Acceptance:** each matrix cell in `docs/TESTING.md` is updated from "Unverified" to a dated pass/fail, with notes and quality ratings for transcription and tuning.
-- [ ] **DEV.1** Remove dead code: the unused SQLite `db()` helper and `TANDEM_DATABASE`, and the unused `vocal_tuning.py` import and module with its `tests/test_vocal_tuning.py`
+- [x] **DEV.1** Remove dead code: the unused SQLite `db()` helper and `TANDEM_DATABASE`, and the unused `vocal_tuning.py` import and module with its `tests/test_vocal_tuning.py`
   - **Acceptance:** remaining tests pass (and `tests/test_api.py` no longer patches `server.DB`); `README.md`, `CLAUDE.md`, `docs/ARCHITECTURE.md` and `docs/AUDIO.md` no longer describe them as present.
 
 ### 3. Turn on AI collaboration
