@@ -21,19 +21,34 @@ Tandem is a Mac- and Android-oriented, full-stack musical collaborator. Sing, hu
 
 The code is the source of truth for what is currently implemented; documents should be updated whenever behavior or scope changes. Avoid describing deployed/compiling software as “fully working” until real use has been tested.
 
-## Current capabilities
+## Capability checklist
 
-- Browser microphone recording and audio import (Mac/Android browser intended; real device QA incomplete).
-- Spotify Basic Pitch **on-device** humming transcription (audio resampled to 22,050 Hz); heuristic server fallback.
-- Basic beatbox onset-to-kick/snare/hat detection.
-- Two simple instrument tracks, rudimentary timeline editing, play/stop, undo, WAV/MIDI export.
-- Save/load portable project JSON and local browser draft (recording not embedded).
-- Optional text LLM collaboration with validated structured edits and melody protection; **production model credentials not configured as of last inspection**.
-- EQ/gate/compression vocal polish with Natural/Studio presets, separate from tuning.
-- Experimental monophonic vocal pitch correction using the open-source **WORLD** vocoder via `pyworld-prebuilt`, adjustable strength and +/- note targets.
-- Python API and browser UI hosted together on Vercel.
+A checked box means the feature is **implemented in code**, not that it has been verified on real devices or meets a quality bar. Unchecked items point to their task IDs in the [roadmap task backlog](docs/ROADMAP.md#task-backlog), which is the authoritative work list.
 
-**Still missing:** reliable pitch contour editing, proven natural vocal quality, mature instrument sounds and arrangement, generative music/audio models, voice conversation, accounts/cloud project storage, real-device end-to-end evidence, and robust public rate limiting.
+**Implemented**
+
+- [x] Browser microphone recording and audio import (Mac/Android browser intended; real device QA incomplete).
+- [x] Spotify Basic Pitch **on-device** humming transcription (audio resampled to 22,050 Hz); heuristic server fallback.
+- [x] Basic beatbox onset-to-kick/snare/hat detection.
+- [x] Two simple instrument tracks, rudimentary timeline editing, play/stop, undo, WAV/MIDI export.
+- [x] Save/load portable project JSON and local browser draft (recording not embedded).
+- [x] Optional text LLM collaboration with validated structured edits and melody protection; **production model credentials not configured as of last inspection**.
+- [x] EQ/gate/compression vocal polish with Natural/Studio presets, separate from tuning.
+- [x] Experimental monophonic vocal pitch correction using the open-source **WORLD** vocoder via `pyworld-prebuilt`, adjustable strength and +/- note targets.
+- [x] Python API and browser UI hosted together on Vercel.
+- [x] Automated Python and Node test suites passing in GitHub Actions (verified 2026-11-09).
+
+**Still missing**
+
+- [ ] Browser end-to-end tests and real-device evidence on Mac and Android (CI.2, QA.1).
+- [ ] Robust public rate limiting and input resource limits (SEC.1, SEC.2).
+- [ ] Proven natural vocal quality (VOX.1, VOX.2).
+- [ ] Reliable pitch contour editing and full undo/versioning (VOX.3, EDIT.1).
+- [ ] Production AI model configured and verified (AI.1, AI.2).
+- [ ] Mature instrument sounds and arrangement (ARR.1).
+- [ ] Accounts and cloud project storage (STORE.1, STORE.2).
+- [ ] Generative music/audio models (GEN.1).
+- [ ] Voice conversation (SPEECH.1).
 
 ## Quick start (local)
 
