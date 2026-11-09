@@ -183,19 +183,5 @@ async def polish(file:UploadFile=File(...)):
     x=x*np.minimum(1,np.sqrt(.055/(env2+1e-5)))
     x=np.tanh(x*1.4)/1.4
     return Response(content=encode_wav(x,sr),media_type="audio/wav",headers={"Content-Disposition":"attachment; filename=tandem-polished.wav"})
-class Project(BaseModel):
-    id: str|None=None
-    data: dict[str,Any]
-@app.post("/api/projects")
-def save_project(project:Project):
-    pid=project.id or uuid.uuid4().hex
-    if not re.fullmatch(r"[a-f0-9]{32}",pid):raise HTTPException(400,"Invalid project ID")
-    payload=json.dumps(project.data)
-    if len(payload)>600000:raise HTTPException(413,"Project too large")
-    with db() as con:con.execute("INSERT OR REPLACE INTO projects(id,payload,updated) VALUES(?,?,?)",(pid,payload,time.time()))
-    return {"id":pid}
-@app.get("/api/projects/{pid}")
-def load_project(pid:str):
-    with db() as con: row=con.execute("SELECT payload FROM projects WHERE id=?",(pid,)).fetchone()
-    if not row:raise HTTPException(404,"Project not found")
-    return {"id":pid,"data":json.loads(row[0])}
+# Vercel Functions are ephemeral: persist projects as downloadable JSON in the client.
+# A future database integration must implement authenticated per-user storage.
