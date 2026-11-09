@@ -11,6 +11,13 @@ import request_guards as guards
 def run(coro):
     return asyncio.run(coro)
 
+class PinnedClock:
+    """Stands in for request_guards.time so fixed-window tests never straddle a window edge."""
+    def __init__(self,now=1_800_000_030.0):  # 30 s into a 60 s window
+        self.now=now
+    def time(self):
+        return self.now
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.delenv("TANDEM_ACCESS_TOKEN",raising=False)
@@ -19,6 +26,7 @@ def client(monkeypatch):
         monkeypatch.delenv(name,raising=False)
     guards.reset_memory_store()
     monkeypatch.setattr(guards,"upstash_transport",None)
+    monkeypatch.setattr(guards,"time",PinnedClock())
     async def call(method,path,**kwargs):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app),base_url="http://test") as c:
             return await c.request(method,path,**kwargs)
@@ -212,6 +220,16 @@ def test_rate_limit_is_shared_across_audio_routes_and_sets_retry_after(client,mo
     assert 1<=int(blocked.headers["retry-after"])<=60
     # Non-audio routes are not counted or blocked.
     assert run(client("GET","/api/health")).status_code==200
+
+def test_rate_limit_window_resets_at_the_edge(client,monkeypatch):
+    monkeypatch.setenv("TANDEM_AUDIO_RATE_LIMIT","2")
+    clock=PinnedClock(1_800_000_059.999); monkeypatch.setattr(guards,"time",clock)
+    send=lambda:run(client("POST","/api/analyze?mode=melody",files={"file":("a.wav",short_tone(),"audio/wav")}))
+    assert [send().status_code for _ in range(2)]==[200,200]
+    blocked=send()
+    assert blocked.status_code==429 and blocked.headers["retry-after"]=="1"
+    clock.now=1_800_000_060.0  # next window: the counter starts again
+    assert send().status_code==200
 
 def test_vercel_rate_limit_uses_shared_upstash_store_per_client(client,monkeypatch):
     monkeypatch.setenv("VERCEL","1")
