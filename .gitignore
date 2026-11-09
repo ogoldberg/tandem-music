@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 tandem.db
 *.sqlite
+
+# loopkit local state
+.claude/loopkit-*
+.claude/markers/
