@@ -24,7 +24,7 @@ If a PyWorld wheel is unsupported on your workstation's OS/architecture, investi
 
 ```bash
 python -m pytest -q
-node --test tests/transcription.test.mjs
+node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs
 ```
 
 The GitHub Actions test workflow is `.github/workflows/tests.yml`. See [TESTING.md](TESTING.md) for the test matrix, real-device requirements, and release gates. Do not infer passing tests merely from a successful Vercel build.
@@ -56,9 +56,9 @@ To generate a long random access token on macOS: `openssl rand -hex 32`. Store i
 ### Sanity check after deploy
 
 1. Inspect Vercel build logs and ensure the latest `main` commit is READY.
-2. Visit `/`, `/transcription.js`, `/polish.js`, `/api/health`, `/api/config`; verify HTTP 200 and current UI content.
+2. Visit `/`, `/transcription.js`, `/polish.js`, `/tuning.js`, `/api/health`, `/api/config`; verify HTTP 200 and current UI content.
 3. Verify unconfigured `/api/chat` fails safely, but free `/api/analyze` and `/api/tune` remain accessible.
-4. Test record/import → transcription → edit → export in a real browser. Test vocal tuning on a short clean recording and listen to original/tuned audio.
+4. Test record/import → transcription → edit → export in a real browser. Test vocal tuning on a short clean recording and on one longer than 90 s (tuned in chunks), and listen to original/tuned audio, especially around 15 s, 30 s, 45 s... where chunks join.
 5. Only after configuring a provider, verify a small authenticated text edit and that melody-lock behavior is preserved.
 6. Review GitHub Actions results, browser console, Vercel runtime errors and external model usage/cost.
 
