@@ -23,46 +23,28 @@ Last reviewed: 2026-11-09. This is a prioritized working plan, not a delivery pr
 
 ## Task backlog
 
-This is the working task list, roughly in priority order (it replaces the earlier numbered priority list). Loopkit's `/next-task` reads it (see `.agent-workflow.yml`). Format: `- [ ]` pending, `- [~]` in progress, `- [x]` done; the bold token is the task ID. `*(HUMAN)*` marks work that needs the owner: real devices, listening judgement, credentials or product decisions. Mark a task `[x]` only with evidence (CI run, recorded device result, merged PR).
+This is the working task list, in strategic order: protect the deployment, prove the core loop works on real devices, turn on the AI half of the product, then build a safety net before the larger editor work. Loopkit's `/next-task` reads it (see `.agent-workflow.yml`). Format: `- [ ]` pending, `- [~]` in progress, `- [x]` done; the bold token is the task ID. `*(HUMAN)*` marks work that needs the owner: real devices, listening judgement, credentials, account settings or product decisions. Mark a task `[x]` only with evidence (CI run, recorded device result, merged PR). Real-device results (QA.1) may reorder the vocal and arrangement work.
 
-### Testing and CI
+### 1. Protect the deployment
 - [x] **CI.1** Confirm the GitHub Actions Python and Node suites pass on `main`
   - Verified 2026-11-09: run 42598992550 (`Tests`, success).
-- [ ] **CI.2** Add browser end-to-end tests that run in CI
-  - Headless browser (e.g. Playwright) against the real FastAPI app: load `/`, import a WAV fixture, transcribe with the server fallback, edit a note, play, export WAV/MIDI/JSON, save and reload a project.
-  - **Acceptance:** runs in `.github/workflows/tests.yml`; fails on any uncaught page error or console error; covers the 48 kHz decode path.
-- [ ] **QA.1** *(HUMAN)* Run the manual acceptance matrix in `docs/TESTING.md` on macOS Chrome, macOS Safari and Android Chrome
-  - **Acceptance:** each matrix cell in `docs/TESTING.md` is updated from "Unverified" to a dated pass/fail, with notes for failures.
-
-### Security and cost
-- [ ] **SEC.1** Rate-limit the public CPU routes `/api/analyze`, `/api/polish` and `/api/tune`
-  - Must work on serverless Vercel, where in-process memory does not persist between instances; document the limits chosen and where state is kept.
-  - **Acceptance:** tests prove requests over the limit get 429; limits documented in `docs/SECURITY.md` and `docs/DEVELOPMENT.md`.
-- [ ] **SEC.2** Add resource limits and stricter validation on audio and chat input
-  - Review memory/CPU use under malicious or unexpected inputs (oversized, malformed, long, many-channel WAVs) and tighten the `/api/chat` project schema validation.
-  - **Acceptance:** tests for each rejected input class; no route reads unbounded input.
-- [ ] **SEC.3** Pin or self-host the Basic Pitch model and JS instead of loading unpinned CDN assets
-  - **Acceptance:** exact versions (with integrity hashes, or served from this app); transcription still works; supply-chain note in `docs/SECURITY.md` updated.
-- [ ] **SEC.4** *(HUMAN)* Configure GitHub branch protection on `main` (required PR review, required tests, no force pushes)
+- [ ] **SEC.4** *(HUMAN)* Configure GitHub branch protection on `main`: required status checks (`backend`, `transcription`, `loopkit-review`), no force pushes, no direct pushes
+  - Loopkit merges approved PRs without a human click, so `main` must refuse anything that has not passed CI and review.
   - **Acceptance:** ruleset verified in GitHub settings and recorded in `docs/SECURITY.md`.
+- [ ] **SEC.1** Rate-limit and resource-limit the public CPU routes `/api/analyze`, `/api/polish` and `/api/tune`
+  - Must work on serverless Vercel, where in-process memory does not persist between instances: use a shared store or Vercel's firewall rate limiting, and document the choice and where state lives.
+  - Also review memory/CPU use under malicious or unexpected inputs (oversized, malformed, long, many-channel WAVs) and make sure no route reads unbounded input.
+  - **Acceptance:** tests prove requests over the limit get 429 and each rejected input class is refused; limits documented in `docs/SECURITY.md` and `docs/DEVELOPMENT.md`.
 
-### Vocal quality
-- [ ] **VOX.1** Build an automated vocal pitch-correction benchmark
-  - Generate fixtures with known MIDI pitches and timing at several sample rates, with vibrato, noise and transitions; measure pitch error, duration and loudness change of `/api/tune`, and 0%-strength equivalence.
-  - **Acceptance:** runs under `pytest`; records metrics; thresholds documented in `docs/AUDIO.md`.
-- [ ] **VOX.2** *(HUMAN)* Blinded A/B listening test of WORLD tuning on real singing
-  - **Depends:** VOX.1
-  - **Acceptance:** recordings used with consent; results and artifacts noted in `docs/AUDIO.md`.
-- [ ] **VOX.3** Continuous pitch-contour editor
-  - Replace the +/- target note list with a visual contour: drag notes, keep vibrato, key/scale selection, per-note confidence.
-  - **Depends:** VOX.1
-  - **Acceptance:** edited targets drive `/api/tune`; covered by unit tests and the CI.2 browser tests.
-- [ ] **EDIT.1** Proper undo/redo and project versioning
-  - Replace ad hoc note-list edits with an edit history covering manual edits, AI actions and tuning targets.
-  - **Acceptance:** undo/redo works across all edit types; tests cover history behavior.
+### 2. Prove the core loop
+- [ ] **QA.1** *(HUMAN)* Run the manual acceptance matrix in `docs/TESTING.md` on macOS Chrome, macOS Safari and Android Chrome
+  - **Acceptance:** each matrix cell in `docs/TESTING.md` is updated from "Unverified" to a dated pass/fail, with notes and quality ratings for transcription and tuning.
+- [ ] **DEV.1** Remove dead code: the unused SQLite `db()` helper and `TANDEM_DATABASE`, and the unused `vocal_tuning.py` import and module
+  - **Acceptance:** tests pass without them; `CLAUDE.md`, `docs/ARCHITECTURE.md` and `docs/AUDIO.md` no longer describe them as present.
 
-### AI conversation
+### 3. Turn on AI collaboration
 - [ ] **AI.1** *(HUMAN)* Choose the text provider and model; set `TANDEM_PROVIDER`, `TANDEM_MODEL`, `TANDEM_API_KEY` and `TANDEM_ACCESS_TOKEN` in Vercel with provider budget caps and alerts
+  - **Depends:** SEC.1
   - Follow "Before enabling paid AI" in `docs/SECURITY.md`.
 - [ ] **AI.2** Verify structured AI edits end to end on production
   - **Depends:** AI.1
@@ -70,8 +52,33 @@ This is the working task list, roughly in priority order (it replaces the earlie
 - [ ] **AI.3** Replace the localStorage access token with a safer session model
   - **Acceptance:** the shared token is no longer stored in `localStorage`; `docs/SECURITY.md` updated.
 
-### Later
+### 4. Safety net before larger UI work
+- [ ] **CI.2** Add browser end-to-end tests that run in CI
+  - Headless browser (e.g. Playwright) against the real FastAPI app: load `/`, import a WAV fixture, transcribe with the server fallback, edit a note, undo, play, export WAV/MIDI/JSON, save and reload a project.
+  - **Acceptance:** runs in `.github/workflows/tests.yml`; fails on any uncaught page error or console error; covers the 48 kHz decode path.
+- [ ] **SEC.3** Add integrity checks to, or self-host, the Basic Pitch JS and model
+  - `transcription.js` already pins `basic-pitch@1.0.1`; what is missing is integrity verification, so a changed or unavailable CDN file can silently break or tamper with transcription.
+  - **Acceptance:** assets verified by hash or served from this app; transcription still works; supply-chain note in `docs/SECURITY.md` updated.
+
+### 5. Vocal quality and editing
+- [ ] **VOX.1** Build an automated vocal pitch-correction benchmark
+  - Generate fixtures with known MIDI pitches and timing at several sample rates, with vibrato, noise and transitions; measure pitch error, duration and loudness change of `/api/tune`, and 0%-strength equivalence.
+  - **Acceptance:** runs under `pytest`; records metrics; thresholds documented in `docs/AUDIO.md`.
+- [ ] **VOX.2** *(HUMAN)* Blinded A/B listening test of WORLD tuning on real singing
+  - **Depends:** VOX.1
+  - **Acceptance:** recordings used with consent; results and artifacts noted in `docs/AUDIO.md`.
+- [ ] **EDIT.1** Proper undo/redo and project versioning
+  - Replace ad hoc note-list edits with an edit history covering manual edits, AI actions and tuning targets.
+  - **Depends:** CI.2
+  - **Acceptance:** undo/redo works across all edit types; tests cover history behavior.
+- [ ] **VOX.3** Continuous pitch-contour editor
+  - Replace the +/- target note list with a visual contour: drag notes, keep vibrato, key/scale selection, per-note confidence.
+  - **Depends:** VOX.1, EDIT.1
+  - **Acceptance:** edited targets drive `/api/tune` and go through the EDIT.1 history; covered by unit tests and the CI.2 browser tests.
+
+### 6. Later
 - [ ] **ARR.1** Better arrangement: richer instruments, harmony, swing and phrase-aware editing
+  - **Depends:** CI.2
 - [ ] **STORE.1** *(HUMAN)* Decide the account model and cloud storage for projects and recordings
 - [ ] **STORE.2** Accounts, durable project/recording storage and per-user quotas
   - **Depends:** STORE.1, SEC.1

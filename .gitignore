@@ -8,3 +8,6 @@ tandem.db
 # loopkit local state
 .claude/loopkit-*
 .claude/markers/
+.claude/pr-*-status.json
+.claude/post-mortems/
+.claude/route-history.jsonl
