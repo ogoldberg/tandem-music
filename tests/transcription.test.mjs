@@ -85,3 +85,11 @@ test("project melody transcription (the default) caps notes at 128",async()=>{
   const notes=await transcribeWithBasicPitch(buffer22k(59),()=>{},{loadModule:fakeBasicPitch(calls)});
   assert.equal(notes.length,128);
 });
+test("vocal target detection clips a note that runs past the end of the recording",async()=>{
+  const load=async()=>({
+    BasicPitch:class{async evaluateModel(_b,onFrames,onProgress){onFrames([[0]],[[0]],[[0]]);onProgress(1)}},
+    outputToNotesPoly:()=>[],addPitchBendsToNoteEvents:(_c,raw)=>raw,
+    noteFramesToTime:()=>[{pitchMidi:67,startTimeSeconds:179.5,durationSeconds:3}],
+  });
+  assert.deepEqual(await transcribeWithBasicPitch(buffer22k(180),()=>{},{...VOCAL_TARGET_LIMITS,loadModule:load}),[{m:67,t:179.5,d:.5}]);
+});
