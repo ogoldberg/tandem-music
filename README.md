@@ -41,7 +41,7 @@ A checked box means the feature is **implemented in code**, not that it has been
 **Still missing**
 
 - [ ] Browser end-to-end tests and real-device evidence on Mac and Android (CI.2, QA.1).
-- [ ] Robust public rate limiting and input resource limits (SEC.1, SEC.2).
+- [ ] Robust public rate limiting and input resource limits (SEC.1).
 - [ ] Proven natural vocal quality (VOX.1, VOX.2).
 - [ ] Reliable pitch contour editing and full undo/versioning (VOX.3, EDIT.1).
 - [ ] Production AI model configured and verified (AI.1, AI.2).
