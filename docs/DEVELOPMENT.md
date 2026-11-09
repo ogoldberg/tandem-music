@@ -44,6 +44,8 @@ Vercel project settings: https://vercel.com/oren-goldbergs-projects-c0a37bd5/tan
 | `TANDEM_API_KEY` | Provider credential | Secret. Configure in Vercel; never commit |
 | `TANDEM_BASE_URL` | Optional compatible API base | For supported gateways/proxies; ensure server can reach it |
 | `TANDEM_ACCESS_TOKEN` | Shared personal access password for `/api/chat` | **Required on Vercel to use paid AI**; not per-user authentication |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Shared rate-limit store for the audio routes | **Required on Vercel** or `/api/analyze`, `/api/polish` and `/api/tune` return 503. Add the Upstash Redis integration from the Vercel Marketplace (free tier); it sets these, or the equivalent `KV_REST_API_URL`/`KV_REST_API_TOKEN`, which are also accepted. Secret token; never commit |
+| `TANDEM_AUDIO_RATE_LIMIT`, `TANDEM_AUDIO_RATE_WINDOW_SECONDS` | Audio-route rate limit per client IP | Defaults 20 requests per 60 s; limits are listed in [SECURITY.md](SECURITY.md#request-limits-sec1) |
 | `TANDEM_ALLOWED_ORIGINS` | Cross-origin requests | Usually unnecessary with single-origin deployment |
 | `TANDEM_MUSIC_PROVIDER`, `TANDEM_MUSIC_MODEL` | Reserved music-generation metadata | Setting these **does not enable** music generation; no adapter exists yet |
 
@@ -68,11 +70,14 @@ Projects are local JSON exports/browser drafts, not cloud-saved. `/api/tune` and
 
 ## Cost and security
 
-The provider key never belongs in browser JavaScript. Vercel production refuses `/api/chat` if `TANDEM_ACCESS_TOKEN` is unset. This prevents accidental public use of a paid model; however, the token is shared and audio-processing routes still lack throttling. Configure provider budget limits and review [SECURITY.md](SECURITY.md) before opening access beyond a small personal test.
+The provider key never belongs in browser JavaScript. Vercel production refuses `/api/chat` if `TANDEM_ACCESS_TOKEN` is unset. This prevents accidental public use of a paid model; the token is shared. Audio-processing routes are rate-limited per client IP (20 requests per 60 s by default) through Upstash Redis and fail closed with 503 on Vercel when the store is not configured; bodies are capped at 18 MB (audio) and 256 KB (chat). Full limits are in [SECURITY.md](SECURITY.md#request-limits-sec1). Configure provider budget limits and review [SECURITY.md](SECURITY.md) before opening access beyond a small personal test.
 
 ## Troubleshooting
 
 - **503: “Set TANDEM_ACCESS_TOKEN...”**: Set the token in Vercel and reload/redeploy for paid chat; other audio endpoints should work without it.
+- **503: “Rate limiting unavailable...”** on an audio route: the Upstash Redis variables are missing on Vercel or the store is unreachable. Add the Upstash integration (or fix its variables) and redeploy.
+- **429: “Too many audio requests”**: the per-IP audio limit was hit; wait for `Retry-After` seconds or raise `TANDEM_AUDIO_RATE_LIMIT`.
+- **413**: the upload is over the app's 18 MB cap or Vercel's 4.5 MB request-body limit; record a shorter clip.
 - **48,000 vs 22,050 sample-rate error**: Verify the deployed `transcription.js` includes `resampleForBasicPitch` and refresh cached frontend assets.
 - **Basic Pitch import/model unavailable**: Check CDN availability, supported browser and memory; select server fallback for basic melody/rhythm detection.
 - **WORLD dependency build failure**: Check PyWorld wheel Python ABI and Vercel build output; use the pinned prebuilt distribution instead of the unsupported original package.
