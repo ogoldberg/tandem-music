@@ -22,7 +22,7 @@ from typing import Awaitable, Callable
 
 import httpx
 
-AUDIO_PATHS = frozenset({"/api/analyze", "/api/polish", "/api/tune"})
+AUDIO_PATHS = frozenset({"/api/analyze", "/api/tune"})
 CHAT_PATH = "/api/chat"
 AUDIO_BODY_MAX_BYTES = 18_000_000
 CHAT_BODY_MAX_BYTES = 262_144
