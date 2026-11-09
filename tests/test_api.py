@@ -33,16 +33,12 @@ def test_health_and_config(client,monkeypatch):
 
 def test_token_auth(client,monkeypatch):
     monkeypatch.setenv("TANDEM_ACCESS_TOKEN","secret")
-    assert run(client("POST","/api/projects",json={"data":{}})).status_code==401
-    assert run(client("POST","/api/projects",headers={"x-tandem-token":"secret"},json={"data":{}})).status_code==200
+    assert run(client("POST","/api/chat",json={"message":"hi","project":{}})).status_code==401
+    assert run(client("GET","/api/health",headers={"x-tandem-token":"secret"})).status_code==200
 
-def test_project_roundtrip(client):
-    original={"bpm":110,"notes":[{"m":69,"t":0,"d":0.5}],"drums":[]}
-    created=run(client("POST","/api/projects",json={"data":original}))
-    assert created.status_code==200
-    assert run(client("GET","/api/projects/"+created.json()["id"])).json()["data"]==original
-    assert run(client("GET","/api/projects/"+"f"*32)).status_code==404
-    assert run(client("POST","/api/projects",json={"id":"../invalid","data":{}})).status_code==400
+def test_no_ephemeral_server_project_storage(client):
+    # Project JSON is saved/loaded by the web client; ephemeral Vercel functions should not write SQLite.
+    assert run(client("POST","/api/projects",json={"data":{}})).status_code==404
 
 def test_action_validation():
     actions=[
