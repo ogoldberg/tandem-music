@@ -10,7 +10,7 @@ Tandem is an experimental full-stack, provider-agnostic, browser-based AI compos
 - Server-side basic vocal polishing (band-pass filter, gate and compression). **Automatic pitch correction is not implemented**.
 - Portable project JSON save/load and undo.
 - OpenAI-compatible chat completions, Anthropic Messages API, Gemini generateContent.
-- Static GitHub Pages client and separate FastAPI backend for secret management.
+- Single-origin Vercel frontend and FastAPI backend with secure server-side AI credentials.
 
 ## Run the backend locally
 Python 3.11+:
@@ -27,18 +27,21 @@ For OpenAI-compatible models, override `TANDEM_BASE_URL` (examples: OpenRouter, 
 
 For local browser testing, run `python -m http.server 8000` in another terminal and visit `http://localhost:8000`. The UI's Connection panel should point to `http://localhost:8001`.
 
-## Production deployment
-1. GitHub Pages builds the frontend using `.github/workflows/pages.yml`. Under Settings → Pages set source **GitHub Actions**.
-2. Deploy the FastAPI server with `render.yaml` (Render Blueprint) or another Python web host. A public HTTPS backend is needed for Android access.
-3. Set on backend: `TANDEM_PROVIDER`, `TANDEM_MODEL`, `TANDEM_API_KEY` and, for OpenAI-compatible gateways, `TANDEM_BASE_URL`. Set `TANDEM_ALLOWED_ORIGINS=https://ogoldberg.github.io`.
-4. Configure `TANDEM_ACCESS_TOKEN` on backend and enter the matching value in the frontend Connection panel. Never commit provider credentials or share the access token.
-5. Copy the deployed backend URL into the Connection panel and press Test connection.
+## Deploy on Vercel
 
-### Production caveats
-- This is an **alpha**, not a completed or production-hardened service. Pitch/beatbox recognition is heuristic and will need calibration and real-device testing.
-- The server's SQLite project endpoints are unscoped and are not used by the web app yet. For a multi-user product, implement user auth, per-user isolation, proper database and object storage, abuse protection and rate limits before use.
-- Render free/ephemeral filesystems do not persist SQLite data reliably. Project files currently stay in the user's browser as downloaded JSON.
-- Audio uploads are held in memory for processing and are not persisted by backend code.
-- No voice AI conversation yet: text chat sends editable project state to the configured LLM.
-- Local browser storage includes project draft and optional Tandem access token; do not use a shared computer when a token is configured.
-- PWA manifest is included, but full installability may require appropriate PNG icons.
+1. Import [ogoldberg/tandem-music](https://github.com/ogoldberg/tandem-music) at https://vercel.com/new.
+2. Choose **Other** framework (no frontend build), repository root, and the default deploy settings. Python 3.12 is pinned in `.python-version`.
+3. In Vercel Project → Settings → Environment Variables, set `TANDEM_PROVIDER`, `TANDEM_MODEL`, and `TANDEM_API_KEY`. Supported providers: `openai-compatible` (default), `anthropic`, `gemini`, `ollama`; compatible proxies may also use `TANDEM_BASE_URL`.
+4. Optionally set `TANDEM_ACCESS_TOKEN` to restrict API access. This is a shared bearer secret for personal testing, **not** per-user authentication. Enter it in the app's Connection panel.
+5. Redeploy after changing environment variables; verify `/api/health` and the site root, then record and transcribe a short sound.
+6. Monitor Vercel function usage and AI usage; stay within your plan's quotas. Hobby is for personal/non-commercial use.
+
+### Current limitations
+
+- Audio-processing via Python NumPy/SciPy runs inside a Vercel Function; deployment is subject to the Python bundle and request-body limits.
+- Project data stays in your browser or downloaded JSON. Server-side SQLite is intentionally **not** deployed on ephemeral serverless infrastructure.
+- For production and multi-user access, add proper authentication, project storage, abuse prevention, rate limiting and privacy protections.
+- Automatic singing pitch correction is not yet implemented. The vocal polish endpoint filters and compresses audio.
+- Humming and beatbox recognition are heuristic and need real-device testing.
+- Conversations are text-based; microphone recordings are analyzed by DSP, not sent to the LLM as voice messages.
+- Never put provider API keys in the frontend or repository.
