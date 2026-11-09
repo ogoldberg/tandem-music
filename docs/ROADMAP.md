@@ -1,6 +1,6 @@
 # Roadmap and change history
 
-Last reviewed: 2026-11-09. This is a prioritized working plan, not a delivery promise.
+Last reviewed: 2026-11-10. This is a prioritized working plan, not a delivery promise.
 
 ## Milestones and status
 | Status | Milestone | Notes |
@@ -77,8 +77,9 @@ This is the working task list, in strategic order: protect the deployment, prove
 - [ ] **VOX.2** *(HUMAN)* Blinded A/B listening test of WORLD tuning on real singing
   - **Depends:** VOX.1
   - **Acceptance:** recordings used with consent; results and artifacts noted in `docs/AUDIO.md`.
-- [ ] **EDIT.1** Proper undo/redo and project versioning
+- [x] **EDIT.1** Proper undo/redo and project versioning
   - Replace ad hoc note-list edits with an edit history covering manual edits, AI actions and tuning targets.
+  - Done: `history.js` (bounded, labelled undo/redo with no-op detection) records every project and vocal-target edit; Redo button and keyboard shortcuts; Node unit tests and a browser test across manual, AI, load and vocal-target edits. History is per page session; persistent named project versions are not implemented (see ARCHITECTURE.md, Edit history).
   - **Depends:** CI.2
   - **Acceptance:** undo/redo works across all edit types; tests cover history behavior.
 - [ ] **VOX.3** Continuous pitch-contour editor

@@ -173,6 +173,16 @@ def test_chunked_tuning_module_is_served(client):
     assert js.status_code==200 and "javascript" in js.headers["content-type"]
     assert "export async function tuneInChunks" in js.text
 
+def test_edit_history_module_is_served_and_precached(client):
+    # EDIT.1: index.html imports history.js at startup, so the service worker precaches it.
+    js=run(client("GET","/history.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function createHistory" in js.text
+    page=run(client("GET","/"))
+    assert "from './history.js'" in page.text
+    sw=run(client("GET","/sw.js"))
+    assert "./history.js" in sw.text
+
 @pytest.mark.parametrize("provider,path,body",[
     ("openai-compatible","/chat/completions",'{"choices":[{"message":{"content":"OK"}}]}'),
     ("anthropic","/v1/messages",'{"content":[{"type":"text","text":"OK"}]}'),

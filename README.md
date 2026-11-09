@@ -44,7 +44,8 @@ A checked box means the feature is **implemented in code**, not that it has been
 - [ ] Real-device evidence on Mac and Android (QA.1).
 - [x] Per-IP rate limiting of the audio routes (shared Upstash Redis store) and input resource limits (SEC.1).
 - [ ] Proven natural vocal quality (VOX.1, VOX.2).
-- [ ] Reliable pitch contour editing and full undo/versioning (VOX.3, EDIT.1).
+- [x] Undo/redo history across manual, AI, project-load and vocal-target edits (EDIT.1; per session, no named versions).
+- [ ] Reliable pitch contour editing (VOX.3).
 - [ ] Production AI model configured and verified (AI.1, AI.2).
 - [ ] Mature instrument sounds and arrangement (ARR.1).
 - [ ] Accounts and cloud project storage (STORE.1, STORE.2).
@@ -75,7 +76,7 @@ See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for deployment and configuration, and 
 
 ## Repository layout
 
-`index.html` (UI), `transcription.js` (Basic Pitch), `polish.js` (on-device polish), `tuning.js` (chunked pitch correction), `tandem_backend.py` (FastAPI/LLM/DSP), `world_tuning.py` (active vocal pitch correction), `api/index.py` (Vercel), `tests/` (automated checks).
+`index.html` (UI), `transcription.js` (Basic Pitch), `polish.js` (on-device polish), `tuning.js` (chunked pitch correction), `history.js` (undo/redo), `tandem_backend.py` (FastAPI/LLM/DSP), `world_tuning.py` (active vocal pitch correction), `api/index.py` (Vercel), `tests/` (automated checks).
 
 ## Contributions
 
