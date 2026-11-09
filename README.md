@@ -21,11 +21,11 @@ pip install -r requirements.txt
 export TANDEM_PROVIDER=openai-compatible
 export TANDEM_MODEL=gpt-4.1-mini
 export TANDEM_API_KEY=your-key-here
-uvicorn server:app --reload --port 8001
+uvicorn tandem_backend:app --reload --port 8001
 ```
 For OpenAI-compatible models, override `TANDEM_BASE_URL` (examples: OpenRouter, LM Studio, vLLM, Ollama `http://localhost:11434/v1`). For Anthropic set `TANDEM_PROVIDER=anthropic`, and for Gemini set `TANDEM_PROVIDER=gemini`. Choose an appropriate model name and key.
 
-For local browser testing, run `python -m http.server 8000` in another terminal and visit `http://localhost:8000`. The UI's Connection panel should point to `http://localhost:8001`.
+For local browser testing, run `python -m http.server 8000` in another terminal and visit `http://localhost:8000`. The UI's Connection panel should point to `http://localhost:8001` for local testing.
 
 ## Deploy on Vercel
 
