@@ -85,12 +85,19 @@ $('tunestrength').oninput=()=>{$('tunelevel').textContent=$('tunestrength').valu
 $('tune').onclick=async()=>{try{
  status('Correcting singing pitch…');
  const strength=Number($('tunestrength').value)/100;
- const wav=monoWav(await decoded(audio));
- const form=new FormData();form.append('file',wav,'vocal.wav');
- if(vocalNotes?.length)form.append('notes_json',JSON.stringify(vocalNotes));
- const response=await request('/api/tune?engine=world&strength='+encodeURIComponent(strength),{method:'POST',body:form});
- tuned=await response.blob();
- const count=Number(response.headers.get('X-Tandem-Tuned-Notes')||0);
+ const {tuneInChunks}=await import('./tuning.js');
+ const buf=await decoded(audio),mono=new Float32Array(buf.length);
+ for(let ch=0;ch<buf.numberOfChannels;ch++){const a=buf.getChannelData(ch);for(let i=0;i<mono.length;i++)mono[i]+=a[i]/buf.numberOfChannels}
+ const send=async({wav,notes,strength})=>{
+  const form=new FormData();form.append('file',new Blob([wav],{type:'audio/wav'}),'vocal.wav');
+  if(notes?.length)form.append('notes_json',JSON.stringify(notes));
+  const r=await fetch(apiUrl('/api/tune?engine=world&strength='+encodeURIComponent(strength)),{method:'POST',body:form,headers:{'x-tandem-token':$('token').value.trim()}});
+  if(!r.ok){const text=await r.text();throw Object.assign(Error('HTTP '+r.status+': '+text.slice(0,180)),r.status===429?{retryAfter:Number(r.headers.get('Retry-After'))||10}:{})}
+  return {wav:await r.arrayBuffer(),corrected:Number(r.headers.get('X-Tandem-Tuned-Notes')||0)};
+ };
+ const result=await tuneInChunks(mono,buf.sampleRate,{strength,notes:vocalNotes,send,onProgress:p=>status(p.waiting?'Rate limited; resuming section '+(p.index+1)+' of '+p.count+' in '+p.waiting+' s…':p.count>1?'Correcting singing pitch, section '+(p.index+1)+' of '+p.count+'…':'Correcting singing pitch…')});
+ tuned=wavBlob(result.samples,buf.sampleRate);
+ const count=result.corrected;
  $('playtuned').disabled=$('downloadtuned').disabled=false;
  $('tuneinfo').textContent=count>0?'Corrected '+count+' voiced frames using the open-source WORLD vocoder. Compare Original and Tuned; audio quality is experimental.':'No confident correctable notes detected. Try a sustained solo vocal without accompaniment.';
  status('Pitch correction complete');

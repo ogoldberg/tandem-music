@@ -18,7 +18,7 @@ uvicorn tandem_backend:app --reload --host 127.0.0.1 --port 8000
 # Tests (both run in CI: .github/workflows/tests.yml)
 python -m pytest -q
 python -m pytest tests/test_api.py::test_token_auth -q     # single Python test
-node --test tests/transcription.test.mjs tests/polish.test.mjs
+node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs
 node --test --test-name-pattern="resampl" tests/transcription.test.mjs  # single Node test
 
 # Browser end-to-end (Playwright, headless Chromium; not collected by plain `pytest`)
@@ -30,8 +30,8 @@ There is no linter or formatter configured.
 
 ## Architecture
 
-- **No build step / no framework.** `index.html` is the entire studio UI (inline script, Web Audio, piano roll, playback, WAV/MIDI export, localStorage draft). It lazy-imports `transcription.js` (ES module) which loads Spotify Basic Pitch from a CDN, resamples to 22,050 Hz (`resampleForBasicPitch`) and converts output to the project schema. It also lazy-imports `polish.js` (on-device vocal polish: band-pass EQ/gate/compression only, never pitch; a sample-exact port of the old server DSP). Both modules are imported directly by the Node tests, so keep their exports pure/testable.
-- **FastAPI serves everything.** `tandem_backend.py` explicitly routes `/`, `/sw.js`, `/transcription.js`, `/polish.js`, `/manifest.webmanifest` via `FileResponse` — a new static frontend file needs its own route here (there is no static mount). `sw.js` caches same-origin GETs (not `/api/`); bump `CACHE` when stale-asset issues matter.
+- **No build step / no framework.** `index.html` is the entire studio UI (inline script, Web Audio, piano roll, playback, WAV/MIDI export, localStorage draft). It lazy-imports `transcription.js` (ES module) which loads Spotify Basic Pitch from a CDN, resamples to 22,050 Hz (`resampleForBasicPitch`) and converts output to the project schema. It also lazy-imports `polish.js` (on-device vocal polish: band-pass EQ/gate/compression only, never pitch; a sample-exact port of the old server DSP). The Tune button lazy-imports `tuning.js`, which splits recordings longer than 16 s into overlapping chunks for `/api/tune` (each request stays under the 25 s cap and Vercel's 4.5 MB body limit), retries 429s after `Retry-After`, and joins the chunks with short crossfades at the quietest point of each overlap. All three modules are imported directly by the Node tests, so keep their exports pure/testable.
+- **FastAPI serves everything.** `tandem_backend.py` explicitly routes `/`, `/sw.js`, `/transcription.js`, `/polish.js`, `/tuning.js`, `/manifest.webmanifest` via `FileResponse` — a new static frontend file needs its own route here (there is no static mount). `sw.js` caches same-origin GETs (not `/api/`); bump `CACHE` when stale-asset issues matter.
 - **Vercel deploy:** `api/index.py` just re-exports `tandem_backend.app`; pushes to `main` deploy to production (https://tandem-music.vercel.app). `vercel.json` sets `maxDuration: 60` and excludes tests. A READY build is not evidence that tests pass or audio quality is acceptable.
 - **API routes:** `/api/health`, `/api/config` (non-secret capability metadata), `/api/chat` (LLM), `/api/analyze` (heuristic autocorrelation melody + onset drums fallback), `/api/tune` (pitch correction via `world_tuning.world_tune`, WORLD vocoder from `pyworld-prebuilt`; WAV only, <=25 s).
 - **Auth/spend guard:** an HTTP middleware protects only `/api/chat` with the `x-tandem-token` header vs `TANDEM_ACCESS_TOKEN`; when `VERCEL` is set and no token is configured, chat fails closed with 503. Audio routes are public but rate-limited per client IP by `RequestGuardMiddleware` (`request_guards.py`), which also caps body sizes for audio routes and `/api/chat`; on Vercel the counters live in Upstash Redis and audio routes fail closed with 503 when the store is unset or failing.
