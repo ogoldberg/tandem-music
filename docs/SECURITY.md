@@ -6,9 +6,9 @@ Last reviewed: 2026-11-09. Tandem is an **experimental public web app**, not a p
 - GitHub repository is public. Outsiders can read/fork/propose PRs; they cannot push without permissions. **Branch-protection status has not been verified**. Configure rulesets: required PR review, tests, no force pushes, restrict bypass.
 - Vercel hosts frontend and backend. Production `/api/chat` refuses calls without configured `TANDEM_ACCESS_TOKEN`; with one, callers supply it as `x-tandem-token`. This is a shared bearer secret, **not user authentication**.
 - `TANDEM_API_KEY` belongs exclusively in Vercel server variables. Never put provider keys in JS, project JSON, README, Git history, issue reports or chat.
-- `/api/analyze`, `/api/polish` and `/api/tune` are public and consume CPU. They are rate-limited per client IP through a shared Upstash Redis store and their inputs are bounded (see **Request limits** below). Per-IP limits do not stop a distributed attacker; abuse can still incur infrastructure cost.
+- `/api/analyze` and `/api/tune` are public and consume CPU. They are rate-limited per client IP through a shared Upstash Redis store and their inputs are bounded (see **Request limits** below). Per-IP limits do not stop a distributed attacker; abuse can still incur infrastructure cost.
 - The browser saves a project draft and may save the access token in `localStorage`; avoid shared devices and clear site data after using them. A production app needs a better auth/session model.
-- The application does not implement server-side project storage. Audio sent for DSP is read into memory for a request; do not assume zero logs, network metadata or cloud retention outside our code.
+- The application does not implement server-side project storage. Vocal polish runs in the browser, so that audio is never uploaded. Audio sent for server analysis or tuning is read into memory for a request; do not assume zero logs, network metadata or cloud retention outside our code.
 - On-device Basic Pitch lazily fetches model/JS from external CDNs. Review privacy, network and supply-chain risks; pin or self-host audited assets before production.
 - The backend validates LLM edit actions and the `/api/chat` request schema; `/api/chat` itself is not rate-limited beyond the shared token. Threat modeling and audit logs are still missing.
 
@@ -17,7 +17,7 @@ Enforced by `RequestGuardMiddleware` in `request_guards.py` before a route reads
 
 | Limit | Value | Applies to | Response |
 |---|---|---|---|
-| Rate limit, one shared bucket per client IP (IPv6 clients per /64) | 20 requests per 60 s fixed window (`TANDEM_AUDIO_RATE_LIMIT`, `TANDEM_AUDIO_RATE_WINDOW_SECONDS`) | `POST /api/analyze`, `/api/polish`, `/api/tune` | 429 with `Retry-After` |
+| Rate limit, one shared bucket per client IP (IPv6 clients per /64) | 20 requests per 60 s fixed window (`TANDEM_AUDIO_RATE_LIMIT`, `TANDEM_AUDIO_RATE_WINDOW_SECONDS`) | `POST /api/analyze`, `/api/tune` | 429 with `Retry-After` |
 | Request body | 18,000,000 bytes (checked on `Content-Length` and while streaming) | audio routes | 413 |
 | Request body | 262,144 bytes | `POST /api/chat` | 413 |
 | WAV format | 16-bit PCM, 1-2 channels, 8-96 kHz, 1 frame to 90 s; anything else or unparseable | audio routes | 400 |

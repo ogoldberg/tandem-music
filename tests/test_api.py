@@ -79,11 +79,7 @@ def test_free_audio_routes_not_blocked_by_missing_ai_token(client, monkeypatch):
     audio=wav_bytes(0.1*np.sin(2*np.pi*440*np.arange(rate)/rate))
     analysis=run(client("POST", "/api/analyze?mode=melody",
         files={"file":("melody.wav",audio,"audio/wav")}))
-    polish=run(client("POST", "/api/polish",
-        files={"file":("voice.wav",audio,"audio/wav")}))
     assert analysis.status_code==200
-    assert polish.status_code==200
-    assert polish.headers["content-type"]=="audio/wav"
     assert run(client("POST", "/api/chat",json={"message":"hi","project":{}})).status_code==503
 
 def test_no_ephemeral_server_project_storage(client):
@@ -152,29 +148,17 @@ def test_analyze_sine_and_silence(client):
     r=run(client("POST","/api/analyze?mode=melody",files={"file":("silence.wav",silence,"audio/wav")}))
     assert r.status_code==200 and r.json()["notes"]==[]
 
-def test_vocal_presets_have_distinct_processing(client):
-    rate=16000
-    audio=wav_bytes(.045*np.sin(2*np.pi*220*np.arange(rate)/rate))
-    natural=run(client("POST","/api/polish?style=natural",
-        files={"file":("voice.wav",audio,"audio/wav")}))
-    studio=run(client("POST","/api/polish?style=studio",
-        files={"file":("voice.wav",audio,"audio/wav")}))
-    assert natural.status_code==200 and studio.status_code==200
-    assert natural.content!=studio.content
-    assert run(client("POST","/api/polish?style=unknown",
-        files={"file":("voice.wav",audio,"audio/wav")})).status_code==400
-
 def test_audio_validation(client):
     r=run(client("POST","/api/analyze",files={"file":("bad.wav",b"not audio","audio/wav")}))
     assert r.status_code==400
 
-def test_vocal_polish(client):
-    rate=16000
-    tone=wav_bytes(.2*np.sin(2*np.pi*220*np.arange(rate)/rate))
-    r=run(client("POST","/api/polish",files={"file":("voice.wav",tone,"audio/wav")}))
-    assert r.status_code==200
-    with wave.open(io.BytesIO(r.content)) as w:
-        assert w.getframerate()==rate and w.getnframes()==rate
+def test_polish_runs_on_device_not_on_server(client):
+    # PERF.1: polish moved to polish.js in the browser, so recordings are not uploaded for it.
+    r=run(client("POST","/api/polish",files={"file":("voice.wav",short_tone(),"audio/wav")}))
+    assert r.status_code in (404,405)
+    js=run(client("GET","/polish.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function polishSamples" in js.text
 
 @pytest.mark.parametrize("provider,path,body",[
     ("openai-compatible","/chat/completions",'{"choices":[{"message":{"content":"OK"}}]}'),
@@ -212,7 +196,7 @@ def raw_wav(rate=16000,channels=1,width=2,frames=1600,data=None):
 def short_tone():
     return wav_bytes(0.1*np.sin(2*np.pi*440*np.arange(1600)/16000))
 
-@pytest.mark.parametrize("path",["/api/analyze?mode=melody","/api/polish","/api/tune"])
+@pytest.mark.parametrize("path",["/api/analyze?mode=melody","/api/analyze?mode=rhythm","/api/tune"])
 def test_audio_routes_rate_limited_in_memory_locally(client,monkeypatch,path):
     monkeypatch.setenv("TANDEM_AUDIO_RATE_LIMIT","2")
     statuses=[run(client("POST",path,files={"file":("a.wav",short_tone(),"audio/wav")})).status_code for _ in range(3)]
@@ -223,7 +207,7 @@ def test_rate_limit_is_shared_across_audio_routes_and_sets_retry_after(client,mo
     monkeypatch.setenv("TANDEM_AUDIO_RATE_LIMIT","2")
     files=lambda:{"file":("a.wav",short_tone(),"audio/wav")}
     assert run(client("POST","/api/analyze?mode=melody",files=files())).status_code==200
-    assert run(client("POST","/api/polish",files=files())).status_code==200
+    assert run(client("POST","/api/analyze?mode=melody",files=files())).status_code==200
     blocked=run(client("POST","/api/analyze?mode=rhythm",files=files()))
     assert blocked.status_code==429
     assert 1<=int(blocked.headers["retry-after"])<=60
@@ -234,7 +218,7 @@ def test_vercel_rate_limit_uses_shared_upstash_store_per_client(client,monkeypat
     monkeypatch.setenv("VERCEL","1")
     monkeypatch.setenv("TANDEM_AUDIO_RATE_LIMIT","2")
     store=FakeUpstash(); store.install(monkeypatch)
-    send=lambda ip:run(client("POST","/api/polish",headers={"x-forwarded-for":ip},files={"file":("a.wav",short_tone(),"audio/wav")})).status_code
+    send=lambda ip:run(client("POST","/api/analyze?mode=melody",headers={"x-forwarded-for":ip},files={"file":("a.wav",short_tone(),"audio/wav")})).status_code
     assert [send("203.0.113.5") for _ in range(3)]==[200,200,429]
     assert send("198.51.100.7")==200  # a different client has its own counter
     assert len(store.requests)==4
@@ -248,13 +232,13 @@ def test_vercel_without_rate_limit_store_fails_closed(client,monkeypatch):
 def test_rate_limit_store_error_fails_closed(client,monkeypatch):
     monkeypatch.setenv("VERCEL","1")
     FakeUpstash(fail=True).install(monkeypatch)
-    r=run(client("POST","/api/polish",files={"file":("a.wav",short_tone(),"audio/wav")}))
+    r=run(client("POST","/api/analyze?mode=melody",files={"file":("a.wav",short_tone(),"audio/wav")}))
     assert r.status_code==503
 
 def test_oversized_audio_body_refused_before_processing(client,monkeypatch):
     monkeypatch.setattr(guards,"AUDIO_BODY_MAX_BYTES",4096)
     big=wav_bytes(np.zeros(16000))  # 32 KB
-    for path in ("/api/analyze?mode=melody","/api/polish","/api/tune"):
+    for path in ("/api/analyze?mode=melody","/api/tune"):
         r=run(client("POST",path,files={"file":("big.wav",big,"audio/wav")}))
         assert r.status_code==413, path
 
@@ -286,7 +270,7 @@ def test_oversized_chat_body_refused(client,monkeypatch):
     ("truncated header",raw_wav()[:30]),
 ])
 def test_rejected_wav_input_classes(client,label,data):
-    for path in ("/api/analyze?mode=melody","/api/polish","/api/tune"):
+    for path in ("/api/analyze?mode=melody","/api/tune"):
         r=run(client("POST",path,files={"file":("x.wav",data,"audio/wav")}))
         assert r.status_code==400, (label,path,r.status_code,r.text)
 
