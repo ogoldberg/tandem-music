@@ -373,3 +373,34 @@ def test_tune_rejects_out_of_range_strength(client):
     # Moved from the deleted tests/test_vocal_tuning.py: it exercises the live /api/tune route, not the prototype.
     r=run(client("POST","/api/tune?strength=2",files={"file":("silence.wav",wav_bytes(np.zeros(16000)),"audio/wav")}))
     assert r.status_code==400
+
+BASIC_PITCH_DIR = server.Path(server.__file__).resolve().parent / "vendor" / "basic-pitch-1.0.1"
+
+def recorded_basic_pitch_hashes():
+    lines = (BASIC_PITCH_DIR / "SHA256SUMS").read_text().splitlines()
+    return {name.strip(): digest for digest, name in (line.split(None, 1) for line in lines if line.strip())}
+
+def test_basic_pitch_assets_are_served_from_this_app_with_recorded_hashes(client):
+    import hashlib
+    hashes = recorded_basic_pitch_hashes()
+    assert set(hashes) == {"basic-pitch.mjs", "model/model.json", "model/group1-shard1of1.bin"}
+    types = {"basic-pitch.mjs": "text/javascript", "model/model.json": "application/json",
+             "model/group1-shard1of1.bin": "application/octet-stream"}
+    for name, digest in hashes.items():
+        r = run(client("GET", f"/vendor/basic-pitch-1.0.1/{name}"))
+        assert r.status_code == 200, name
+        assert hashlib.sha256(r.content).hexdigest() == digest, name
+        assert r.headers["content-type"].split(";")[0] == types[name]
+        assert "immutable" in r.headers["cache-control"]
+
+def test_basic_pitch_route_serves_only_the_hashed_files(client):
+    for path in ("/vendor/basic-pitch-1.0.1/SHA256SUMS", "/vendor/basic-pitch-1.0.1/model/../../../tandem_backend.py",
+                 "/vendor/basic-pitch-1.0.1/%2e%2e/%2e%2e/tandem_backend.py", "/vendor/basic-pitch-1.0.1/model",
+                 "/vendor/basic-pitch-1.0.1/", "/vendor/basic-pitch-1.0.2/basic-pitch.mjs"):
+        assert run(client("GET", path)).status_code == 404, path
+
+def test_transcription_loads_basic_pitch_only_from_this_app():
+    source = (server.Path(server.__file__).resolve().parent / "transcription.js").read_text()
+    assert "https://" not in source and "http://" not in source
+    assert '"/vendor/basic-pitch-1.0.1/basic-pitch.mjs"' in source
+    assert '"/vendor/basic-pitch-1.0.1/model/model.json"' in source

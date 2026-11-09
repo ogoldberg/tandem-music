@@ -38,6 +38,25 @@ def polish_js():
 def transcription_script():
     return FileResponse(Path(__file__).resolve().parent / "transcription.js", media_type="text/javascript")
 
+# Self-hosted Spotify Basic Pitch (SEC.3): the bundle and model are built by
+# tools/basic-pitch/build.sh and their SHA-256 hashes are in SHA256SUMS. Only
+# these exact files are served; the versioned path never changes content, so
+# browsers may cache it forever.
+BASIC_PITCH_DIR = Path(__file__).resolve().parent / "vendor" / "basic-pitch-1.0.1"
+BASIC_PITCH_FILES = {
+    "basic-pitch.mjs": "text/javascript",
+    "model/model.json": "application/json",
+    "model/group1-shard1of1.bin": "application/octet-stream",
+}
+
+@app.get("/vendor/basic-pitch-1.0.1/{name:path}", include_in_schema=False)
+def basic_pitch_asset(name: str):
+    media_type = BASIC_PITCH_FILES.get(name)
+    if media_type is None:
+        return Response(status_code=404)
+    return FileResponse(BASIC_PITCH_DIR / name, media_type=media_type,
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
 @app.get("/manifest.webmanifest", include_in_schema=False)
 def manifest():
     return FileResponse(Path(__file__).resolve().parent / "manifest.webmanifest", media_type="application/manifest+json")

@@ -1,7 +1,9 @@
 // Tandem client-side transcription adapter.
 // Spotify Basic Pitch is Apache-2.0 licensed. Its model runs in the browser.
-export const BASIC_PITCH_PACKAGE = "https://esm.sh/@spotify/basic-pitch@1.0.1";
-export const BASIC_PITCH_MODEL = "https://cdn.jsdelivr.net/npm/@spotify/basic-pitch@1.0.1/model/model.json";
+// Both are served by this app (vendor/basic-pitch-1.0.1, built by
+// tools/basic-pitch/build.sh, hashes in its SHA256SUMS), not by a CDN.
+export const BASIC_PITCH_PACKAGE = "/vendor/basic-pitch-1.0.1/basic-pitch.mjs";
+export const BASIC_PITCH_MODEL = "/vendor/basic-pitch-1.0.1/model/model.json";
 
 /** Convert the provider's note events into Tandem's portable note schema.
  * Times are in seconds, pitches in MIDI semitones.

@@ -63,7 +63,7 @@ This is the working task list, in strategic order: protect the deployment, prove
 - [ ] **CI.2** Add browser end-to-end tests that run in CI
   - Headless browser (e.g. Playwright) against the real FastAPI app: load `/`, import a WAV fixture, transcribe with the server fallback, edit a note, undo, play, export WAV/MIDI/JSON, save and reload a project.
   - **Acceptance:** runs in `.github/workflows/tests.yml`; fails on any uncaught page error or console error; covers the 48 kHz decode path.
-- [ ] **SEC.3** Add integrity checks to, or self-host, the Basic Pitch JS and model
+- [x] **SEC.3** Add integrity checks to, or self-host, the Basic Pitch JS and model
   - `transcription.js` already pins `basic-pitch@1.0.1`; what is missing is integrity verification, so a changed or unavailable CDN file can silently break or tamper with transcription.
   - **Acceptance:** assets verified by hash or served from this app; transcription still works; supply-chain note in `docs/SECURITY.md` updated.
 

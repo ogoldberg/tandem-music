@@ -7,7 +7,7 @@ Last reviewed: 2026-11-09. This describes the **implemented** app; planned archi
 ```mermaid
 flowchart TD
   User[Mac / Android browser] --> UI[index.html + Web Audio]
-  UI --> Basic[transcription.js / Spotify Basic Pitch CDN]
+  UI --> Basic[transcription.js / self-hosted Spotify Basic Pitch]
   UI --> Polish[polish.js: on-device vocal polish]
   UI -->|same-origin HTTPS| API[FastAPI / tandem_backend.py]
   API --> DSP[NumPy / SciPy: onset and melody fallback]

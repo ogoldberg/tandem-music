@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "description": "Build inputs for the self-hosted Spotify Basic Pitch bundle in vendor/basic-pitch-1.0.1 (see build.sh).",
+  "dependencies": {
+    "@spotify/basic-pitch": "1.0.1",
+    "@tensorflow/tfjs": "3.21.0",
+    "@tonejs/midi": "2.0.28",
+    "esbuild": "0.24.0"
+  }
+}
