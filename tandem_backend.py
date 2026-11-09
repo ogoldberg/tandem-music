@@ -35,6 +35,10 @@ def service_worker():
 def polish_js():
     return FileResponse(Path(__file__).resolve().parent / "polish.js", media_type="text/javascript")
 
+@app.get("/tuning.js", include_in_schema=False)
+def tuning_js():
+    return FileResponse(Path(__file__).resolve().parent / "tuning.js", media_type="text/javascript")
+
 @app.get("/transcription.js", include_in_schema=False)
 def transcription_script():
     return FileResponse(Path(__file__).resolve().parent / "transcription.js", media_type="text/javascript")
