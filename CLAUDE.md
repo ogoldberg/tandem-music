@@ -15,7 +15,7 @@ python -m pip install -r requirements-dev.txt
 # Run app (UI + API on one origin, no separate frontend server or build step)
 uvicorn tandem_backend:app --reload --host 127.0.0.1 --port 8000
 
-# Tests (both run in CI: .github/workflows/tests.yml)
+# Tests (backend and Node tests run in CI; the e2e suite below runs as its own CI job: .github/workflows/tests.yml)
 python -m pytest -q
 python -m pytest tests/test_api.py::test_token_auth -q     # single Python test
 node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs
