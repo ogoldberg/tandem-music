@@ -20,6 +20,10 @@ def homepage():
 def service_worker():
     return FileResponse(Path(__file__).resolve().parent / "sw.js", media_type="text/javascript")
 
+@app.get("/transcription.js", include_in_schema=False)
+def transcription_script():
+    return FileResponse(Path(__file__).resolve().parent / "transcription.js", media_type="text/javascript")
+
 @app.get("/manifest.webmanifest", include_in_schema=False)
 def manifest():
     return FileResponse(Path(__file__).resolve().parent / "manifest.webmanifest", media_type="application/manifest+json")
@@ -44,7 +48,7 @@ async def authenticate(req: Request, call_next):
 def health(): return {"ok":True,"version":"0.2.0"}
 @app.get("/api/config")
 def config():
-    return {"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"ai_ready":bool(os.getenv("TANDEM_MODEL")),"requires_token":bool(os.getenv("TANDEM_ACCESS_TOKEN"))}
+    return {"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"ai_ready":bool(os.getenv("TANDEM_MODEL")),"requires_token":bool(os.getenv("TANDEM_ACCESS_TOKEN")),"capabilities":{"conversation":{"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"enabled":bool(os.getenv("TANDEM_MODEL"))},"melody_transcription":{"provider":"browser-basic-pitch","model":"spotify/basic-pitch-1.0.1","enabled":True},"rhythm_transcription":{"provider":"local-dsp","model":"onset-detector-v1","enabled":True},"vocal_polish":{"provider":"local-dsp","model":"filter-gate-compressor-v1","enabled":True},"music_generation":{"provider":os.getenv("TANDEM_MUSIC_PROVIDER","none"),"model":os.getenv("TANDEM_MUSIC_MODEL",""),"enabled":False}}}
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1,max_length=3000)
