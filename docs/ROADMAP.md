@@ -71,7 +71,7 @@ This is the working task list, in strategic order: protect the deployment, prove
   - **Acceptance:** assets verified by hash or served from this app; transcription still works; supply-chain note in `docs/SECURITY.md` updated.
 
 ### 5. Vocal quality and editing
-- [ ] **VOX.1** Build an automated vocal pitch-correction benchmark
+- [x] **VOX.1** Build an automated vocal pitch-correction benchmark
   - Generate fixtures with known MIDI pitches and timing at several sample rates, with vibrato, noise and transitions; measure pitch error, duration and loudness change of `/api/tune`, and 0%-strength equivalence.
   - **Acceptance:** runs under `pytest`; records metrics; thresholds documented in `docs/AUDIO.md`.
 - [ ] **VOX.2** *(HUMAN)* Blinded A/B listening test of WORLD tuning on real singing
