@@ -23,6 +23,28 @@ export function normalizeBasicPitchNotes(events, maxSeconds = 60) {
   return result.sort((a,b)=>a.t-b.t || a.m-b.m).slice(0,128);
 }
 
+export const BASIC_PITCH_SAMPLE_RATE = 22050;
+
+/** Render recordings at the exact sample rate expected by Basic Pitch.
+ * OfflineAudioContext performs the resampling, without changing pitch or duration.
+ * Dependency-inject the context for deterministic tests.
+ */
+export async function resampleForBasicPitch(audioBuffer, OfflineContext = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext) {
+  if (!audioBuffer || typeof audioBuffer.getChannelData !== "function") throw new TypeError("Expected a decoded AudioBuffer");
+  if (audioBuffer.sampleRate === BASIC_PITCH_SAMPLE_RATE) return audioBuffer;
+  if (!OfflineContext) throw new Error("This browser doesn't support offline audio resampling.");
+  const frameCount = Math.ceil(audioBuffer.duration * BASIC_PITCH_SAMPLE_RATE);
+  if (frameCount <= 0) throw new Error("The recording is empty.");
+  const offline = new OfflineContext(1, frameCount, BASIC_PITCH_SAMPLE_RATE);
+  const source = offline.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(offline.destination);
+  source.start(0);
+  const resampled = await offline.startRendering();
+  if (resampled.sampleRate !== BASIC_PITCH_SAMPLE_RATE) throw new Error("Audio resampling failed.");
+  return resampled;
+}
+
 let cachedModule;
 /** Lazily fetch model and JS dependencies only when transcription is requested. */
 export async function transcribeWithBasicPitch(audioBuffer, progress = () => {}) {
@@ -34,7 +56,8 @@ export async function transcribeWithBasicPitch(audioBuffer, progress = () => {})
   const { BasicPitch, outputToNotesPoly, noteFramesToTime, addPitchBendsToNoteEvents } = await pkg;
   const model = new BasicPitch(BASIC_PITCH_MODEL);
   const frames=[], onsets=[], contours=[];
-  await model.evaluateModel(audioBuffer,
+  const preparedBuffer = await resampleForBasicPitch(audioBuffer);
+  await model.evaluateModel(preparedBuffer,
     (f,o,c)=>{frames.push(...f);onsets.push(...o);contours.push(...c)},
     p=>progress(Math.round(Math.max(0, Math.min(1, p))*100))
   );
