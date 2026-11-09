@@ -19,20 +19,23 @@ def _free_port():
 
 
 @pytest.fixture(scope="session")
-def server_url():
+def server_url(tmp_path_factory):
     port = _free_port()
+    # Server output goes to a file: an unread pipe would block uvicorn once it filled.
+    log_path = tmp_path_factory.mktemp("server") / "uvicorn.log"
+    log = open(log_path, "wb")
     # Run the app the way local dev does, without provider or Vercel settings leaking in.
     env = {k: v for k, v in os.environ.items() if not k.startswith(("TANDEM_", "VERCEL", "UPSTASH_"))}
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "tandem_backend:app", "--host", "127.0.0.1", "--port", str(port)],
-        cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
     )
     url = f"http://127.0.0.1:{port}"
     deadline = time.monotonic() + 30
     try:
         while True:
             if proc.poll() is not None:
-                raise RuntimeError("uvicorn exited early:\n" + proc.stdout.read().decode(errors="replace"))
+                raise RuntimeError("uvicorn exited early:\n" + log_path.read_text(errors="replace"))
             try:
                 if httpx.get(url + "/api/health", timeout=1).status_code == 200:
                     break
@@ -48,6 +51,7 @@ def server_url():
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+        log.close()
 
 
 @pytest.fixture
