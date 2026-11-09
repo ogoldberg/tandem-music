@@ -194,17 +194,32 @@ async def analyze(file:UploadFile=File(...),mode:str="melody"):
     x,sr=decode_wav(data)
     return {"duration":round(len(x)/sr,2),"notes":analyze_melody(x,sr) if mode=="melody" else [],"drums":analyze_drums(x,sr) if mode=="rhythm" else []}
 @app.post("/api/polish")
-async def polish(file:UploadFile=File(...)):
+async def polish(file:UploadFile=File(...),style:str="studio"):
+    if style not in ("natural","studio"):
+        raise HTTPException(400, "Choose vocal style natural or studio")
     x,sr=decode_wav(await file.read(18_000_000))
-    # A practical basic vocal chain; not polyphonic denoising or automatic tuning.
-    sos=signal.butter(3,[95,min(7500,sr*.43)],btype="bandpass",fs=sr,output="sos")
+    # Basic vocal production effects, not vocal tuning or source separation.
+    highpass=95 if style=="natural" else 120
+    lowpass=min(9000 if style=="natural" else 6800,sr*.43)
+    sos=signal.butter(3,[highpass,lowpass],btype="bandpass",fs=sr,output="sos")
     x=signal.sosfilt(sos,x)
-    env=np.sqrt(signal.convolve(x*x,np.ones(max(1,int(sr*.015)))/max(1,int(sr*.015)),mode="same",method="fft")+1e-12)
-    gate=np.clip((env-.003)/.015,.08,1)
-    x*=gate
-    env2=np.sqrt(signal.convolve(x*x,np.ones(max(1,int(sr*.03)))/max(1,int(sr*.03)),mode="same",method="fft")+1e-12)
-    x=x*np.minimum(1,np.sqrt(.055/(env2+1e-5)))
-    x=np.tanh(x*1.4)/1.4
+    win=max(1,int(sr*.018))
+    env=np.sqrt(signal.convolve(x*x,np.ones(win)/win,mode="same",method="fft")+1e-12)
+    # Smooth low-level noise rather than abruptly cutting word endings.
+    gate_floor=.16 if style=="natural" else .07
+    gate=np.clip((env-(.002 if style=="natural" else .004))/.014,gate_floor,1)
+    x=x*gate
+    win=max(1,int(sr*.035))
+    env2=np.sqrt(signal.convolve(x*x,np.ones(win)/win,mode="same",method="fft")+1e-12)
+    threshold=.08 if style=="natural" else .042
+    ratio=2.0 if style=="natural" else 3.5
+    compression=np.where(env2>threshold,(threshold/np.maximum(env2,1e-6))**(1-1/ratio),1.0)
+    x=x*compression
+    # Audible makeup gain after compression, bounded to avoid clipping.
+    rms=float(np.sqrt(np.mean(x*x)+1e-12))
+    target=.075 if style=="natural" else .12
+    gain=min(4.0,target/max(.009,rms))
+    x=np.tanh(x*gain*1.15)/1.15
     return Response(content=encode_wav(x,sr),media_type="audio/wav",headers={"Content-Disposition":"attachment; filename=tandem-polished.wav"})
 # Vercel Functions are ephemeral: persist projects as downloadable JSON in the client.
 # A future database integration must implement authenticated per-user storage.
