@@ -8,15 +8,16 @@ Last reviewed: 2026-11-09. This describes the **implemented** app; planned archi
 flowchart TD
   User[Mac / Android browser] --> UI[index.html + Web Audio]
   UI --> Basic[transcription.js / Spotify Basic Pitch CDN]
+  UI --> Polish[polish.js: on-device vocal polish]
   UI -->|same-origin HTTPS| API[FastAPI / tandem_backend.py]
-  API --> DSP[NumPy / SciPy: onset, polish]
+  API --> DSP[NumPy / SciPy: onset and melody fallback]
   API --> World[WORLD / PyWorld: vocal tuning]
   API -->|when credentials configured| LLM[OpenAI-compatible / Anthropic / Gemini]
   UI --> Local[Local project JSON and browser draft]
   UI --> Export[WAV + MIDI export]
 ```
 
-Vercel runs `api/index.py` which imports `tandem_backend.app`. FastAPI serves the UI, manifest, service worker, browser transcription module and endpoints. No independent database or music-generation worker is deployed. `vercel.json` configures function duration.
+Vercel runs `api/index.py` which imports `tandem_backend.app`. FastAPI serves the UI, manifest, service worker, browser transcription and polish modules, and endpoints. No independent database or music-generation worker is deployed. `vercel.json` configures function duration.
 
 ## Implemented API
 | Route | Behavior | Authorization |
@@ -26,7 +27,6 @@ Vercel runs `api/index.py` which imports `tandem_backend.app`. FastAPI serves th
 | GET /api/config | Non-secret model/capability metadata | Public |
 | POST /api/chat | Text LLM project edit plan | Requires shared token on Vercel |
 | POST /api/analyze | Server heuristic melody/beatbox analysis | Public |
-| POST /api/polish | Natural/studio EQ, gate and dynamics | Public |
 | POST /api/tune | WORLD monophonic voice pitch correction | Public |
 
 The audio endpoints consume CPU. `request_guards.py` rate-limits them per client IP through Upstash Redis (in-process counters only off Vercel) and caps request bodies before any route reads them; see [SECURITY.md](SECURITY.md#request-limits-sec1). Per-IP limits are not per-user quotas: treat this as an experimental personal app, not a production multi-tenant API.
@@ -45,7 +45,7 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 ## Transcription and tuning
 - `transcription.js` lazily imports Spotify Basic Pitch and its model. It resamples input AudioBuffer to **22,050 Hz** to avoid the previously reported 48-kHz error and returns `{m,t,d}`.
 - The fallback `/api/analyze` uses autocorrelation for notes and energy-onset/spectral-centroid heuristics for drums. Both need quality evaluation.
-- `/api/polish` only changes EQ/gate/dynamics; it **does not** tune pitch.
+- `polish.js` (in the browser) only changes EQ/gate/dynamics; it **does not** tune pitch. It replaced `/api/polish` in PERF.1 so recordings of any length are polished without an upload.
 - `/api/tune` uses `world_tuning.py`, changing F0 while retaining WORLD's spectral envelope and aperiodicity. Default chromatic snapping; edited notes may be supplied as JSON targets. It accepts short isolated singing only; results can contain artifacts.
 
 ## LLM orchestration

@@ -8,7 +8,7 @@ Browser MediaRecorder may record at 44,100 or 48,000 Hz. Tandem decodes audio, u
 For beatboxing, server analysis uses approximate energy peaks and spectral centroid to classify kicks/snares/hats. This is **not** an accurate trained classifier yet. Note confidence and correction UI require improvement.
 
 ## Vocal polish vs vocal tuning
-Polish (`/api/polish`): EQ, gating, compression and makeup gain (Natural/Studio). It can affect tone/level but does not fix singing pitch.
+Polish (`polish.js`, on device since PERF.1): band-pass EQ, soft gating, compression and makeup gain (Natural/Studio), run in the browser on the decoded recording, so audio is not uploaded and there is no length cap beyond the device's memory. It is a sample-exact port of the former `/api/polish` SciPy DSP (`tests/fixtures/make_polish_fixture.py` keeps that reference). It can affect tone/level but does not fix singing pitch.
 
 Tune (`/api/tune`): **WORLD/PyWorld** vocoder. Separate F0 estimation, spectral envelope and aperiodicity enable resynthesis with changed F0 while approximately retaining vowel/formant character. Corrected audio is a new WAV; the original is unchanged.
 

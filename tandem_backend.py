@@ -30,6 +30,10 @@ def homepage():
 def service_worker():
     return FileResponse(Path(__file__).resolve().parent / "sw.js", media_type="text/javascript")
 
+@app.get("/polish.js", include_in_schema=False)
+def polish_js():
+    return FileResponse(Path(__file__).resolve().parent / "polish.js", media_type="text/javascript")
+
 @app.get("/transcription.js", include_in_schema=False)
 def transcription_script():
     return FileResponse(Path(__file__).resolve().parent / "transcription.js", media_type="text/javascript")
@@ -55,7 +59,7 @@ async def authenticate(req: Request, call_next):
 def health(): return {"ok":True,"version":"0.2.0"}
 @app.get("/api/config")
 def config():
-    return {"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"ai_ready":bool(os.getenv("TANDEM_MODEL")),"requires_token":bool(os.getenv("TANDEM_ACCESS_TOKEN")),"capabilities":{"conversation":{"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"enabled":bool(os.getenv("TANDEM_MODEL"))},"melody_transcription":{"provider":"browser-basic-pitch","model":"spotify/basic-pitch-1.0.1","enabled":True},"rhythm_transcription":{"provider":"local-dsp","model":"onset-detector-v1","enabled":True},"vocal_polish":{"provider":"local-dsp","model":"filter-gate-compressor-v1","enabled":True},"vocal_pitch_correction":{"provider":"open-source-world","model":"pyworld-prebuilt-0.3.6","enabled":True},"music_generation":{"provider":os.getenv("TANDEM_MUSIC_PROVIDER","none"),"model":os.getenv("TANDEM_MUSIC_MODEL",""),"enabled":False}}}
+    return {"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"ai_ready":bool(os.getenv("TANDEM_MODEL")),"requires_token":bool(os.getenv("TANDEM_ACCESS_TOKEN")),"capabilities":{"conversation":{"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"enabled":bool(os.getenv("TANDEM_MODEL"))},"melody_transcription":{"provider":"browser-basic-pitch","model":"spotify/basic-pitch-1.0.1","enabled":True},"rhythm_transcription":{"provider":"local-dsp","model":"onset-detector-v1","enabled":True},"vocal_polish":{"provider":"browser-dsp","model":"filter-gate-compressor-v1","enabled":True},"vocal_pitch_correction":{"provider":"open-source-world","model":"pyworld-prebuilt-0.3.6","enabled":True},"music_generation":{"provider":os.getenv("TANDEM_MUSIC_PROVIDER","none"),"model":os.getenv("TANDEM_MUSIC_MODEL",""),"enabled":False}}}
 
 class ProjectNote(BaseModel):
     model_config=ConfigDict(extra="forbid")
@@ -267,33 +271,5 @@ async def tune(file:UploadFile=File(...),strength:float=.85,engine:str="world",
                "Access-Control-Expose-Headers":"X-Tandem-Tuned-Notes, X-Tandem-Tuning-Engine",
                "Content-Disposition":"attachment; filename=tandem-tuned.wav"})
 
-@app.post("/api/polish")
-async def polish(file:UploadFile=File(...),style:str="studio"):
-    if style not in ("natural","studio"):
-        raise HTTPException(400, "Choose vocal style natural or studio")
-    x,sr=decode_wav(await read_upload(file))
-    # Basic vocal production effects, not vocal tuning or source separation.
-    highpass=95 if style=="natural" else 120
-    lowpass=min(9000 if style=="natural" else 6800,sr*.43)
-    sos=signal.butter(3,[highpass,lowpass],btype="bandpass",fs=sr,output="sos")
-    x=signal.sosfilt(sos,x)
-    win=max(1,int(sr*.018))
-    env=np.sqrt(signal.convolve(x*x,np.ones(win)/win,mode="same",method="fft")+1e-12)
-    # Smooth low-level noise rather than abruptly cutting word endings.
-    gate_floor=.16 if style=="natural" else .07
-    gate=np.clip((env-(.002 if style=="natural" else .004))/.014,gate_floor,1)
-    x=x*gate
-    win=max(1,int(sr*.035))
-    env2=np.sqrt(signal.convolve(x*x,np.ones(win)/win,mode="same",method="fft")+1e-12)
-    threshold=.08 if style=="natural" else .042
-    ratio=2.0 if style=="natural" else 3.5
-    compression=np.where(env2>threshold,(threshold/np.maximum(env2,1e-6))**(1-1/ratio),1.0)
-    x=x*compression
-    # Audible makeup gain after compression, bounded to avoid clipping.
-    rms=float(np.sqrt(np.mean(x*x)+1e-12))
-    target=.075 if style=="natural" else .12
-    gain=min(4.0,target/max(.009,rms))
-    x=np.tanh(x*gain*1.15)/1.15
-    return Response(content=encode_wav(x,sr),media_type="audio/wav",headers={"Content-Disposition":"attachment; filename=tandem-polished.wav"})
 # Vercel Functions are ephemeral: persist projects as downloadable JSON in the client.
 # A future database integration must implement authenticated per-user storage.

@@ -38,6 +38,12 @@ This is the working task list, in strategic order: protect the deployment, prove
   - **Acceptance:** tests prove requests over the limit get 429, each rejected input class is refused, and malformed `/api/chat` projects get 422; limits documented in `docs/SECURITY.md` and `docs/DEVELOPMENT.md`.
 
 ### 2. Prove the core loop
+- [x] **PERF.1** Move vocal polish into the browser so recordings are not uploaded and have no 90 s / 4.5 MB cap
+  - Port the `/api/polish` SciPy DSP to `polish.js` and remove the server route.
+  - **Acceptance:** Node tests show sample parity with the SciPy reference and a 5-minute recording processes; a 120 s stereo recording polishes in a real browser with no API call.
+- [ ] **PERF.2** Remove the length cap on pitch correction by tuning long recordings in chunks
+  - The browser splits the recording into overlapping chunks of about 15 s, each under Vercel's 4.5 MB body limit, sends them to `/api/tune` and stitches the results with short crossfades. The server stays stateless.
+  - **Acceptance:** a recording longer than 90 s tunes end to end; tests show chunk boundaries add no clicks or gaps (crossfade continuity) and that each chunk's detected/edited note targets are offset to the chunk's start time.
 - [ ] **QA.1** *(HUMAN)* Run the manual acceptance matrix in `docs/TESTING.md` on macOS Chrome, macOS Safari and Android Chrome
   - **Acceptance:** each matrix cell in `docs/TESTING.md` is updated from "Unverified" to a dated pass/fail, with notes and quality ratings for transcription and tuning.
 - [x] **DEV.1** Remove dead code: the unused SQLite `db()` helper and `TANDEM_DATABASE`, and the unused `vocal_tuning.py` import and module with its `tests/test_vocal_tuning.py`
