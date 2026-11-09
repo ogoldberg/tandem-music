@@ -30,6 +30,7 @@ def test_health_and_config(client,monkeypatch):
     monkeypatch.setenv("TANDEM_MODEL","example-model")
     assert run(client("GET","/api/health")).json()["ok"]
     assert run(client("GET","/api/config")).json()["ai_ready"]
+    assert run(client("GET","/api/config")).json()["capabilities"]["melody_transcription"]["provider"] == "browser-basic-pitch"
 
 def test_token_auth(client,monkeypatch):
     monkeypatch.setenv("TANDEM_ACCESS_TOKEN","secret")
@@ -127,3 +128,9 @@ def test_provider_adapters(monkeypatch,provider,path,body):
     monkeypatch.setattr(server.httpx,"AsyncClient",lambda **kwargs: actual(transport=transport,**kwargs))
     assert run(server.invoke_llm([{"role":"user","content":"hello"}]))=="OK"
     assert seen[0].endswith(path)
+
+
+def test_client_model_module_is_served(client):
+    response = run(client("GET", "/transcription.js"))
+    assert response.status_code == 200
+    assert "normalizeBasicPitchNotes" in response.text
