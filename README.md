@@ -34,7 +34,7 @@ A checked box means the feature is **implemented in code**, not that it has been
 - [x] Save/load portable project JSON and local browser draft (recording not embedded).
 - [x] Optional text LLM collaboration with validated structured edits and melody protection; **production model credentials not configured as of last inspection**.
 - [x] EQ/gate/compression vocal polish with Natural/Studio presets, separate from tuning; runs on the device, with no length cap.
-- [x] Experimental monophonic vocal pitch correction using the open-source **WORLD** vocoder via `pyworld-prebuilt`, adjustable strength and +/- note targets.
+- [x] Experimental monophonic vocal pitch correction using the open-source **WORLD** vocoder via `pyworld-prebuilt`, adjustable strength and +/- note targets; long recordings are tuned in 16 s chunks, so there is no length cap (note-target detection is still limited to 60 s, PERF.3).
 - [x] Python API and browser UI hosted together on Vercel.
 - [x] Automated Python and Node test suites passing in GitHub Actions (verified 2026-11-09).
 
@@ -67,14 +67,14 @@ Open http://localhost:8000. Recording/transcription/voice processing need no pai
 
 ```bash
 python -m pytest -q
-node --test tests/transcription.test.mjs
+node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs
 ```
 
 See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for deployment and configuration, and [TESTING.md](docs/TESTING.md) for verification standards.
 
 ## Repository layout
 
-`index.html` (UI), `transcription.js` (Basic Pitch), `tandem_backend.py` (FastAPI/LLM/DSP), `world_tuning.py` (active vocal pitch correction), `api/index.py` (Vercel), `tests/` (automated checks).
+`index.html` (UI), `transcription.js` (Basic Pitch), `polish.js` (on-device polish), `tuning.js` (chunked pitch correction), `tandem_backend.py` (FastAPI/LLM/DSP), `world_tuning.py` (active vocal pitch correction), `api/index.py` (Vercel), `tests/` (automated checks).
 
 ## Contributions
 

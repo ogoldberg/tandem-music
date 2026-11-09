@@ -159,6 +159,12 @@ def test_polish_runs_on_device_not_on_server(client):
     assert js.status_code==200 and "javascript" in js.headers["content-type"]
     assert "export function polishSamples" in js.text
 
+def test_chunked_tuning_module_is_served(client):
+    # PERF.2: the browser splits long recordings into /api/tune-sized chunks with tuning.js.
+    js=run(client("GET","/tuning.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export async function tuneInChunks" in js.text
+
 @pytest.mark.parametrize("provider,path,body",[
     ("openai-compatible","/chat/completions",'{"choices":[{"message":{"content":"OK"}}]}'),
     ("anthropic","/v1/messages",'{"content":[{"type":"text","text":"OK"}]}'),
