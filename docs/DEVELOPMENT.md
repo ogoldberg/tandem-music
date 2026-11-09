@@ -25,6 +25,8 @@ If a PyWorld wheel is unsupported on your workstation's OS/architecture, investi
 ```bash
 python -m pytest -q
 node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs
+# Browser end-to-end, once: pip install -r requirements-e2e.txt && python -m playwright install chromium
+python -m pytest e2e -q
 ```
 
 The GitHub Actions test workflow is `.github/workflows/tests.yml`. See [TESTING.md](TESTING.md) for the test matrix, real-device requirements, and release gates. Do not infer passing tests merely from a successful Vercel build.

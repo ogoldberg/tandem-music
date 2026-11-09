@@ -1,4 +1,6 @@
 tests/
+e2e/
+e2e-results/
 .github/
 README.md
 render.yaml
