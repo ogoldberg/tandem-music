@@ -118,12 +118,16 @@ async def invoke_llm(messages):
             raise HTTPException(502,"AI provider request failed: "+str(exc)[:400])
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
-    project={k:req.project.get(k) for k in ("bpm","instrument","notes","drums")}
+    project={k:req.project.get(k) for k in ("bpm","instrument","notes","drums","melody_locked")}
     prior=[{"role":m.get("role","user"),"content":str(m.get("content",""))[:2000]} for m in req.history[-10:] if m.get("role") in ("user","assistant")]
     raw=await invoke_llm(prior+[{"role":"user","content":"Current project: "+json.dumps(project)[:18000]+"\nRequest: "+req.message}])
     try: obj=extract_json(raw)
     except (ValueError,json.JSONDecodeError): raise HTTPException(502,"AI returned an invalid edit plan; retry or change model")
-    return {"reply":str(obj.get("reply","I updated your arrangement."))[:1200],"actions":normalize_actions(obj.get("actions",[]))}
+    actions=normalize_actions(obj.get("actions",[]))
+    if req.project.get("melody_locked", True):
+        protected={"transpose","add_note","replace_notes","remove_track"}
+        actions=[a for a in actions if not (a["type"] in protected and (a["type"]!="remove_track" or a.get("track")=="melody"))]
+    return {"reply":str(obj.get("reply","I updated your arrangement."))[:1200],"actions":actions}
 
 def decode_wav(data):
     try:
