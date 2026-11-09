@@ -7,10 +7,23 @@ import numpy as np
 from scipy import signal
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="Tandem API", version="0.2.0")
+
+@app.get("/", include_in_schema=False)
+def homepage():
+    return FileResponse(Path(__file__).resolve().parent / "index.html", media_type="text/html")
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    return FileResponse(Path(__file__).resolve().parent / "sw.js", media_type="text/javascript")
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest():
+    return FileResponse(Path(__file__).resolve().parent / "manifest.webmanifest", media_type="application/manifest+json")
+
 origins = [x.strip() for x in os.getenv("TANDEM_ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000,https://ogoldberg.github.io").split(",") if x.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET","POST","PUT","DELETE"], allow_headers=["*"])
 DB = os.getenv("TANDEM_DATABASE", "tandem.db")
