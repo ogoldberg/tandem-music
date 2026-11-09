@@ -6,7 +6,8 @@ import httpx
 import numpy as np
 from scipy import signal
 from vocal_tuning import tune_vocal
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request
+from world_tuning import world_tune
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, FileResponse
 from pydantic import BaseModel, Field
@@ -195,19 +196,41 @@ async def analyze(file:UploadFile=File(...),mode:str="melody"):
     x,sr=decode_wav(data)
     return {"duration":round(len(x)/sr,2),"notes":analyze_melody(x,sr) if mode=="melody" else [],"drums":analyze_drums(x,sr) if mode=="rhythm" else []}
 @app.post("/api/tune")
-async def tune(file:UploadFile=File(...),strength:float=0.85):
+async def tune(file:UploadFile=File(...),strength:float=.85,engine:str="world",
+               notes_json:str=Form(default="")):
     if not (0<=strength<=1):
         raise HTTPException(400,"Strength must be between 0 and 1")
-    raw=await file.read(18_000_000)
-    if len(raw)>=18_000_000:raise HTTPException(413,"Audio too large")
-    x,sr=decode_wav(raw)
-    if len(x)/sr>30:
-        raise HTTPException(400,"Use a solo vocal recording of 30 seconds or less")
-    notes=analyze_melody(x,sr)
-    corrected,details=tune_vocal(x,sr,notes,strength=strength)
+    if engine!="world":
+        raise HTTPException(400,"Only the open-source WORLD tuning engine is supported")
+    data=await file.read(18_000_000)
+    if len(data)>=18_000_000:raise HTTPException(413,"Audio too large")
+    x,sr=decode_wav(data)
+    if len(x)/sr>25:
+        raise HTTPException(400,"Use a solo vocal recording 25 seconds or shorter")
+    notes=None
+    if notes_json:
+        try:
+            parsed=json.loads(notes_json)
+            if not isinstance(parsed,list) or len(parsed)>128:
+                raise ValueError("Invalid note list")
+            notes=[]
+            for n in parsed:
+                midi=int(n["m"]); t=float(n["t"]); d=float(n["d"])
+                if not (36<=midi<=96 and 0<=t<=25 and .05<=d<=25):
+                    raise ValueError("Invalid note")
+                notes.append({"m":midi,"t":t,"d":d})
+        except (ValueError,TypeError,KeyError) as exc:
+            raise HTTPException(400,"Invalid vocal note targets") from exc
+    try:
+        corrected,details=world_tune(x,sr,strength=strength,notes=notes)
+    except ImportError as exc:
+        raise HTTPException(503,"WORLD pitch correction is not installed on the server") from exc
+    except ValueError as exc:
+        raise HTTPException(400,str(exc)) from exc
     return Response(content=encode_wav(corrected,sr),media_type="audio/wav",
-      headers={"X-Tandem-Tuned-Notes":str(details["tuned_notes"]),
-               "Access-Control-Expose-Headers":"X-Tandem-Tuned-Notes",
+      headers={"X-Tandem-Tuned-Notes":str(details["corrected_frames"]),
+               "X-Tandem-Tuning-Engine":"world",
+               "Access-Control-Expose-Headers":"X-Tandem-Tuned-Notes, X-Tandem-Tuning-Engine",
                "Content-Disposition":"attachment; filename=tandem-tuned.wav"})
 
 @app.post("/api/polish")
