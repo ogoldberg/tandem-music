@@ -44,6 +44,20 @@ def test_production_fails_closed_without_token(client, monkeypatch):
     monkeypatch.setenv("TANDEM_ACCESS_TOKEN", "secret")
     assert run(client("POST", "/api/chat", json={"message":"hi","project":{}})).status_code == 401
 
+def test_free_audio_routes_not_blocked_by_missing_ai_token(client, monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("TANDEM_ACCESS_TOKEN", raising=False)
+    rate=16000
+    audio=wav_bytes(0.1*np.sin(2*np.pi*440*np.arange(rate)/rate))
+    analysis=run(client("POST", "/api/analyze?mode=melody",
+        files={"file":("melody.wav",audio,"audio/wav")}))
+    polish=run(client("POST", "/api/polish",
+        files={"file":("voice.wav",audio,"audio/wav")}))
+    assert analysis.status_code==200
+    assert polish.status_code==200
+    assert polish.headers["content-type"]=="audio/wav"
+    assert run(client("POST", "/api/chat",json={"message":"hi","project":{}})).status_code==503
+
 def test_no_ephemeral_server_project_storage(client):
     # Project JSON is saved/loaded by the web client; ephemeral Vercel functions should not write SQLite.
     assert run(client("POST","/api/projects",json={"data":{}})).status_code==404
