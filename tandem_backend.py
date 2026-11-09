@@ -22,6 +22,8 @@ def db():
 async def authenticate(req: Request, call_next):
     if req.url.path.startswith("/api/") and req.url.path not in ("/api/health", "/api/config"):
         secret=os.getenv("TANDEM_ACCESS_TOKEN", "")
+        if os.getenv("VERCEL") and not secret:
+            return Response('{"detail":"Set TANDEM_ACCESS_TOKEN in Vercel to protect AI spending"}',status_code=503,media_type="application/json")
         if secret and req.headers.get("x-tandem-token") != secret:
             return Response('{"detail":"Invalid Tandem access token"}',status_code=401,media_type="application/json")
     return await call_next(req)
