@@ -3,7 +3,9 @@
 *{box-sizing:border-box}body{margin:0;background:#0d1523;color:#e9f4ff;font-family:system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:16px}h1{margin:0;font-size:2rem}h2{font-size:1.15rem}header,.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}header{justify-content:space-between}button,select,input{font:inherit;border:1px solid #455c78;background:#263950;color:white;border-radius:9px;padding:9px}button{cursor:pointer}button:disabled{opacity:.45}button.primary{background:#92e9ce;color:#12251f;font-weight:700;border:0}.grid{display:grid;grid-template-columns:1.15fr 1fr;gap:16px;margin-top:15px}.card{border:1px solid #33465f;background:#1a283d;padding:16px;border-radius:16px}.muted,small{color:#b3c6d9}.muted{font-size:.86rem}.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0}.status{font-size:.83rem;background:#101e32;border-radius:8px;padding:9px}.track{border:1px solid #40546c;border-radius:12px;padding:10px;margin:11px 0}.roll{height:100px;background:repeating-linear-gradient(90deg,#33465b 0 1px,transparent 1px 32px),repeating-linear-gradient(#33465b 0 1px,transparent 1px 16px),#0c1928;position:relative;margin-top:7px;border-radius:7px;overflow:hidden}.note{position:absolute;border:0;border-radius:3px;background:#83dbc8;min-width:5px;height:12px;padding:0}.note.hit{background:#f1b977;height:15px}.chat{height:250px;overflow:auto;background:#101c2e;border-radius:8px;padding:10px}.bubble{padding:10px;border-radius:9px;margin:7px 0;background:#293c54;font-size:.9rem}.bubble.user{background:#245247;margin-left:18px}.hide{display:none}#wave{width:100%;height:65px;background:#101c2e;border-radius:8px}input[type=number]{width:85px}input[type=text],input[type=url],input[type=password]{min-width:0;flex:1}.grow{flex:1}.badge{font-size:.72rem;border:1px solid #52677d;border-radius:30px;padding:3px 8px}a{color:#8ce6cf}label{font-size:.82rem}@media(max-width:750px){.grid{grid-template-columns:1fr}main{padding:11px}header{align-items:flex-start}h1{font-size:1.7rem}}
 </style></head><body><main><header><div><h1>♫ Tandem <span class="badge">alpha</span></h1><div class="muted">Make music together</div></div><div class="bar"><button id="play" class="primary">▶ Play</button><button id="stop">■ Stop</button><button id="undo">↶ Undo</button><button id="save">Save project</button><button id="load">Open project</button><input id="projectfile" class="hide" type="file" accept="application/json,.json"></div></header>
 <div class="grid"><section class="card"><h2>Capture your idea</h2><p class="muted">Hum, beatbox or sing. Audio is processed locally until you choose server analysis or polishing.</p><div class="bar"><select id="mode"><option value="melody">Humming → melody</option><option value="rhythm">Beatbox → drums</option><option value="vocal">Singing → vocal</option></select><button id="record" class="primary">● Record</button><button id="finish" disabled>Stop recording</button><button id="import">Import audio</button><input id="audiofile" type="file" accept="audio/*" class="hide"></div><div id="status" class="status">Ready</div><canvas id="wave" width="640" height="80"></canvas><div class="bar"><button id="original" disabled>▶ Original</button><label for="polishstyle">Vocal preset</label><select id="polishstyle"><option value="studio">Studio (stronger)</option><option value="natural">Natural (subtle)</option></select><button id="polish" disabled>Polish vocal</button><button id="polished" disabled>▶ Polished</button><button id="analyze" disabled>Transcribe recording</button><label for="transcriber">Engine</label><select id="transcriber"><option value="basic-pitch">Basic Pitch (on device)</option><option value="heuristic">Server (fallback)</option></select></div><div class="bar"><label for="tunestrength">Pitch correction</label><input id="tunestrength" type="range" min="0" max="100" value="85" step="5"><span id="tunelevel">85%</span><button id="tune" disabled>Correct singing pitch</button><button id="playtuned" disabled>▶ Tuned</button><button id="downloadtuned" disabled>Download tuned voice</button></div>
-<div id="tuneinfo" class="muted">Experimental monophonic tuning for short, isolated vocal recordings. Not Melodyne or AutoTune; key and scale selection aren't available yet.</div>
+<div id="tuneinfo" class="muted">Open-source WORLD tuning preserves the vocal spectral envelope while correcting pitch. Best with isolated solo singing.</div>
+<div class="bar"><button id="detectvocal" disabled>Detect sung notes</button><button id="resetvocal" disabled>Reset note edits</button><span class="muted">Use −/+ on each note to select its target pitch.</span></div>
+<div id="vocalnoteeditor" class="track" aria-label="Vocal note editor">Record a solo vocal to detect and edit notes.</div>
 <div class="bar"><button id="downloadvocal" disabled>Download polished vocal</button></div><div id="polishinfo" class="muted" aria-live="polite">Vocal polish changes tone and dynamics, not singing pitch.</div>
 <hr><h2>Arrange</h2><div class="bar"><label><input type="checkbox" id="melodylock" checked> Protect original melody from AI edits</label></div><div class="bar"><label>Tempo <input id="bpm" type="number" min="45" max="220" value="100"></label><label>Melody instrument <select id="instrument"><option value="piano">Piano</option><option value="marimba">Marimba</option><option value="strings">Strings</option><option value="bass">Bass</option><option value="chip">8-bit</option></select></label></div>
 <div class="track"><div class="row"><strong>Melody</strong><button id="addnote">+ Note</button><button id="clearnotes">Clear</button><small id="notecount"></small></div><div id="melodyroll" class="roll"></div><small>Tap a note to remove it. New notes are appended in sequence.</small></div>
@@ -13,7 +15,7 @@
 <script>
 'use strict';
 const $=id=>document.getElementById(id), state={bpm:100,instrument:'piano',notes:[],drums:[],melody_locked:true};
-const history=[],conversation=[];let ctx=null,recorder=null,mic=null,chunks=[],audio=null,polished=null,tuned=null,source=null;
+const history=[],conversation=[];let ctx=null,recorder=null,mic=null,chunks=[],audio=null,polished=null,tuned=null,source=null,vocalNotes=null,originalVocalNotes=null;
 const setting=k=>localStorage.getItem('tandem-'+k)||'';
 $('api').value=setting('api');$('token').value=setting('token');
 function context(){return ctx||(ctx=new (window.AudioContext||window.webkitAudioContext)())}
@@ -49,21 +51,48 @@ function midi(){const tempo=60000000/state.bpm;const events=[[0,[255,81,3,(tempo
 $('exportmidi').onclick=()=>download(midi(),'tandem.mid');
 async function decoded(blob){return await context().decodeAudioData(await blob.arrayBuffer())}
 function monoWav(buf){const x=new Float32Array(buf.length);for(let ch=0;ch<buf.numberOfChannels;ch++){const a=buf.getChannelData(ch);for(let i=0;i<x.length;i++)x[i]+=a[i]/buf.numberOfChannels}return wavBlob(x,buf.sampleRate)}
-async function loadAudio(blob){audio=blob;polished=null;tuned=null;$('tune').disabled=false;$('playtuned').disabled=$('downloadtuned').disabled=true;$('tuneinfo').textContent='Ready to correct singing pitch. Best for one voice without background music.';$('polishinfo').textContent='Vocal polish changes tone and dynamics, not singing pitch.';$('polished').disabled=$('downloadvocal').disabled=true;for(const id of ['original','polish','analyze'])$(id).disabled=false;const buf=await decoded(blob),data=buf.getChannelData(0),c=$('wave'),g=c.getContext('2d');g.clearRect(0,0,c.width,c.height);g.fillStyle='#8fe3ce';const step=Math.max(1,Math.floor(data.length/c.width));for(let i=0;i<c.width;i++){let mx=0;for(let j=i*step;j<Math.min(data.length,(i+1)*step);j+=4)mx=Math.max(mx,Math.abs(data[j]));g.fillRect(i,c.height/2-mx*35,1,mx*70)}status('Recorded '+buf.duration.toFixed(1)+'s. Select Transcribe or Polish.')}
+async function loadAudio(blob){audio=blob;polished=null;tuned=null;vocalNotes=null;originalVocalNotes=null;$('detectvocal').disabled=false;$('resetvocal').disabled=true;$('vocalnoteeditor').textContent='Press Detect sung notes to edit the pitch targets.';$('tune').disabled=false;$('playtuned').disabled=$('downloadtuned').disabled=true;$('tuneinfo').textContent='Ready to correct singing pitch. Best for one voice without background music.';$('polishinfo').textContent='Vocal polish changes tone and dynamics, not singing pitch.';$('polished').disabled=$('downloadvocal').disabled=true;for(const id of ['original','polish','analyze'])$(id).disabled=false;const buf=await decoded(blob),data=buf.getChannelData(0),c=$('wave'),g=c.getContext('2d');g.clearRect(0,0,c.width,c.height);g.fillStyle='#8fe3ce';const step=Math.max(1,Math.floor(data.length/c.width));for(let i=0;i<c.width;i++){let mx=0;for(let j=i*step;j<Math.min(data.length,(i+1)*step);j+=4)mx=Math.max(mx,Math.abs(data[j]));g.fillRect(i,c.height/2-mx*35,1,mx*70)}status('Recorded '+buf.duration.toFixed(1)+'s. Select Transcribe or Polish.')}
 $('import').onclick=()=>$('audiofile').click();
 $('audiofile').onchange=async e=>{try{await loadAudio(e.target.files[0])}catch(err){status('Could not decode audio: '+err.message)}};
 $('record').onclick=async()=>{try{mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});chunks=[];recorder=new MediaRecorder(mic);recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=async()=>{mic.getTracks().forEach(t=>t.stop());try{await loadAudio(new Blob(chunks,{type:recorder.mimeType}))}catch(e){status(e.message)}};recorder.start();$('record').disabled=true;$('finish').disabled=false;status('Recording…')}catch(e){status('Mic unavailable: '+e.message)}};
 $('finish').onclick=()=>{if(recorder?.state==='recording')recorder.stop();$('record').disabled=false;$('finish').disabled=true};
 async function playBlob(blob){const ac=context();await ac.resume();const b=await decoded(blob),s=ac.createBufferSource();s.buffer=b;s.connect(ac.destination);s.start()}
+function noteName(midi){const names=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];return names[((midi%12)+12)%12]+(Math.floor(midi/12)-1)}
+function renderVocalNotes(){
+  const root=$('vocalnoteeditor');root.replaceChildren();
+  if(!vocalNotes?.length){root.textContent='No stable sung notes detected. Try a clean solo vocal with held notes.';return}
+  vocalNotes.forEach((note,i)=>{
+    const r=document.createElement('div');r.className='row';r.style.marginBottom='7px';
+    const label=document.createElement('span');label.textContent=(i+1)+'. '+note.t.toFixed(2)+'s · '+noteName(note.m);label.style.minWidth='110px';
+    const down=document.createElement('button');down.textContent='−';down.title='Lower target one semitone';
+    const up=document.createElement('button');up.textContent='+';up.title='Raise target one semitone';
+    down.onclick=()=>{note.m=Math.max(36,note.m-1);renderVocalNotes()};
+    up.onclick=()=>{note.m=Math.min(96,note.m+1);renderVocalNotes()};
+    r.append(label,down,up);root.append(r);
+  });
+}
+$('detectvocal').onclick=async()=>{
+  try{
+    status('Detecting vocal notes…');
+    const {transcribeWithBasicPitch}=await import('./transcription.js');
+    const notes=await transcribeWithBasicPitch(await decoded(audio),p=>status('Detecting vocal notes: '+p+'%'));
+    vocalNotes=notes.map(n=>({...n}));originalVocalNotes=notes.map(n=>({...n}));
+    $('resetvocal').disabled=false;renderVocalNotes();status('Vocal notes ready to edit.');
+  }catch(e){status('Vocal note detection failed: '+e.message)}
+};
+$('resetvocal').onclick=()=>{vocalNotes=originalVocalNotes?.map(n=>({...n}));renderVocalNotes()};
 $('tunestrength').oninput=()=>{$('tunelevel').textContent=$('tunestrength').value+'%'};
 $('tune').onclick=async()=>{try{
  status('Correcting singing pitch…');
  const strength=Number($('tunestrength').value)/100;
- const response=await audioRequest('/api/tune?strength='+encodeURIComponent(strength));
+ const wav=monoWav(await decoded(audio));
+ const form=new FormData();form.append('file',wav,'vocal.wav');
+ if(vocalNotes?.length)form.append('notes_json',JSON.stringify(vocalNotes));
+ const response=await request('/api/tune?engine=world&strength='+encodeURIComponent(strength),{method:'POST',body:form});
  tuned=await response.blob();
  const count=Number(response.headers.get('X-Tandem-Tuned-Notes')||0);
  $('playtuned').disabled=$('downloadtuned').disabled=false;
- $('tuneinfo').textContent=count>0?'Corrected '+count+' detected note region(s). Compare Original and Tuned. Experimental quality; consonants may sound unnatural.':'No confident correctable notes detected. Try a sustained solo vocal without accompaniment.';
+ $('tuneinfo').textContent=count>0?'Corrected '+count+' voiced frames using the open-source WORLD vocoder. Compare Original and Tuned; audio quality is experimental.':'No confident correctable notes detected. Try a sustained solo vocal without accompaniment.';
  status('Pitch correction complete');
 }catch(e){status('Pitch correction failed: '+e.message)}};
 $('playtuned').onclick=()=>playBlob(tuned).catch(e=>status(e.message));
