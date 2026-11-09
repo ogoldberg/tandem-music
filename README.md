@@ -40,7 +40,8 @@ A checked box means the feature is **implemented in code**, not that it has been
 
 **Still missing**
 
-- [ ] Browser end-to-end tests and real-device evidence on Mac and Android (CI.2, QA.1).
+- [x] Browser end-to-end tests in headless Chromium run in GitHub Actions (CI.2; import, server transcription, edit/undo, play, export, save/reload).
+- [ ] Real-device evidence on Mac and Android (QA.1).
 - [x] Per-IP rate limiting of the audio routes (shared Upstash Redis store) and input resource limits (SEC.1).
 - [ ] Proven natural vocal quality (VOX.1, VOX.2).
 - [ ] Reliable pitch contour editing and full undo/versioning (VOX.3, EDIT.1).

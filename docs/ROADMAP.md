@@ -60,7 +60,7 @@ This is the working task list, in strategic order: protect the deployment, prove
   - **Acceptance:** the shared token is no longer stored in `localStorage`; `docs/SECURITY.md` updated.
 
 ### 4. Safety net before larger UI work
-- [ ] **CI.2** Add browser end-to-end tests that run in CI
+- [x] **CI.2** Add browser end-to-end tests that run in CI
   - Headless browser (e.g. Playwright) against the real FastAPI app: load `/`, import a WAV fixture, transcribe with the server fallback, edit a note, undo, play, export WAV/MIDI/JSON, save and reload a project.
   - **Acceptance:** runs in `.github/workflows/tests.yml`; fails on any uncaught page error or console error; covers the 48 kHz decode path.
 - [ ] **SEC.3** Add integrity checks to, or self-host, the Basic Pitch JS and model

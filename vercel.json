@@ -4,7 +4,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 60,
-      "excludeFiles": "{tests/**,.github/**,**/__pycache__/**,README.md,render.yaml}"
+      "excludeFiles": "{tests/**,e2e/**,.github/**,**/__pycache__/**,README.md,render.yaml}"
     }
   }
 }

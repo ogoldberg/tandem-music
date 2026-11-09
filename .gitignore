@@ -11,3 +11,4 @@ tandem.db
 .claude/pr-*-status.json
 .claude/post-mortems/
 .claude/route-history.jsonl
+e2e-results/

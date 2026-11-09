@@ -70,4 +70,5 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | api/index.py | Vercel FastAPI entry |
 | requirements.txt | Python dependencies including pyworld-prebuilt |
 | tests/ | Python and Node checks |
-| .github/workflows/tests.yml | GitHub Actions tests |
+| .github/workflows/tests.yml | GitHub Actions tests (backend, transcription, e2e) |
+| e2e/ | Playwright browser end-to-end tests against the real app |

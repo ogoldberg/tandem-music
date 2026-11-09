@@ -20,6 +20,10 @@ python -m pytest -q
 python -m pytest tests/test_api.py::test_token_auth -q     # single Python test
 node --test tests/transcription.test.mjs tests/polish.test.mjs
 node --test --test-name-pattern="resampl" tests/transcription.test.mjs  # single Node test
+
+# Browser end-to-end (Playwright, headless Chromium; not collected by plain `pytest`)
+python -m pip install -r requirements-e2e.txt && python -m playwright install chromium
+python -m pytest e2e -q
 ```
 
 There is no linter or formatter configured.
@@ -40,4 +44,5 @@ There is no linter or formatter configured.
 
 - `tests/test_api.py` drives the ASGI app in-process with `httpx.ASGITransport` (no server needed), uses `monkeypatch` for env vars, and builds synthetic WAVs with `wav_bytes`. LLM providers are mocked — never call real paid APIs in tests.
 - Node tests mock `OfflineAudioContext`.
+- `e2e/` tests start uvicorn on a free port (TANDEM_/VERCEL/UPSTASH_ env stripped) and fail on any page error or `console.error`; they use the server fallback transcriber so they need no CDN.
 - Docs are deliberate about "implemented vs planned" and "unverified" device QA status; don't describe features as working or verified without real evidence (see `docs/TESTING.md` release gate).
