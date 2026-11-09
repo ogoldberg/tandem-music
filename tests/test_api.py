@@ -56,7 +56,7 @@ def test_action_validation():
     assert result[2]=={"type":"add_note","pitch":96,"start":0,"duration":0.08}
 
 def test_json_parsing():
-    wrapped = "```json\\n" + '{"reply":"Done","actions":[]}' + "\\n```"
+    wrapped = "```json\n" + '{"reply":"Done","actions":[]}' + "\n```"
     assert server.extract_json(wrapped)["reply"] == "Done"
 
 def test_chat_action_filter(client,monkeypatch):
