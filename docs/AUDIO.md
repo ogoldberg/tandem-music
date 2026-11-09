@@ -10,7 +10,7 @@ For beatboxing, server analysis uses approximate energy peaks and spectral centr
 ## Vocal polish vs vocal tuning
 Polish (`polish.js`, on device since PERF.1): band-pass EQ, soft gating, compression and makeup gain (Natural/Studio), run in the browser on the decoded recording, so audio is not uploaded and there is no length cap beyond the device's memory. It is a sample-exact port of the former `/api/polish` SciPy DSP (`tests/fixtures/make_polish_fixture.py` keeps that reference). It can affect tone/level but does not fix singing pitch.
 
-Tune (`/api/tune`): **WORLD/PyWorld** vocoder. Separate F0 estimation, spectral envelope and aperiodicity enable resynthesis with changed F0 while approximately retaining vowel/formant character. Corrected audio is a new WAV; the original is unchanged.
+Tune (`/api/tune`): **WORLD/PyWorld** vocoder. Separate F0 estimation, spectral envelope and aperiodicity enable resynthesis with changed F0 while approximately retaining vowel/formant character. Corrected audio is a new WAV; the original is unchanged. Analysis and synthesis share one 10 ms frame period (`FRAME_PERIOD_MS`); before November 2026 synthesis used pyworld's 5 ms default, so tuned clips played at double speed and the second half was silent.
 
 The browser can call Basic Pitch to detect vocal note targets and present +/- semitone controls. The WORLD endpoint supports strength 0..1 and optional `notes_json`. Without targets it snaps voiced frames toward nearest semitone. It limits submissions to short solo-vocal clips (25 seconds). It does not separate voice from background music or reliably edit polyphonic sources.
 

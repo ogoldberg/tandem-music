@@ -50,6 +50,8 @@ def _target_notes(f0, times, notes, strength):
         changed+=int(np.count_nonzero(np.abs(cents*strength)>3))
     return out,changed
 
+FRAME_PERIOD_MS=10.0
+
 def world_tune(samples: np.ndarray, sample_rate: int, strength: float = .85,
                notes: list[dict] | None = None, scale: list[int] | None = None):
     """Return a length-preserving, formant-aware WORLD re-synthesis and metadata."""
@@ -61,7 +63,7 @@ def world_tune(samples: np.ndarray, sample_rate: int, strength: float = .85,
     if len(x)==0:raise ValueError("Empty recording")
     if strength==0:return x.copy(),{"corrected_frames":0,"engine":"world"}
     # WORLD's time-series analysis remains affordable for short solo vocal clips.
-    f0_coarse,t=pw.dio(x,sample_rate,frame_period=10.0)
+    f0_coarse,t=pw.dio(x,sample_rate,frame_period=FRAME_PERIOD_MS)
     f0=pw.stonemask(x,f0_coarse,t,sample_rate)
     if notes:
         corrected,count=_target_notes(f0,t,notes,strength)
@@ -70,7 +72,8 @@ def world_tune(samples: np.ndarray, sample_rate: int, strength: float = .85,
     if count == 0:return x.copy(),{"corrected_frames":0,"engine":"world"}
     spectral=pw.cheaptrick(x,f0,t,sample_rate)
     aperiodic=pw.d4c(x,f0,t,sample_rate)
-    y=pw.synthesize(corrected,spectral,aperiodic,sample_rate)
+    # Synthesis must use the analysis frame period; pyworld defaults to 5 ms and would time-compress.
+    y=pw.synthesize(corrected,spectral,aperiodic,sample_rate,frame_period=FRAME_PERIOD_MS)
     if len(y)<len(x):y=np.pad(y,(0,len(x)-len(y)))
     y=y[:len(x)]
     if not np.all(np.isfinite(y)):raise ValueError("WORLD generated non-finite audio")
