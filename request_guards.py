@@ -12,6 +12,7 @@ serverless instances, whose in-process memory is not shared or persistent:
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
 import os
@@ -104,16 +105,28 @@ def reset_memory_store() -> None:
 
 
 def client_id(scope) -> str:
-    """Client IP. On Vercel the platform overwrites x-forwarded-for with the real
-    client address, so it is trusted there; elsewhere it is caller-controlled."""
+    """Rate-limit key for the client. On Vercel the platform overwrites
+    x-forwarded-for with the real client address, so it is trusted there;
+    elsewhere it is caller-controlled and the socket address is used. IPv6
+    clients are keyed by their /64, since one host usually controls a whole /64."""
+    address = ""
     if os.getenv("VERCEL"):
         for name, value in scope.get("headers") or []:
             if name == b"x-forwarded-for":
-                first = value.decode("latin-1").split(",")[0].strip()
-                if first:
-                    return first
-    client = scope.get("client")
-    return client[0] if client else "unknown"
+                address = value.decode("latin-1").split(",")[0].strip()
+                break
+    if not address:
+        client = scope.get("client")
+        address = client[0] if client else "unknown"
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return address[:64]
+    if ip.version == 6:
+        if ip.ipv4_mapped:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return str(ip)
 
 
 def _json_response(status: int, detail: str, extra_headers: list[tuple[bytes, bytes]] | None = None):

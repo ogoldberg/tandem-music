@@ -83,7 +83,8 @@ class ChatProject(BaseModel):
 class ChatTurn(BaseModel):
     model_config=ConfigDict(extra="forbid")
     role: Literal["user","assistant"]
-    content: str = Field(max_length=2000)
+    # Same cap as ChatRequest.message: the browser sends earlier messages back verbatim as history.
+    content: str = Field(max_length=3000)
 class ChatRequest(BaseModel):
     model_config=ConfigDict(extra="forbid")
     message: str = Field(min_length=1,max_length=3000)
