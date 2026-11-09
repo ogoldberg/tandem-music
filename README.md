@@ -4,9 +4,9 @@ Tandem is an experimental full-stack, provider-agnostic, browser-based AI compos
 
 ## Features
 - Record/import humming, beatboxing and singing in browser.
-- API transcription from 16-bit PCM WAV into notes and drum hits; editable piano roll, tempo and instruments.
+- On-device Spotify Basic Pitch 1.0.1 neural transcription for melodies (lazy-loaded from external model/CDN), with server heuristic fallback; server beatbox onset analysis. Editable note timeline, tempo and instruments.
 - Two-track synthesis and playback; export arrangement as MIDI or WAV.
-- AI conversational editing of a portable note-and-drum project. AI replies are validated structured actions, never executable code.
+- AI conversational editing of a portable note-and-drum project. AI replies are validated structured actions, never executable code. Melody lock is enabled by default to reject AI edits that change your notes.
 - Server-side basic vocal polishing (band-pass filter, gate and compression). **Automatic pitch correction is not implemented**.
 - Portable project JSON save/load and undo.
 - OpenAI-compatible chat completions, Anthropic Messages API, Gemini generateContent.
@@ -38,10 +38,20 @@ For local browser testing, run `python -m http.server 8000` in another terminal 
 
 ### Current limitations
 
-- Audio-processing via Python NumPy/SciPy runs inside a Vercel Function; deployment is subject to the Python bundle and request-body limits.
+- Audio-processing via Python NumPy/SciPy runs inside a Vercel Function; deployment is subject to the Python bundle and request-body limits. Basic Pitch downloads its JavaScript model from a public CDN on first use, so it needs a network connection, and browser/memory compatibility still requires device testing.
 - Project data stays in your browser or downloaded JSON. Server-side SQLite is intentionally **not** deployed on ephemeral serverless infrastructure.
 - For production and multi-user access, add proper authentication, project storage, abuse prevention, rate limiting and privacy protections.
 - Automatic singing pitch correction is not yet implemented. The vocal polish endpoint filters and compresses audio.
 - Humming and beatbox recognition are heuristic and need real-device testing.
 - Conversations are text-based; microphone recordings are analyzed by DSP, not sent to the LLM as voice messages.
 - Never put provider API keys in the frontend or repository.
+
+## Model capability boundaries
+
+`GET /api/config` reports distinct capabilities for conversation, on-device transcription, rhythm recognition, vocal polish, and a reserved music-generation slot. Music generation is currently disabled; setting `TANDEM_MUSIC_PROVIDER` and `TANDEM_MUSIC_MODEL` alone **does not activate a provider integration**. For the LLM, use server environment variables; do not check credentials into Git. Spotify Basic Pitch is Apache-2.0 licensed (https://github.com/spotify/basic-pitch-ts).
+
+## Tests
+
+- Backend: `python -m pytest -q`
+- Browser transcription adapter: `node --test tests/transcription.test.mjs` (Node 22+)
+- GitHub Actions runs both suites on pushes and pull requests. Browser microphone and Basic Pitch model-loading tests still need real Chrome/Safari/Android validation.
