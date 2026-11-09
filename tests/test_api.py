@@ -359,7 +359,7 @@ def test_long_message_can_be_sent_back_as_history(client,monkeypatch):
         "history":[{"role":"user","content":long_text},{"role":"assistant","content":"ok"}]}))
     assert r.status_code==200
 
-def test_declared_oversize_content_length_refused_without_reading_body():
+def test_declared_oversize_content_length_refused_without_reading_body(monkeypatch):
     called={"app":False,"receive":0}
     async def inner(scope,receive,send): called["app"]=True
     async def receive():
@@ -369,10 +369,8 @@ def test_declared_oversize_content_length_refused_without_reading_body():
     async def send(message): sent.append(message)
     scope={"type":"http","method":"POST","path":"/api/tune","client":("127.0.0.1",1),
            "headers":[(b"content-length",str(guards.AUDIO_BODY_MAX_BYTES+1).encode())]}
-    import os
-    os.environ.pop("VERCEL",None)
-    for name in ("UPSTASH_REDIS_REST_URL","UPSTASH_REDIS_REST_TOKEN","KV_REST_API_URL","KV_REST_API_TOKEN"):
-        os.environ.pop(name,None)
+    for name in ("VERCEL","UPSTASH_REDIS_REST_URL","UPSTASH_REDIS_REST_TOKEN","KV_REST_API_URL","KV_REST_API_TOKEN"):
+        monkeypatch.delenv(name,raising=False)
     guards.reset_memory_store()
     run(guards.RequestGuardMiddleware(inner)(scope,receive,send))
     assert sent[0]["status"]==413
