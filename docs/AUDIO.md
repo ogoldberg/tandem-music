@@ -33,9 +33,12 @@ The browser can call Basic Pitch to detect vocal note targets and present +/- se
 | Length | identical sample count | identical |
 | Note transitions (pitch crossing halfway between notes) | moved ≤ 20 ms | ≤ 10 ms (one analysis hop) |
 | Loudness change per note / whole clip | ≤ 1 dB / ≤ 0.5 dB | < 0.05 dB |
+| Note targets beat snapping when sung 55-70 cents off (steady): median / 90th percentile | ≤ 3 / ≤ 6 cents | 0.2-0.3 / 0.5-0.6 cents (snapping without targets lands about 100 cents off, on the neighbouring semitone) |
 | Strength 0, with and without targets | output PCM identical to input | identical |
 
 The measured metrics for every case are written to `.pytest_cache/d/vox1/metrics.json` (or `$TANDEM_VOX_REPORT`). The benchmark found that `encode_wav` truncated with a 32767 scale while `decode_wav` divides by 32768, so every pass through the server lowered most samples by one 16-bit step; it now rounds on the 32768 scale and round-trips exactly.
+
+Vibrato: correction is applied frame by frame, so strength 1 removes vibrato entirely and strength *s* keeps about (1 − *s*) of its depth. The benchmark scores pitch against the flat note, so it rewards that and does not check that vibrato survives; whether strength 1 sounds too robotic on a real voice is a listening question for VOX.2.
 
 What it does not show: the fixtures are clean synthetic harmonics with known pitch, so WORLD's analysis is near ideal. They have no consonants, breaths, formant movement, octave errors or real-room noise, and nothing here measures timbre or artifacts by ear. Real-voice quality is VOX.2's blinded listening test.
 

@@ -27,6 +27,9 @@ import tandem_backend as server  # noqa: E402
 RATES = [16000, 22050, 44100, 48000]
 # (MIDI target, how far off it is sung in cents). A short phrase: C4 E4 G4 F4.
 PHRASE = [(60, +40), (64, -35), (67, +30), (65, -45)]
+# The same notes sung more than 50 cents off, so nearest-semitone snapping lands on the wrong note
+# and only a tuner that follows the note targets can get them right.
+FAR_PHRASE = [(60, +60), (64, -65), (67, +70), (65, -55)]
 NOTE_SECONDS = 0.8
 LEAD_SECONDS = 0.15  # silence before and after the phrase
 CASES = {
@@ -54,18 +57,18 @@ def midi_hz(m):
     return 440.0 * 2 ** ((m - 69) / 12)
 
 
-def render(case, rate, seed=0):
-    """A harmonic 'voice' singing PHRASE detuned, with the case's glide, vibrato and noise.
+def render(case, rate, seed=0, phrase=PHRASE):
+    """A harmonic 'voice' singing `phrase` detuned, with the case's glide, vibrato and noise.
 
     Returns (samples, note list with intended targets and their times in seconds).
     """
     glide, vibrato_cents, snr_db = CASES[case]
-    n_notes = len(PHRASE)
+    n_notes = len(phrase)
     total = LEAD_SECONDS * 2 + NOTE_SECONDS * n_notes
     t = np.arange(int(round(total * rate))) / rate
     rel = t - LEAD_SECONDS
     # Sung pitch in MIDI (fractional): each note held detuned, joined by linear glides.
-    sung = np.array([m + c / 100 for m, c in PHRASE])
+    sung = np.array([m + c / 100 for m, c in phrase])
     idx = np.clip(np.floor(rel / NOTE_SECONDS).astype(int), 0, n_notes - 1)
     pitch = sung[idx].copy()
     for k in range(1, n_notes):
@@ -91,7 +94,7 @@ def render(case, rate, seed=0):
         rng = np.random.default_rng(seed)
         sig_rms = np.sqrt(np.mean(x[sung_region] ** 2))
         x = x + rng.normal(0, sig_rms / 10 ** (snr_db / 20), len(x))
-    notes = [{"m": m, "t": round(LEAD_SECONDS + k * NOTE_SECONDS, 3), "d": NOTE_SECONDS} for k, (m, _) in enumerate(PHRASE)]
+    notes = [{"m": m, "t": round(LEAD_SECONDS + k * NOTE_SECONDS, 3), "d": NOTE_SECONDS} for k, (m, _) in enumerate(phrase)]
     return x.astype(np.float64), notes
 
 
@@ -201,7 +204,13 @@ def report(request):
     metrics = {}
     yield metrics
     target = os.getenv("TANDEM_VOX_REPORT")
-    path = Path(target) if target else request.config.cache.mkdir("vox1") / "metrics.json"
+    cache = getattr(request.config, "cache", None)  # absent under -p no:cacheprovider
+    if target:
+        path = Path(target)
+    elif cache is not None:
+        path = cache.mkdir("vox1") / "metrics.json"
+    else:
+        return
     path.write_text(json.dumps(metrics, indent=2, sort_keys=True))
 
 
@@ -246,6 +255,22 @@ def test_nearest_semitone_snapping_without_targets(case, rate, tune, report):
     m.update(before=summary(before), after=summary(after))
     assert np.median(after) <= MAX_MEDIAN_CENTS_SNAP, m
     assert np.median(before) >= MIN_IMPROVEMENT * np.median(after), m
+
+
+@pytest.mark.parametrize("rate", RATES)
+def test_note_targets_beat_snapping_when_sung_more_than_half_a_semitone_off(rate, tune, report):
+    x, notes = render("steady", rate, phrase=FAR_PHRASE)
+    targeted, _ = wav_samples(tune(x, rate, 1.0, notes))
+    snapped, _ = wav_samples(tune(x, rate, 1.0))
+    assert len(targeted) == len(x)
+    before = pitch_errors(x, rate, notes)
+    after, snap = pitch_errors(targeted, rate, notes), pitch_errors(snapped, rate, notes)
+    m = report.setdefault(f"far_off/steady/{rate}", {})
+    m.update(before=summary(before), after=summary(after), snap_without_targets=summary(snap))
+    # The fixture must actually tell the two modes apart: snapping goes to the neighbouring semitone.
+    assert np.median(snap) >= 80, m
+    assert np.median(after) <= MAX_MEDIAN_CENTS_TARGETS, m
+    assert np.percentile(after, 90) <= MAX_P90_CENTS_TARGETS, m
 
 
 @pytest.mark.parametrize("rate", RATES)
