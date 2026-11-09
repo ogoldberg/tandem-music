@@ -1,11 +1,10 @@
-"""Tandem API: vendor-neutral music agent, WAV analysis and project storage."""
-import io, json, os, re, sqlite3, time, uuid, wave
+"""Tandem API: vendor-neutral music agent and WAV analysis/tuning."""
+import io, json, os, re, wave
 from pathlib import Path
 from typing import Any, Literal
 import httpx
 import numpy as np
 from scipy import signal
-from vocal_tuning import tune_vocal
 from world_tuning import world_tune
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,11 +42,6 @@ origins = [x.strip() for x in os.getenv("TANDEM_ALLOWED_ORIGINS", "http://localh
 # Added before CORS so CORS stays outermost and 413/429/503 guard responses carry CORS headers.
 app.add_middleware(RequestGuardMiddleware)
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET","POST","PUT","DELETE"], allow_headers=["*"])
-DB = os.getenv("TANDEM_DATABASE", "tandem.db")
-def db():
-    connection=sqlite3.connect(DB)
-    connection.execute("CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated REAL NOT NULL)")
-    return connection
 @app.middleware("http")
 async def authenticate(req: Request, call_next):
     if req.url.path == "/api/chat":

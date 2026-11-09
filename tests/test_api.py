@@ -12,8 +12,7 @@ def run(coro):
     return asyncio.run(coro)
 
 @pytest.fixture
-def client(monkeypatch,tmp_path):
-    monkeypatch.setattr(server,"DB",str(tmp_path/"test.db"))
+def client(monkeypatch):
     monkeypatch.delenv("TANDEM_ACCESS_TOKEN",raising=False)
     for name in ("VERCEL","UPSTASH_REDIS_REST_URL","UPSTASH_REDIS_REST_TOKEN","KV_REST_API_URL","KV_REST_API_TOKEN",
                  "TANDEM_AUDIO_RATE_LIMIT","TANDEM_AUDIO_RATE_WINDOW_SECONDS"):
