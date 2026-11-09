@@ -34,3 +34,24 @@ def test_note_editor_targets_override_nearest_semitone():
 def test_invalid_strength_and_scale():
     with pytest.raises(ValueError):quantize_f0(np.array([440.]),strength=2)
     with pytest.raises(ValueError):quantize_f0(np.array([440.]),scale=[-1])
+
+def test_world_tune_keeps_timing_across_the_whole_clip():
+    # Regression: synthesis used pyworld's default 5 ms frame period while analysis used 10 ms,
+    # so the tuned voice played at double speed in the first half and the second half was silent.
+    pytest.importorskip("pyworld")
+    from world_tuning import world_tune
+    sr=16000; t=np.arange(sr*4)/sr
+    f=np.where(t<2,440*2**(-35/1200),330*2**(-35/1200))
+    ph=2*np.pi*np.cumsum(f)/sr
+    x=.3*np.sin(ph)+.15*np.sin(2*ph)
+    y,details=world_tune(x,sr,strength=1.)
+    assert details["corrected_frames"]>0 and len(y)==len(x)
+    rms=lambda s:float(np.sqrt(np.mean(s*s)))
+    for second in range(4):
+        seg_in,seg_out=x[second*sr:(second+1)*sr],y[second*sr:(second+1)*sr]
+        assert rms(seg_out)>.5*rms(seg_in), f"second {second} is near-silent"
+    # The pitch change must stay where it was sung: the dominant frequency of each half is unchanged in place.
+    def peak_hz(s):
+        spec=np.abs(np.fft.rfft(s*np.hanning(len(s))));return np.fft.rfftfreq(len(s),1/sr)[np.argmax(spec)]
+    assert abs(peak_hz(y[int(.5*sr):int(1.5*sr)])-440)<6
+    assert abs(peak_hz(y[int(2.5*sr):int(3.5*sr)])-329.6)<6
