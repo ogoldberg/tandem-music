@@ -12,8 +12,7 @@ def run(coro):
     return asyncio.run(coro)
 
 @pytest.fixture
-def client(monkeypatch,tmp_path):
-    monkeypatch.setattr(server,"DB",str(tmp_path/"test.db"))
+def client(monkeypatch):
     monkeypatch.delenv("TANDEM_ACCESS_TOKEN",raising=False)
     for name in ("VERCEL","UPSTASH_REDIS_REST_URL","UPSTASH_REDIS_REST_TOKEN","KV_REST_API_URL","KV_REST_API_TOKEN",
                  "TANDEM_AUDIO_RATE_LIMIT","TANDEM_AUDIO_RATE_WINDOW_SECONDS"):
@@ -375,3 +374,8 @@ def test_declared_oversize_content_length_refused_without_reading_body(monkeypat
 def test_client_id_groups_ipv6_by_64(monkeypatch,addr,expected):
     monkeypatch.setenv("VERCEL","1")
     assert guards.client_id({"headers":[(b"x-forwarded-for",addr.encode())],"client":("10.0.0.1",1)})==expected
+
+def test_tune_rejects_out_of_range_strength(client):
+    # Moved from the deleted tests/test_vocal_tuning.py: it exercises the live /api/tune route, not the prototype.
+    r=run(client("POST","/api/tune?strength=2",files={"file":("silence.wav",wav_bytes(np.zeros(16000)),"audio/wav")}))
+    assert r.status_code==400

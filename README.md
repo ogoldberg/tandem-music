@@ -74,7 +74,7 @@ See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for deployment and configuration, and 
 
 ## Repository layout
 
-`index.html` (UI), `transcription.js` (Basic Pitch), `polish.js` (on-device polish), `tuning.js` (chunked pitch correction), `tandem_backend.py` (FastAPI/LLM/DSP), `world_tuning.py` (active vocal pitch correction), `vocal_tuning.py` (earlier experimental reference), `api/index.py` (Vercel), `tests/` (automated checks).
+`index.html` (UI), `transcription.js` (Basic Pitch), `polish.js` (on-device polish), `tuning.js` (chunked pitch correction), `tandem_backend.py` (FastAPI/LLM/DSP), `world_tuning.py` (active vocal pitch correction), `api/index.py` (Vercel), `tests/` (automated checks).
 
 ## Contributions
 
