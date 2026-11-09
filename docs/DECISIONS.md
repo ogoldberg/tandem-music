@@ -1,0 +1,24 @@
+# Architecture decision records (concise)
+
+Last reviewed: 2026-11-09. Decisions are revisable.
+
+## ADR-001: Browser-first rather than MPC hardware
+**Decision:** Responsive web app for Mac and Android; no required Akai MPC. **Reason:** immediate access and low friction. **Trade-off:** browser audio/CPU/device differences require testing.
+
+## ADR-002: Full-stack, not frontend-only
+**Decision:** Python FastAPI backend on Vercel for DSP and AI orchestration, browser UI for recording/editing/export. **Reason:** safe server-only credentials and native DSP libraries. **Trade-off:** function CPU/runtime/bundle constraints.
+
+## ADR-003: Capability-specific, provider-neutral models
+**Decision:** Portable project schema; configurable text LLM, on-device Basic Pitch transcription, WORLD tuning, future independent music-generation adapters. **Reason:** no single model does every job well. **Trade-off:** adapters/evals must be maintained. The present music-generation slot is not functional.
+
+## ADR-004: Preserve the user's melody
+**Decision:** Default melody lock on structured LLM edits, with undo. **Reason:** accompaniment instructions must not erase the original idea. **Trade-off:** intentional melody edits require the user to unlock; lock does not constrain every timbral/tempo change.
+
+## ADR-005: Prefer open-source vocal tuning
+**Decision:** WORLD vocoder using `pyworld-prebuilt` rather than licensing/repackaging Melodyne or Antares. **Reason:** portability, cost and control. **Trade-off:** quality and note editing are currently experimental.
+
+## ADR-006: Stateless initial storage
+**Decision:** Browser draft and portable JSON files; no cloud project DB on ephemeral Vercel functions. **Reason:** minimizes cost and complexity. **Trade-off:** projects/audio do not roam seamlessly across devices.
+
+## ADR-007: Tests and transparency
+**Decision:** Python and Node CI suites plus real-device QA and explicit implemented-vs-planned documentation. **Reason:** READY deployments do not demonstrate audio quality. **Trade-off:** ongoing evaluation and fixture maintenance.
