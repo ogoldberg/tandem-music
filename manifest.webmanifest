@@ -1,0 +1,10 @@
+{
+  "name": "Tandem — make music together",
+  "short_name": "Tandem",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#0e1522",
+  "background_color": "#0d1523",
+  "description": "Collaborative AI music sketchpad"
+}
