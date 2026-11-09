@@ -1,65 +1,66 @@
 # Tandem — Make music together
 
-Tandem is an experimental full-stack, provider-agnostic, browser-based AI composition workspace for Mac and Android.
+**Status: experimental alpha · Last documented: 2026-11-09**
 
-## Features
-- Record/import humming, beatboxing and singing in browser.
-- On-device Spotify Basic Pitch 1.0.1 neural transcription for melodies (lazy-loaded from external model/CDN), with server heuristic fallback; server beatbox onset analysis. Editable note timeline, tempo and instruments.
-- Two-track synthesis and playback; export arrangement as MIDI or WAV.
-- AI conversational editing of a portable note-and-drum project. AI replies are validated structured actions, never executable code. Melody lock is enabled by default to reject AI edits that change your notes.
-- Server-side basic vocal polishing (band-pass filter, gate and compression). **Automatic pitch correction is not implemented**.
-- Portable project JSON save/load and undo.
-- OpenAI-compatible chat completions, Anthropic Messages API, Gemini generateContent.
-- Single-origin Vercel frontend and FastAPI backend with secure server-side AI credentials.
+[Try Tandem](https://tandem-music.vercel.app/) · [Repository](https://github.com/ogoldberg/tandem-music) · [GitHub Actions](https://github.com/ogoldberg/tandem-music/actions)
 
-## Run the backend locally
-Python 3.11+:
+Tandem is a Mac- and Android-oriented, full-stack musical collaborator. Sing, hum, beatbox or describe a musical idea; turn it into editable music, work with an AI on the arrangement, and keep creative control of the original idea. The project is **not** a finished production-quality DAW, vocal editor or song-generation service. Read the [product brief](docs/PRODUCT.md) before changing scope.
+
+## Documentation — start here
+
+| Document | Purpose |
+|---|---|
+| [Product vision and user journeys](docs/PRODUCT.md) | What we are trying to achieve; experience principles, acceptance criteria, implemented vs planned |
+| [Architecture](docs/ARCHITECTURE.md) | Frontend/backend boundaries, API, schema, providers, code map |
+| [Audio engineering](docs/AUDIO.md) | Basic Pitch, beatboxing, WORLD vocal correction, audio quality and licensing |
+| [Development and deployment](docs/DEVELOPMENT.md) | Local setup, Vercel deployment, environment variables, operations |
+| [Testing and QA](docs/TESTING.md) | Unit tests, device matrix, quality evaluation, release gates |
+| [Security and privacy](docs/SECURITY.md) | Secrets, spending controls, risks and production hardening |
+| [Roadmap and history](docs/ROADMAP.md) | Current delivery state, fixes, sequencing and open decisions |
+| [Decision log](docs/DECISIONS.md) | Why the app uses these technologies and boundaries |
+
+The code is the source of truth for what is currently implemented; documents should be updated whenever behavior or scope changes. Avoid describing deployed/compiling software as “fully working” until real use has been tested.
+
+## Current capabilities
+
+- Browser microphone recording and audio import (Mac/Android browser intended; real device QA incomplete).
+- Spotify Basic Pitch **on-device** humming transcription (audio resampled to 22,050 Hz); heuristic server fallback.
+- Basic beatbox onset-to-kick/snare/hat detection.
+- Two simple instrument tracks, rudimentary timeline editing, play/stop, undo, WAV/MIDI export.
+- Save/load portable project JSON and local browser draft (recording not embedded).
+- Optional text LLM collaboration with validated structured edits and melody protection; **production model credentials not configured as of last inspection**.
+- EQ/gate/compression vocal polish with Natural/Studio presets, separate from tuning.
+- Experimental monophonic vocal pitch correction using the open-source **WORLD** vocoder via `pyworld-prebuilt`, adjustable strength and +/- note targets.
+- Python API and browser UI hosted together on Vercel.
+
+**Still missing:** reliable pitch contour editing, proven natural vocal quality, mature instrument sounds and arrangement, generative music/audio models, voice conversation, accounts/cloud project storage, real-device end-to-end evidence, and robust public rate limiting.
+
+## Quick start (local)
+
+Python 3.12 and Node 22+ recommended:
+
 ```bash
-python -m venv .venv
+git clone https://github.com/ogoldberg/tandem-music.git
+cd tandem-music
+python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-export TANDEM_PROVIDER=openai-compatible
-export TANDEM_MODEL=gpt-4.1-mini
-export TANDEM_API_KEY=your-key-here
-uvicorn tandem_backend:app --reload --port 8001
+python -m pip install -r requirements-dev.txt
+uvicorn tandem_backend:app --reload --host 127.0.0.1 --port 8000
 ```
-For OpenAI-compatible models, override `TANDEM_BASE_URL` (examples: OpenRouter, LM Studio, vLLM, Ollama `http://localhost:11434/v1`). For Anthropic set `TANDEM_PROVIDER=anthropic`, and for Gemini set `TANDEM_PROVIDER=gemini`. Choose an appropriate model name and key.
 
-For local browser testing, run `python -m http.server 8000` in another terminal and visit `http://localhost:8000`. The UI's Connection panel should point to `http://localhost:8001` for local testing.
+Open http://localhost:8000. Recording/transcription/voice processing need no paid LLM key. To enable text AI, configure server-side `TANDEM_PROVIDER`, `TANDEM_MODEL`, `TANDEM_API_KEY`, optionally `TANDEM_BASE_URL` and `TANDEM_ACCESS_TOKEN`. Never commit secrets.
 
-## Deploy on Vercel
+```bash
+python -m pytest -q
+node --test tests/transcription.test.mjs
+```
 
-1. Import [ogoldberg/tandem-music](https://github.com/ogoldberg/tandem-music) at https://vercel.com/new.
-2. Choose **Other** framework (no frontend build), repository root, and the default deploy settings. Python 3.12 is pinned in `.python-version`.
-3. In Vercel Project → Settings → Environment Variables, set `TANDEM_PROVIDER`, `TANDEM_MODEL`, and `TANDEM_API_KEY`. Supported providers: `openai-compatible` (default), `anthropic`, `gemini`, `ollama`; compatible proxies may also use `TANDEM_BASE_URL`.
-4. Optionally set `TANDEM_ACCESS_TOKEN` to restrict API access. This is a shared bearer secret for personal testing, **not** per-user authentication. Enter it in the app's Connection panel.
-5. Redeploy after changing environment variables; verify `/api/health` and the site root, then record and transcribe a short sound.
-6. Monitor Vercel function usage and AI usage; stay within your plan's quotas. Hobby is for personal/non-commercial use.
+See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for deployment and configuration, and [TESTING.md](docs/TESTING.md) for verification standards.
 
-### Current limitations
+## Repository layout
 
-- Audio-processing via Python NumPy/SciPy runs inside a Vercel Function; deployment is subject to the Python bundle and request-body limits. Basic Pitch downloads its JavaScript model from a public CDN on first use, so it needs a network connection, and browser/memory compatibility still requires device testing.
-- Project data stays in your browser or downloaded JSON. Server-side SQLite is intentionally **not** deployed on ephemeral serverless infrastructure.
-- For production and multi-user access, add proper authentication, project storage, abuse prevention, rate limiting and privacy protections.
-- Automatic singing pitch correction is not yet implemented. The vocal polish endpoint filters and compresses audio.
-- Humming and beatbox recognition are heuristic and need real-device testing.
-- Conversations are text-based; microphone recordings are analyzed by DSP, not sent to the LLM as voice messages.
-- Never put provider API keys in the frontend or repository.
+`index.html` (UI), `transcription.js` (Basic Pitch), `tandem_backend.py` (FastAPI/LLM/DSP), `world_tuning.py` (active vocal pitch correction), `vocal_tuning.py` (earlier experimental reference), `api/index.py` (Vercel), `tests/` (automated checks).
 
-## Model capability boundaries
+## Contributions
 
-`GET /api/config` reports distinct capabilities for conversation, on-device transcription, rhythm recognition, vocal polish, and a reserved music-generation slot. Music generation is currently disabled; setting `TANDEM_MUSIC_PROVIDER` and `TANDEM_MUSIC_MODEL` alone **does not activate a provider integration**. For the LLM, use server environment variables; do not check credentials into Git. Spotify Basic Pitch is Apache-2.0 licensed (https://github.com/spotify/basic-pitch-ts).
-
-## Tests
-
-- Backend: `python -m pytest -q`
-- Browser transcription adapter: `node --test tests/transcription.test.mjs` (Node 22+)
-- GitHub Actions runs both suites on pushes and pull requests. Browser microphone and Basic Pitch model-loading tests still need real Chrome/Safari/Android validation.
-
-## Open-source vocal tuning (WORLD)
-
-Tandem uses [WORLD](https://github.com/mmorise/World) via the Python 3.12 compatible `pyworld-prebuilt==0.3.6.post1` package, retaining separate pitch (F0), spectral-envelope and aperiodicity representations. The `/api/tune` endpoint accepts a WAV file, `strength=0..1`, and optional `notes_json` (the user's manually edited targets). Detect sung notes in the browser and adjust target pitches using the −/+ buttons before correction. The original file remains unchanged.
-
-WORLD is an open-source vocoder, not Melodyne or Antares Auto-Tune. This first integration is **experimental and monophonic**: it is not intended for background mixes or complex polyphony, and may produce artifacts, especially on consonants and vibrato. For no edited targets it quantizes each voiced F0 frame to the nearest chromatic note; user-edited targets override this within their time ranges. The server limits inputs to 25 seconds for processing safety. The UI currently uses the browser Basic Pitch detector to create editable note targets.
-
-Automated tests cover F0 quantization, bypass, scale constraints, manual targets, and the original pitch-correction routines. A deployment-ready build is not an audio-quality evaluation; test using dry human singing on Android and Mac before claiming production-ready vocal correction.
+Start with [PRODUCT.md](docs/PRODUCT.md), follow the current APIs in [ARCHITECTURE.md](docs/ARCHITECTURE.md), add tests for behavior changes and document limitations honestly. The repository is public; review write access, branch rules and third-party dependency licenses before broader collaboration.
