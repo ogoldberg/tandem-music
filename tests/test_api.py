@@ -124,6 +124,18 @@ def test_analyze_sine_and_silence(client):
     r=run(client("POST","/api/analyze?mode=melody",files={"file":("silence.wav",silence,"audio/wav")}))
     assert r.status_code==200 and r.json()["notes"]==[]
 
+def test_vocal_presets_have_distinct_processing(client):
+    rate=16000
+    audio=wav_bytes(.045*np.sin(2*np.pi*220*np.arange(rate)/rate))
+    natural=run(client("POST","/api/polish?style=natural",
+        files={"file":("voice.wav",audio,"audio/wav")}))
+    studio=run(client("POST","/api/polish?style=studio",
+        files={"file":("voice.wav",audio,"audio/wav")}))
+    assert natural.status_code==200 and studio.status_code==200
+    assert natural.content!=studio.content
+    assert run(client("POST","/api/polish?style=unknown",
+        files={"file":("voice.wav",audio,"audio/wav")})).status_code==400
+
 def test_audio_validation(client):
     r=run(client("POST","/api/analyze",files={"file":("bad.wav",b"not audio","audio/wav")}))
     assert r.status_code==400
