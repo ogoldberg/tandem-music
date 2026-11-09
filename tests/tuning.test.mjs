@@ -76,7 +76,7 @@ test("encodeWav16 and decodeWav16 round-trip at the original rate", () => {
   assert.throws(() => decodeWav16(new ArrayBuffer(8)), /not a WAV/);
 });
 
-test("tuneInChunks sends each chunk with offset notes, retries rate limits and stitches the result", async () => {
+test("tuneInChunks sends each chunk, retries rate limits, stitches the result and offsets note targets", async () => {
   const sr = 16000, x = sine(Math.round(95 * sr), sr), sent = [], waits = [];
   let limited = false;
   const send = async ({ wav, notes, strength }) => {
@@ -85,19 +85,21 @@ test("tuneInChunks sends each chunk with offset notes, retries rate limits and s
     sent.push({ sampleRate, length: samples.length, notes, strength });
     return { wav: encodeWav16(samples, sampleRate), corrected: 10 };
   };
-  const notes = [{ m: 60, t: 20, d: 2 }, { m: 67, t: 93, d: 1.5 }];
-  const res = await tuneInChunks(x, sr, { strength: 0.85, notes, send, sleep: async ms => waits.push(ms) });
+  const res = await tuneInChunks(x, sr, { strength: 0.85, send, sleep: async ms => waits.push(ms) });
   assert.equal(res.chunks, 7);
   assert.equal(sent.length, 7);
   assert.deepEqual(waits, [7000]);
-  assert.equal(res.corrected, 70);
-  assert.ok(sent.every(s => s.sampleRate === sr && s.strength === 0.85 && s.length <= 16 * sr));
-  assert.deepEqual(sent[1].notes, [{ m: 60, t: 5, d: 2 }]);
-  assert.deepEqual(sent[6].notes, [{ m: 67, t: 3, d: 1.5 }]);
+  // 10 frames per chunk, overlaps counted once: six 16 s chunks credited 15 s each, plus the last 5 s chunk.
+  assert.equal(res.corrected, Math.round(6 * 10 * 15 / 16 + 10));
+  assert.ok(sent.every(s => s.sampleRate === sr && s.strength === 0.85 && s.length <= 16 * sr && s.notes === null));
   assert.equal(res.samples.length, x.length);
   let err = 0;
   for (let i = 0; i < x.length; i++) err = Math.max(err, Math.abs(res.samples[i] - x[i]));
   assert.ok(err < 1e-3, `max error ${err}`);
+  // With targets, the chunks holding them get the targets in their own time base.
+  sent.length = 0; limited = true;
+  await tuneInChunks(x, sr, { strength: 0.85, notes: [{ m: 60, t: 20, d: 2 }, { m: 67, t: 93, d: 1.5 }], send, sleep: async () => {} });
+  assert.deepEqual(sent.map(s => s.notes), [[{ m: 60, t: 5, d: 2 }], [{ m: 67, t: 3, d: 1.5 }]]);
 });
 
 test("tuneInChunks gives up after repeated rate limits and does not retry other errors", async () => {
@@ -142,4 +144,27 @@ test("stitching at seams reproduces the recording exactly and keeps out-of-phase
   const wholeOverlap = rmsDipSeconds(stitchChunks(outputs, plan, x.length));
   assert.ok(wholeOverlap > 1, `the whole-overlap crossfade should dip for a long time here, got ${wholeOverlap} s`);
   assert.ok(shortSeams <= (plan.length - 1) * (SEAM_SECONDS + 0.02), `short seams dipped for ${shortSeams} s in total`);
+});
+
+test("with note targets set, a chunk that has none keeps its original audio instead of being snapped", async () => {
+  // The server snaps every voiced frame when a request has no targets, but inside a request that
+  // has targets it leaves audio outside them alone. Skipping target-less chunks keeps one take
+  // tuned one way.
+  const sr = 16000, x = sine(40 * sr, sr), sent = [];
+  const send = async ({ wav, notes }) => {
+    const { samples } = decodeWav16(wav);
+    sent.push(notes);
+    return { wav: encodeWav16(samples.map(v => v * 0.5), sr), corrected: 5 };
+  };
+  const res = await tuneInChunks(x, sr, { strength: 1, notes: [{ m: 60, t: 2, d: 3 }], send, sleep: async () => {} });
+  assert.equal(sent.length, 1, "only the chunk with targets is sent");
+  assert.deepEqual(sent[0], [{ m: 60, t: 2, d: 3 }]);
+  // From the second chunk's seam onward the audio is the untouched original.
+  const after = Math.round(17 * sr);
+  for (let i = after; i < x.length; i += 997) assert.ok(Math.abs(res.samples[i] - x[i]) < 1e-4, `sample ${i} changed`);
+  assert.ok(Math.abs(res.samples[Math.round(sr * 3.01)] - x[Math.round(sr * 3.01)] * 0.5) < 1e-4, "the targeted chunk is tuned");
+  // Without targets every chunk is sent and snapped, as before.
+  sent.length = 0;
+  await tuneInChunks(x, sr, { strength: 1, send, sleep: async () => {} });
+  assert.equal(sent.length, 3);
 });

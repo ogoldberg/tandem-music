@@ -122,12 +122,16 @@ export function decodeWav16(arrayBuffer) {
 // Tune a whole recording. `send({wav, notes, strength})` posts one chunk and resolves to
 // {wav: ArrayBuffer, corrected: number}; it rejects with an error carrying `retryAfter`
 // (seconds) when the server rate-limits, and the chunk is retried after that wait.
+// With note targets set, a chunk that has none keeps its original audio: the server snaps
+// every voiced frame of a request without targets, but leaves audio outside the targets of a
+// request that has them alone, so sending it would tune one take two different ways.
 export async function tuneInChunks(samples, sampleRate, { strength, notes, send, sleep = ms => new Promise(r => setTimeout(r, ms)), onProgress = () => {}, maxRetries = 4 }) {
   const plan = planChunks(samples.length, sampleRate), outputs = [];
   let corrected = 0;
   for (let k = 0; k < plan.length; k++) {
     const { start, end } = plan[k];
     const chunkNotes = notes?.length ? notesForChunk(notes, start / sampleRate, end / sampleRate) : null;
+    if (chunkNotes && !chunkNotes.length) { outputs.push(samples.slice(start, end)); continue; }
     const wav = encodeWav16(samples.subarray(start, end), sampleRate);
     onProgress({ index: k, count: plan.length });
     for (let attempt = 0; ; attempt++) {
@@ -136,7 +140,9 @@ export async function tuneInChunks(samples, sampleRate, { strength, notes, send,
         const decoded = decodeWav16(res.wav);
         if (decoded.sampleRate !== sampleRate) throw Error(`Chunk ${k + 1} came back at ${decoded.sampleRate} Hz, expected ${sampleRate} Hz`);
         outputs.push(decoded.samples);
-        corrected += res.corrected || 0;
+        // Count each overlap once: credit a chunk only with the part before the next chunk starts.
+        const own = (k < plan.length - 1 ? plan[k + 1].start : end) - start;
+        corrected += (res.corrected || 0) * own / (end - start);
         break;
       } catch (e) {
         if (e.retryAfter == null || attempt >= maxRetries) throw e;
@@ -145,5 +151,5 @@ export async function tuneInChunks(samples, sampleRate, { strength, notes, send,
       }
     }
   }
-  return { samples: stitchChunks(outputs, plan, samples.length, chooseSeams(samples, plan, sampleRate)), corrected, chunks: plan.length };
+  return { samples: stitchChunks(outputs, plan, samples.length, chooseSeams(samples, plan, sampleRate)), corrected: Math.round(corrected), chunks: plan.length };
 }
