@@ -1,0 +1,8 @@
+tests/
+.github/
+README.md
+render.yaml
+__pycache__/
+*.pyc
+.env
+*.db
