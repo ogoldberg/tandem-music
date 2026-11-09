@@ -74,9 +74,22 @@ def test_chat_action_filter(client,monkeypatch):
             {"type":"transpose","semitones":2},
             {"type":"execute_python","code":"not permitted"}]})
     monkeypatch.setattr(server,"invoke_llm",fake)
-    r=run(client("POST","/api/chat",json={"message":"Raise melody","project":{"notes":[],"drums":[]}}))
+    r=run(client("POST","/api/chat",json={"message":"Raise melody","project":{"notes":[],"drums":[],"melody_locked":False}}))
     assert r.status_code==200
     assert r.json()["actions"]==[{"type":"transpose","semitones":2}]
+
+def test_melody_lock_blocks_transcription_rewrites(client,monkeypatch):
+    async def fake(messages):
+        return json.dumps({"reply":"Added a rhythm", "actions":[
+            {"type":"replace_notes","notes":[{"m":73,"t":0,"d":1}]},
+            {"type":"add_hit","drum":"kick","start":0},
+            {"type":"remove_track","track":"melody"}]})
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    response=run(client("POST","/api/chat",json={"message":"Add drums","project":{
+        "notes":[{"m":60,"t":0,"d":1}],"drums":[],"melody_locked":True
+    }}))
+    assert response.status_code==200
+    assert response.json()["actions"]==[{"type":"add_hit","drum":"kick","start":0.0}]
 
 def test_chat_bad_model_reply(client,monkeypatch):
     async def fake(messages): return "Not JSON"
