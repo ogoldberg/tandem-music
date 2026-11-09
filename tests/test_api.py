@@ -5,7 +5,7 @@ import wave
 import httpx
 import numpy as np
 import pytest
-import server
+import tandem_backend as server
 
 def run(coro):
     return asyncio.run(coro)
