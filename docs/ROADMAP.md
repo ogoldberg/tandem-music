@@ -31,7 +31,7 @@ This is the working task list, in strategic order: protect the deployment, prove
 - [ ] **SEC.4** *(HUMAN)* Configure GitHub branch protection on `main`: required status checks (`backend`, `transcription`, `loopkit-review`), no force pushes, no direct pushes
   - Loopkit merges approved PRs without a human click, so `main` must refuse anything that has not passed CI and review.
   - **Acceptance:** ruleset verified in GitHub settings and recorded in `docs/SECURITY.md`.
-- [ ] **SEC.1** Rate-limit and resource-limit the public CPU routes `/api/analyze`, `/api/polish` and `/api/tune`
+- [x] **SEC.1** Rate-limit and resource-limit the public CPU routes `/api/analyze`, `/api/polish` and `/api/tune`
   - Must work on serverless Vercel, where in-process memory does not persist between instances: use a shared store or Vercel's firewall rate limiting, and document the choice and where state lives.
   - Also review memory/CPU use under malicious or unexpected inputs (oversized, malformed, long, many-channel WAVs) and make sure no route reads unbounded input.
   - Tighten the `/api/chat` project schema validation (typed, bounded `notes`/`drums`/`bpm`/`instrument` instead of a free-form dict) before paid AI is enabled in AI.1.

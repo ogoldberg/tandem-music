@@ -1,7 +1,7 @@
 """Tandem API: vendor-neutral music agent, WAV analysis and project storage."""
 import io, json, os, re, sqlite3, time, uuid, wave
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 import httpx
 import numpy as np
 from scipy import signal
@@ -9,10 +9,19 @@ from vocal_tuning import tune_vocal
 from world_tuning import world_tune
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, FileResponse
-from pydantic import BaseModel, Field
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import Response, FileResponse, JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
+from request_guards import RequestGuardMiddleware, AUDIO_BODY_MAX_BYTES
 
 app = FastAPI(title="Tandem API", version="0.2.0")
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    # Report where and why validation failed without echoing the input back: echoed
+    # values can be large, and NaN/Infinity cannot be serialized as JSON at all.
+    errors=[{"loc":list(e.get("loc",()))[:8],"msg":str(e.get("msg",""))[:200],"type":e.get("type","")} for e in exc.errors()[:20]]
+    return JSONResponse(status_code=422,content={"detail":errors})
 
 @app.get("/", include_in_schema=False)
 def homepage():
@@ -31,6 +40,8 @@ def manifest():
     return FileResponse(Path(__file__).resolve().parent / "manifest.webmanifest", media_type="application/manifest+json")
 
 origins = [x.strip() for x in os.getenv("TANDEM_ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000,https://ogoldberg.github.io").split(",") if x.strip()]
+# Added before CORS so CORS stays outermost and 413/429/503 guard responses carry CORS headers.
+app.add_middleware(RequestGuardMiddleware)
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET","POST","PUT","DELETE"], allow_headers=["*"])
 DB = os.getenv("TANDEM_DATABASE", "tandem.db")
 def db():
@@ -52,10 +63,33 @@ def health(): return {"ok":True,"version":"0.2.0"}
 def config():
     return {"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"ai_ready":bool(os.getenv("TANDEM_MODEL")),"requires_token":bool(os.getenv("TANDEM_ACCESS_TOKEN")),"capabilities":{"conversation":{"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"enabled":bool(os.getenv("TANDEM_MODEL"))},"melody_transcription":{"provider":"browser-basic-pitch","model":"spotify/basic-pitch-1.0.1","enabled":True},"rhythm_transcription":{"provider":"local-dsp","model":"onset-detector-v1","enabled":True},"vocal_polish":{"provider":"local-dsp","model":"filter-gate-compressor-v1","enabled":True},"vocal_pitch_correction":{"provider":"open-source-world","model":"pyworld-prebuilt-0.3.6","enabled":True},"music_generation":{"provider":os.getenv("TANDEM_MUSIC_PROVIDER","none"),"model":os.getenv("TANDEM_MUSIC_MODEL",""),"enabled":False}}}
 
+class ProjectNote(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    m: int = Field(ge=0,le=127)
+    t: float = Field(ge=0,le=600,allow_inf_nan=False)
+    d: float = Field(gt=0,le=600,allow_inf_nan=False)
+class ProjectHit(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    k: Literal["kick","snare","hat"]
+    t: float = Field(ge=0,le=600,allow_inf_nan=False)
+class ChatProject(BaseModel):
+    """The project fields the browser sends to /api/chat; mirrors the tandem-project schema."""
+    model_config=ConfigDict(extra="forbid")
+    bpm: float = Field(default=100,ge=45,le=220,allow_inf_nan=False)
+    instrument: Literal["piano","marimba","bass","strings","chip"] = "piano"
+    notes: list[ProjectNote] = Field(default_factory=list,max_length=1024)
+    drums: list[ProjectHit] = Field(default_factory=list,max_length=1024)
+    melody_locked: bool = True
+class ChatTurn(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    role: Literal["user","assistant"]
+    # Same cap as ChatRequest.message: the browser sends earlier messages back verbatim as history.
+    content: str = Field(max_length=3000)
 class ChatRequest(BaseModel):
+    model_config=ConfigDict(extra="forbid")
     message: str = Field(min_length=1,max_length=3000)
-    project: dict[str,Any]
-    history: list[dict[str,str]] = Field(default_factory=list,max_length=12)
+    project: ChatProject = Field(default_factory=ChatProject)
+    history: list[ChatTurn] = Field(default_factory=list,max_length=12)
 
 SYSTEM = """You are Tandem, a supportive, musically knowledgeable co-composer. Respond to the user's musical request using JSON ONLY:
 {"reply":"short natural language explanation","actions":[{"type":"set_tempo","bpm":110},{"type":"set_instrument","instrument":"marimba"},{"type":"transpose","semitones":2},{"type":"add_note","pitch":60,"start":0,"duration":0.5},{"type":"add_hit","drum":"kick","start":0},{"type":"remove_track","track":"rhythm"}]}
@@ -120,24 +154,32 @@ async def invoke_llm(messages):
             raise HTTPException(502,"AI provider request failed: "+str(exc)[:400])
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
-    project={k:req.project.get(k) for k in ("bpm","instrument","notes","drums","melody_locked")}
-    prior=[{"role":m.get("role","user"),"content":str(m.get("content",""))[:2000]} for m in req.history[-10:] if m.get("role") in ("user","assistant")]
+    project=req.project.model_dump()
+    prior=[{"role":m.role,"content":m.content} for m in req.history[-10:]]
     raw=await invoke_llm(prior+[{"role":"user","content":"Current project: "+json.dumps(project)[:18000]+"\nRequest: "+req.message}])
     try: obj=extract_json(raw)
     except (ValueError,json.JSONDecodeError): raise HTTPException(502,"AI returned an invalid edit plan; retry or change model")
     actions=normalize_actions(obj.get("actions",[]))
-    if req.project.get("melody_locked", True):
+    if req.project.melody_locked:
         protected={"transpose","add_note","replace_notes","remove_track"}
         actions=[a for a in actions if not (a["type"] in protected and (a["type"]!="remove_track" or a.get("track")=="melody"))]
     return {"reply":str(obj.get("reply","I updated your arrangement."))[:1200],"actions":actions}
 
+async def read_upload(file):
+    data=await file.read(AUDIO_BODY_MAX_BYTES)
+    if len(data)>=AUDIO_BODY_MAX_BYTES:raise HTTPException(413,"Audio too large")
+    if not data:raise HTTPException(400,"Empty audio upload")
+    return data
 def decode_wav(data):
     try:
         with wave.open(io.BytesIO(data),"rb") as w:
             rate=w.getframerate(); ch=w.getnchannels(); frames=w.getnframes(); width=w.getsampwidth()
-            if frames/rate>90 or frames<=0 or rate<8000 or rate>96000 or ch>2 or width!=2:
-                raise HTTPException(400,"Upload 16-bit PCM WAV, mono or stereo, up to 90 seconds")
-            arr=np.frombuffer(w.readframes(frames),dtype="<i2").astype(np.float32)/32768
+            if rate<8000 or rate>96000 or ch<1 or ch>2 or width!=2 or frames<=0 or frames/rate>90:
+                raise HTTPException(400,"Upload 16-bit PCM WAV, mono or stereo, 8-96 kHz, up to 90 seconds")
+            raw=w.readframes(frames)
+            raw=raw[:len(raw)-len(raw)%(width*ch)]  # drop a truncated trailing frame
+            if not raw: raise HTTPException(400,"Invalid WAV: no audio frames")
+            arr=np.frombuffer(raw,dtype="<i2").astype(np.float32)/32768
             if ch==2: arr=arr.reshape(-1,2).mean(axis=1)
             return arr,rate
     except (wave.Error,EOFError) as exc: raise HTTPException(400,"Invalid WAV: "+str(exc))
@@ -191,9 +233,9 @@ def analyze_drums(x,sr):
     return hits
 @app.post("/api/analyze")
 async def analyze(file:UploadFile=File(...),mode:str="melody"):
-    data=await file.read(18_000_000)
-    if len(data)>=18_000_000:raise HTTPException(413,"Audio too large")
-    x,sr=decode_wav(data)
+    if mode not in ("melody","rhythm"):
+        raise HTTPException(400,"Choose analysis mode melody or rhythm")
+    x,sr=decode_wav(await read_upload(file))
     return {"duration":round(len(x)/sr,2),"notes":analyze_melody(x,sr) if mode=="melody" else [],"drums":analyze_drums(x,sr) if mode=="rhythm" else []}
 @app.post("/api/tune")
 async def tune(file:UploadFile=File(...),strength:float=.85,engine:str="world",
@@ -202,9 +244,7 @@ async def tune(file:UploadFile=File(...),strength:float=.85,engine:str="world",
         raise HTTPException(400,"Strength must be between 0 and 1")
     if engine!="world":
         raise HTTPException(400,"Only the open-source WORLD tuning engine is supported")
-    data=await file.read(18_000_000)
-    if len(data)>=18_000_000:raise HTTPException(413,"Audio too large")
-    x,sr=decode_wav(data)
+    x,sr=decode_wav(await read_upload(file))
     if len(x)/sr>25:
         raise HTTPException(400,"Use a solo vocal recording 25 seconds or shorter")
     notes=None
@@ -237,7 +277,7 @@ async def tune(file:UploadFile=File(...),strength:float=.85,engine:str="world",
 async def polish(file:UploadFile=File(...),style:str="studio"):
     if style not in ("natural","studio"):
         raise HTTPException(400, "Choose vocal style natural or studio")
-    x,sr=decode_wav(await file.read(18_000_000))
+    x,sr=decode_wav(await read_upload(file))
     # Basic vocal production effects, not vocal tuning or source separation.
     highpass=95 if style=="natural" else 120
     lowpass=min(9000 if style=="natural" else 6800,sr*.43)
