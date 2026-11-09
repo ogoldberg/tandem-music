@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 import numpy as np
 from scipy import signal
+from vocal_tuning import tune_vocal
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, FileResponse
@@ -193,6 +194,22 @@ async def analyze(file:UploadFile=File(...),mode:str="melody"):
     if len(data)>=18_000_000:raise HTTPException(413,"Audio too large")
     x,sr=decode_wav(data)
     return {"duration":round(len(x)/sr,2),"notes":analyze_melody(x,sr) if mode=="melody" else [],"drums":analyze_drums(x,sr) if mode=="rhythm" else []}
+@app.post("/api/tune")
+async def tune(file:UploadFile=File(...),strength:float=0.85):
+    if not (0<=strength<=1):
+        raise HTTPException(400,"Strength must be between 0 and 1")
+    raw=await file.read(18_000_000)
+    if len(raw)>=18_000_000:raise HTTPException(413,"Audio too large")
+    x,sr=decode_wav(raw)
+    if len(x)/sr>30:
+        raise HTTPException(400,"Use a solo vocal recording of 30 seconds or less")
+    notes=analyze_melody(x,sr)
+    corrected,details=tune_vocal(x,sr,notes,strength=strength)
+    return Response(content=encode_wav(corrected,sr),media_type="audio/wav",
+      headers={"X-Tandem-Tuned-Notes":str(details["tuned_notes"]),
+               "Access-Control-Expose-Headers":"X-Tandem-Tuned-Notes",
+               "Content-Disposition":"attachment; filename=tandem-tuned.wav"})
+
 @app.post("/api/polish")
 async def polish(file:UploadFile=File(...),style:str="studio"):
     if style not in ("natural","studio"):
