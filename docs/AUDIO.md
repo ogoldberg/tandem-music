@@ -21,6 +21,24 @@ The browser can call Basic Pitch to detect vocal note targets and present +/- se
 - Short notes and blended pitches may not produce reliable targets.
 - The note UI is a list of detected targets—not a Melodyne-style pitch curve.
 
+## Pitch-correction benchmark (VOX.1)
+`tests/test_vocal_benchmark.py` runs with `python -m pytest` (about 20 s). It renders a sung phrase (C4 E4 G4 F4, each 0.8 s, sung 30-45 cents off) as a ten-harmonic synthetic voice at 16, 22.05, 44.1 and 48 kHz in four variants: steady, ±25-cent 5.5 Hz vibrato, breath noise at 25 dB SNR, and 150 ms glides between notes. Each clip goes through the real `/api/tune` route in process. The output is measured with an independent YIN pitch tracker in the test, not WORLD's own F0 analysis. Pitch is scored on voiced frames more than 120 ms from a note change.
+
+| Check | Threshold | Measured (Nov 2026) |
+| --- | --- | --- |
+| Pitch error with note targets, strength 1: median / 90th percentile | ≤ 3 / ≤ 6 cents | 0.2-0.4 / 0.4-0.8 cents (from ~37-40 / 45-61 before) |
+| Pitch error, nearest-semitone snapping (steady, noise), strength 1: median | ≤ 3 cents | 0.2-0.4 cents |
+| Error reduction (before ÷ after, median) | ≥ 10× | about 100× |
+| Strength 0.5 leaves this share of the original median error | 35-65% | 49-50% |
+| Length | identical sample count | identical |
+| Note transitions (pitch crossing halfway between notes) | moved ≤ 20 ms | ≤ 10 ms (one analysis hop) |
+| Loudness change per note / whole clip | ≤ 1 dB / ≤ 0.5 dB | < 0.05 dB |
+| Strength 0, with and without targets | output PCM identical to input | identical |
+
+The measured metrics for every case are written to `.pytest_cache/d/vox1/metrics.json` (or `$TANDEM_VOX_REPORT`). The benchmark found that `encode_wav` truncated with a 32767 scale while `decode_wav` divides by 32768, so every pass through the server lowered most samples by one 16-bit step; it now rounds on the 32768 scale and round-trips exactly.
+
+What it does not show: the fixtures are clean synthetic harmonics with known pitch, so WORLD's analysis is near ideal. They have no consonants, breaths, formant movement, octave errors or real-room noise, and nothing here measures timbre or artifacts by ear. Real-voice quality is VOX.2's blinded listening test.
+
 ## Research/evaluation plan
 Build a consented test set of dry solo voices across ranges, devices, vowels, consonants, vibrato, quiet notes, slides and sample rates (16/22.05/44.1/48 kHz). Include known target MIDI and timings, silence and noisy negatives. Measure note error in cents, preservation of length, spectral artifacts, clicks and loudness. Conduct blinded listening tests against original and reference correction. Never claim “professional quality” merely because a deployment succeeds or unit tests pass.
 
