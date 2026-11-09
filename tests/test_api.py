@@ -36,6 +36,13 @@ def test_token_auth(client,monkeypatch):
     assert run(client("POST","/api/chat",json={"message":"hi","project":{}})).status_code==401
     assert run(client("GET","/api/health",headers={"x-tandem-token":"secret"})).status_code==200
 
+def test_production_fails_closed_without_token(client, monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("TANDEM_ACCESS_TOKEN", raising=False)
+    assert run(client("POST", "/api/chat", json={"message":"hi","project":{}})).status_code == 503
+    monkeypatch.setenv("TANDEM_ACCESS_TOKEN", "secret")
+    assert run(client("POST", "/api/chat", json={"message":"hi","project":{}})).status_code == 401
+
 def test_no_ephemeral_server_project_storage(client):
     # Project JSON is saved/loaded by the web client; ephemeral Vercel functions should not write SQLite.
     assert run(client("POST","/api/projects",json={"data":{}})).status_code==404
