@@ -55,3 +55,11 @@ For local browser testing, run `python -m http.server 8000` in another terminal 
 - Backend: `python -m pytest -q`
 - Browser transcription adapter: `node --test tests/transcription.test.mjs` (Node 22+)
 - GitHub Actions runs both suites on pushes and pull requests. Browser microphone and Basic Pitch model-loading tests still need real Chrome/Safari/Android validation.
+
+## Open-source vocal tuning (WORLD)
+
+Tandem uses [WORLD](https://github.com/mmorise/World) via the Python 3.12 compatible `pyworld-prebuilt==0.3.6.post1` package, retaining separate pitch (F0), spectral-envelope and aperiodicity representations. The `/api/tune` endpoint accepts a WAV file, `strength=0..1`, and optional `notes_json` (the user's manually edited targets). Detect sung notes in the browser and adjust target pitches using the −/+ buttons before correction. The original file remains unchanged.
+
+WORLD is an open-source vocoder, not Melodyne or Antares Auto-Tune. This first integration is **experimental and monophonic**: it is not intended for background mixes or complex polyphony, and may produce artifacts, especially on consonants and vibrato. For no edited targets it quantizes each voiced F0 frame to the nearest chromatic note; user-edited targets override this within their time ranges. The server limits inputs to 25 seconds for processing safety. The UI currently uses the browser Basic Pitch detector to create editable note targets.
+
+Automated tests cover F0 quantization, bypass, scale constraints, manual targets, and the original pitch-correction routines. A deployment-ready build is not an audio-quality evaluation; test using dry human singing on Android and Mac before claiming production-ready vocal correction.
