@@ -394,10 +394,19 @@ def test_basic_pitch_assets_are_served_from_this_app_with_recorded_hashes(client
         assert "immutable" in r.headers["cache-control"]
 
 def test_basic_pitch_route_serves_only_the_hashed_files(client):
-    for path in ("/vendor/basic-pitch-1.0.1/SHA256SUMS", "/vendor/basic-pitch-1.0.1/model/../../../tandem_backend.py",
+    for path in ("/vendor/basic-pitch-1.0.1/SHA256SUMS", "/vendor/basic-pitch-1.0.1/model/..%2f..%2f..%2ftandem_backend.py",
                  "/vendor/basic-pitch-1.0.1/%2e%2e/%2e%2e/tandem_backend.py", "/vendor/basic-pitch-1.0.1/model",
                  "/vendor/basic-pitch-1.0.1/", "/vendor/basic-pitch-1.0.2/basic-pitch.mjs"):
         assert run(client("GET", path)).status_code == 404, path
+
+def test_basic_pitch_licenses_cover_every_mit_package():
+    text = (server.Path(server.__file__).resolve().parent / "vendor/basic-pitch-1.0.1/LICENSES.txt").read_text()
+    table = text.split("\n\n==== ", 1)[0].splitlines()[2:]
+    mit = [row.split()[0] for row in table if "MIT" in row.split(" ", 2)[2]]
+    assert mit, "license table lists no MIT packages"
+    for name in mit:
+        assert f"\n==== {name} " in text, name
+    assert text.count("Permission is hereby granted") >= len(mit)
 
 def test_transcription_loads_basic_pitch_only_from_this_app():
     source = (server.Path(server.__file__).resolve().parent / "transcription.js").read_text()
