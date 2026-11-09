@@ -37,7 +37,7 @@ def db():
     return connection
 @app.middleware("http")
 async def authenticate(req: Request, call_next):
-    if req.url.path.startswith("/api/") and req.url.path not in ("/api/health", "/api/config"):
+    if req.url.path == "/api/chat":
         secret=os.getenv("TANDEM_ACCESS_TOKEN", "")
         if os.getenv("VERCEL") and not secret:
             return Response('{"detail":"Set TANDEM_ACCESS_TOKEN in Vercel to protect AI spending"}',status_code=503,media_type="application/json")
