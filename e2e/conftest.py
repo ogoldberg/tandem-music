@@ -54,6 +54,17 @@ def server_url(tmp_path_factory):
         log.close()
 
 
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args):
+    """Let Chromium fall back to software WebGL (SwiftShader) on GPU-less machines such as CI runners.
+
+    Chromium no longer does that by default, so Basic Pitch's TensorFlow.js would drop to its
+    pure-JS CPU backend, which is too slow to transcribe a long take within the test timeouts.
+    """
+    args = [*browser_type_launch_args.get("args", []), "--enable-unsafe-swiftshader"]
+    return {**browser_type_launch_args, "args": args}
+
+
 @pytest.fixture
 def studio(page, server_url):
     """The studio page, loaded fresh. The test fails on any uncaught page error or console error."""
