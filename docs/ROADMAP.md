@@ -13,9 +13,9 @@ Last reviewed: 2026-11-10. This is a prioritized working plan, not a delivery pr
 | Backend implemented, not live-configured | Model-agnostic text conversation | OpenAI-compatible, Anthropic, Gemini; production AI credentials absent on last inspection. Planned: the user's own key, called from the browser (ADR-011) |
 | Implemented, experimental | EQ/dynamics vocal polish | Not tuning |
 | Implemented, experimental | Vocal pitch correction | WORLD/PyWorld; semi-automatic note targets; not Melodyne-level |
-| Planned | Reliable vocal contour editor | Drag notes, retain vibrato, key/scale UI, confidence |
+| Implemented, experimental | Vocal contour editor | Drag notes, retain vibrato, key/scale UI, confidence (VOX.3); not yet judged by ear |
 | Planned | Better vocal quality | Quality benchmark, artifact handling, phoneme preservation |
-| Planned | Better arrangement | Phrase-aware editing (swing, richer voices and generated chord/bass harmony are done) |
+| Implemented, needs device QA | Better arrangement | Swing, richer voices, generated chord/bass harmony and phrase editing (ARR.1) |
 | Planned | Music generation | Capability-specific adapters for externally hosted or self-hosted audio models |
 | Planned | Conversational speech | Spoken chat and audio intent alongside text |
 | Planned | Local-first storage | No accounts (ADR-011): IndexedDB/OPFS on the device, then a synced folder or the user's own bucket; rate limiting is done, spend guards only matter for the hosted mode |
@@ -100,7 +100,8 @@ This is the working task list, in strategic order: protect the deployment, prove
   - Split into the parts below; STORE.2 is done when STORE.2a and STORE.2b are (STORE.2c is optional and can stay open). No Tandem server storage and no per-user quotas (there are no users to give them to).
 - [ ] **STORE.2a** Keep projects, versions and recordings on the device in IndexedDB and OPFS
   - Projects, the draft and named versions move from `localStorage` to IndexedDB, with existing `localStorage` data migrated once and left readable if the migration fails. Recordings (original and processed audio) are saved in OPFS and linked from the project, so reopening a project brings its audio back. Request persistent storage and show whether it was granted; report a full quota instead of losing data.
-  - **Acceptance:** a project with a recording, its versions and the draft survive a reload and a browser restart in a real browser; old `localStorage` versions and draft appear after the upgrade; covered by Node unit tests (with an in-memory IndexedDB) and a browser test.
+  - Progress: the draft and named versions are in IndexedDB (`storage.js`), migrated from `localStorage` on start, with persistent storage requested on Save version and its state shown in the Versions panel. Recordings in OPFS are next.
+  - **Acceptance:** a project with a recording, its versions and the draft survive a reload and a browser restart in a real browser; old `localStorage` versions and draft appear after the upgrade; covered by Node unit tests (with an in-memory stand-in for the IndexedDB store) and browser tests against Chromium's IndexedDB.
 - [ ] **STORE.2b** Save to folder: read and write projects in a folder the user picks
   - **Depends:** STORE.2a
   - File System Access API (Chromium desktop only; hidden elsewhere, where export/import stays). A folder synced by Dropbox, iCloud Drive or Google Drive syncs projects between devices with no Tandem server. The folder handle is kept in IndexedDB and permission is asked for again when the browser requires it.

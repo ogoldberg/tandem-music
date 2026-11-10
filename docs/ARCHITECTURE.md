@@ -10,7 +10,8 @@ flowchart TD
   UI --> Basic[transcription.js / self-hosted Spotify Basic Pitch]
   UI --> Polish[polish.js: on-device vocal polish]
   UI --> History[history.js: undo/redo edit history]
-  UI --> Versions[versions.js: named versions in localStorage]
+  UI --> Versions[versions.js: named versions]
+  UI --> Storage[storage.js: draft and versions in IndexedDB]
   UI --> Groove[groove.js: tempo detection and quantize with swing]
   UI --> Voices[voices.js: melody instrument voices]
   UI --> Harmony[harmony.js: key detection and chord/bass accompaniment]
@@ -19,7 +20,7 @@ flowchart TD
   API --> DSP[NumPy / SciPy: onset and melody fallback]
   API --> World[WORLD / PyWorld: vocal tuning]
   API -->|when credentials configured| LLM[OpenAI-compatible / Anthropic / Gemini]
-  UI --> Local[Local project JSON and browser draft]
+  UI --> Local[Local project JSON files]
   UI --> Export[WAV + MIDI export]
 ```
 
@@ -69,9 +70,17 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - Not in history: the recordings and processed audio (polished/tuned results), the sung pitch contour (it belongs to the recording), transport and UI settings (mode, engine, tuning strength, Keep vibrato, presets), and the chat transcript. The history lives in memory for the page session; it is not saved in project files or the localStorage draft. Named versions (below) are the persistent counterpart.
 
 ## Named versions (EDIT.2)
-`versions.js` is a pure store over an injected `Storage` (the studio passes `localStorage`, key `tandem-versions`). Save version stores the current project as a portable `tandem-project` object (no audio, no vocal targets) under a trimmed name of 1-60 characters, newest first, keeping at most 50 (the oldest is dropped). Restoring a stored version that lacks a tempo or instrument uses 100 bpm and piano, as Open project does. Each row restores or deletes one version. Restoring goes through `edit()`, so it is a single undoable edit labelled "Restore version: <name>". Deleting is not part of the edit history.
-- Versions live only in that browser profile (ADR-006: no server-side storage); clearing site data removes them. Export a project file to move work between devices.
+`versions.js` is a pure async store over the key-value store from `storage.js` (key `versions` in IndexedDB; see On-device storage below). Saving and deleting read and write the list in one transaction, so a version saved in another tab at the same moment is kept. Save version stores the current project as a portable `tandem-project` object (no audio, no vocal targets) under a trimmed name of 1-60 characters, newest first, keeping at most 50 (the oldest is dropped). Restoring a stored version that lacks a tempo or instrument uses 100 bpm and piano, as Open project does. Each row restores or deletes one version. Restoring goes through `edit()`, so it is a single undoable edit labelled "Restore version: <name>". Deleting is not part of the edit history.
+- Versions live only in that browser profile (ADR-011: no server-side storage); clearing site data removes them. Export a project file to move work between devices.
 - A full storage quota fails the save with a message and leaves existing versions unchanged. Unparseable stored data is reported rather than overwritten. Entries the store does not recognise (a newer format or a hand edit) are hidden from the list but written back untouched on save and delete, and do not count towards the 50-version cap.
+
+## On-device storage (STORE.2a)
+`storage.js` opens the IndexedDB database `tandem` with one object store, `kv`, and wraps it as a small key-value store (`get`, `set`, `update`, `setMany`). Each call starts its transaction synchronously, so writes land in the order they were made, and `update` reads, changes and writes a key in one transaction (nothing is written if the change throws).
+- **Keys.** `draft` holds the current project (the same fields as a project file, without `format`/`version`); `versions` holds the named versions list. Recordings are not stored yet (they will go in OPFS).
+- **Draft.** Every `update()` writes the draft. At start-up the studio opens the database, migrates, reads the stored draft and only then starts writing, so the default project never overwrites a saved draft. The page is `inert` (ignores input) until the stored draft has been read, so an edit made in those few milliseconds cannot be overwritten by it. A failed write is reported once in the status line.
+- **Migration from `localStorage`.** On every start, a `tandem-draft` or `tandem-versions` key left by an older Tandem (or written later by an old cached copy) is brought in and then removed from `localStorage`: versions are merged by id (the IndexedDB copy wins, the list stays newest first, unrecognised entries are carried over untouched) and a legacy draft replaces the stored one. Versions that cannot be parsed stay in `localStorage` and are reported. If the versions already in IndexedDB are unreadable, nothing is merged, both copies are kept, the problem is reported and the draft still migrates and saves; a draft the app could never open is dropped, as before. If the IndexedDB write fails, `localStorage` keeps everything. Settings (`tandem-api`) stay in `localStorage`.
+- **Persistence.** The Versions panel says whether the browser has promised to keep the site's storage (`navigator.storage.persisted()`). Save version asks for it (`persist()`); browsers may grant it silently, prompt or refuse. Without it the browser may clear the data under storage pressure, and the panel says to export project files.
+- **No IndexedDB.** If the database cannot be opened (no IndexedDB, or it fails), the status line and Versions panel say saving on this device is unavailable; the studio still edits, plays and exports, and a legacy `localStorage` draft is shown but not saved.
 
 ## Groove: Detect tempo and Quantize (ARR.1)
 `groove.js` is pure (imported by `index.html` and the Node tests) and works on the project's own timing; the schema is unchanged, so playback, WAV/MIDI export and project files need nothing new.
@@ -109,7 +118,7 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 The assistant is currently **text only** and uses symbolic notes/drums, not direct multimodal audio understanding. A future music-generation provider is merely a disabled configuration slot—not an integration.
 
 ## Ownership and boundaries
-- Browser: microphone capture, display, editable music, Basic Pitch transcription, playback/export, local draft.
+- Browser: microphone capture, display, editable music, Basic Pitch transcription, playback/export, the draft and versions in IndexedDB.
 - Backend: voice DSP, tuning, text-model invocation, action validation and expense guard.
 - External model host: optional text LLM; keys stored server-side. Browser never receives `TANDEM_API_KEY`.
 - No account system/cloud projects: there is no server-side database, and serverless storage must be treated as ephemeral. ADR-011 keeps it that way: durable storage is planned on the device and in storage the user brings.
@@ -120,7 +129,8 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | index.html | Main studio UI and browser audio |
 | transcription.js | Browser model adapter, resampling and note conversion |
 | history.js | Undo/redo edit history (pure; imported by index.html and Node tests) |
-| versions.js | Named project versions in localStorage (pure; imported by index.html and Node tests) |
+| versions.js | Named project versions (pure over the storage.js key-value store; imported by index.html and Node tests) |
+| storage.js | IndexedDB key-value store, migration from localStorage, persistent-storage status (STORE.2a) |
 | groove.js | Tempo detection and quantize with swing (pure; imported by index.html and Node tests) |
 | voices.js | Melody instrument voices for playback and WAV export (pure; imported by index.html and Node tests) |
 | harmony.js | Key detection and chord/bass accompaniment generation (pure; imported by index.html and Node tests) |

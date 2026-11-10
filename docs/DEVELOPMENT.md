@@ -24,7 +24,7 @@ If a PyWorld wheel is unsupported on your workstation's OS/architecture, investi
 
 ```bash
 python -m pytest -q
-node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs tests/harmony.test.mjs tests/phrases.test.mjs
+node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs tests/harmony.test.mjs tests/phrases.test.mjs tests/storage.test.mjs
 # Browser end-to-end, once: pip install -r requirements-e2e.txt && python -m playwright install chromium
 python -m pytest e2e -q
 ```
@@ -68,7 +68,7 @@ Do not treat an HTTP 200 response from the root or READY build as validation of 
 
 ## Persistence and media
 
-Projects are local JSON exports/browser drafts, not cloud-saved. `/api/tune` and other audio routes accept in-memory uploads; Vercel functions have ephemeral filesystems. Cloud sync requires authenticated object storage and project ownership before enabling it.
+Projects are local JSON exports, and the draft and named versions are kept in the browser's IndexedDB (`storage.js`, STORE.2a), not cloud-saved (ADR-011). `/api/tune` and other audio routes accept in-memory uploads; Vercel functions have ephemeral filesystems. Roaming between devices is planned through a folder or bucket the user brings (STORE.2b/c), not a Tandem server.
 
 ## Cost and security
 
