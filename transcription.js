@@ -4,6 +4,7 @@
 // tools/basic-pitch/build.sh, hashes in its SHA256SUMS), not by a CDN.
 export const BASIC_PITCH_PACKAGE = "/vendor/basic-pitch-1.0.1/basic-pitch.mjs";
 export const BASIC_PITCH_MODEL = "/vendor/basic-pitch-1.0.1/model/model.json";
+import { pitchContour, mergeFragments } from "./contour.js";
 
 // Melody transcribed into the project stays within what /api/chat and its prompt accept
 // (arrangements under 60 s, at most 128 events per track).
@@ -14,9 +15,10 @@ export const VOCAL_TARGET_LIMITS = Object.freeze({ maxSeconds: Infinity, maxNote
 
 /** Convert the provider's note events into Tandem's portable note schema.
  * Times are in seconds, pitches in MIDI semitones. Notes are clipped to `maxSeconds`
- * and the earliest `maxNotes` are kept.
+ * and the earliest `maxNotes` are kept. With `confidence`, each note also gets `c`: Basic Pitch's
+ * mean note activation clamped to 0..1 (vocal tuning targets only; the project schema has no `c`).
  */
-export function normalizeBasicPitchNotes(events, { maxSeconds = PROJECT_MELODY_LIMITS.maxSeconds, maxNotes = PROJECT_MELODY_LIMITS.maxNotes } = {}) {
+export function normalizeBasicPitchNotes(events, { maxSeconds = PROJECT_MELODY_LIMITS.maxSeconds, maxNotes = PROJECT_MELODY_LIMITS.maxNotes, confidence = false } = {}) {
   if (!Array.isArray(events)) throw new TypeError("Expected Basic Pitch note events");
   const result = [];
   for (const event of events) {
@@ -28,7 +30,9 @@ export function normalizeBasicPitchNotes(events, { maxSeconds = PROJECT_MELODY_L
     const t = Math.max(0, start);
     const d = Math.min(duration, maxSeconds - t);
     if (d < 0.07 || pitch < 36 || pitch > 96) continue;
-    result.push({ m: Math.round(pitch), t: +t.toFixed(3), d: +d.toFixed(3) });
+    const note = { m: Math.round(pitch), t: +t.toFixed(3), d: +d.toFixed(3) };
+    if (confidence) note.c = +Math.max(0, Math.min(1, Number(event.amplitude) || 0)).toFixed(2);
+    result.push(note);
   }
   const sorted = result.sort((a,b)=>a.t-b.t || a.m-b.m);
   return Number.isFinite(maxNotes) ? sorted.slice(0, maxNotes) : sorted;
@@ -63,6 +67,22 @@ const loadBasicPitch = () => cachedModule ||= import(BASIC_PITCH_PACKAGE);
  * `loadModule` is injectable so tests run without the browser bundle.
  */
 export async function transcribeWithBasicPitch(audioBuffer, progress = () => {}, { maxSeconds = PROJECT_MELODY_LIMITS.maxSeconds, maxNotes = PROJECT_MELODY_LIMITS.maxNotes, loadModule = loadBasicPitch } = {}) {
+  const run = await runBasicPitch(audioBuffer, progress, maxSeconds, loadModule);
+  return run ? run.notes({ maxNotes }) : [];
+}
+
+/** Vocal tuning targets for the pitch-contour editor (VOX.3): notes across the whole recording,
+ * each with a confidence `c`, plus the continuous sung pitch line from Basic Pitch's contour output.
+ * Pieces of one sung note that vibrato split apart are merged back (contour.js mergeFragments).
+ */
+export async function detectVocalTargets(audioBuffer, progress = () => {}, { loadModule = loadBasicPitch } = {}) {
+  const run = await runBasicPitch(audioBuffer, progress, VOCAL_TARGET_LIMITS.maxSeconds, loadModule);
+  if (!run) return { notes: [], contour: { t: new Float64Array(0), m: new Float32Array(0) } };
+  const contour = pitchContour(run.contours, { duration: audioBuffer.duration });
+  return { notes: mergeFragments(run.notes({ maxNotes: VOCAL_TARGET_LIMITS.maxNotes, confidence: true }), contour), contour };
+}
+
+async function runBasicPitch(audioBuffer, progress, maxSeconds, loadModule) {
   if (!audioBuffer || typeof audioBuffer.getChannelData !== "function") {
     throw new TypeError("Expected a decoded AudioBuffer");
   }
@@ -75,8 +95,11 @@ export async function transcribeWithBasicPitch(audioBuffer, progress = () => {},
     (f,o,c)=>{frames.push(...f);onsets.push(...o);contours.push(...c)},
     p=>progress(Math.round(Math.max(0, Math.min(1, p))*100))
   );
-  if (!frames.length) return [];
+  if (!frames.length) return null;
   const raw = outputToNotesPoly(frames,onsets,.25,.25,5);
   const timed = noteFramesToTime(addPitchBendsToNoteEvents(contours,raw));
-  return normalizeBasicPitchNotes(timed, { maxSeconds: Math.min(maxSeconds, audioBuffer.duration), maxNotes });
+  return {
+    contours,
+    notes: opts => normalizeBasicPitchNotes(timed, { maxSeconds: Math.min(maxSeconds, audioBuffer.duration), ...opts }),
+  };
 }

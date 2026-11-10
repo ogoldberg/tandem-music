@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0e1522"><title>Tandem — make music together</title><link rel="manifest" href="./manifest.webmanifest"><style>
-*{box-sizing:border-box}body{margin:0;background:#0d1523;color:#e9f4ff;font-family:system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:16px}h1{margin:0;font-size:2rem}h2{font-size:1.15rem}header,.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}header{justify-content:space-between}button,select,input{font:inherit;border:1px solid #455c78;background:#263950;color:white;border-radius:9px;padding:9px}button{cursor:pointer}button:disabled{opacity:.45}button.primary{background:#92e9ce;color:#12251f;font-weight:700;border:0}.grid{display:grid;grid-template-columns:1.15fr 1fr;gap:16px;margin-top:15px}.card{border:1px solid #33465f;background:#1a283d;padding:16px;border-radius:16px}.muted,small{color:#b3c6d9}.muted{font-size:.86rem}.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0}.status{font-size:.83rem;background:#101e32;border-radius:8px;padding:9px}.track{border:1px solid #40546c;border-radius:12px;padding:10px;margin:11px 0}.roll{height:100px;background:repeating-linear-gradient(90deg,#33465b 0 1px,transparent 1px 32px),repeating-linear-gradient(#33465b 0 1px,transparent 1px 16px),#0c1928;position:relative;margin-top:7px;border-radius:7px;overflow:hidden}.note{position:absolute;border:0;border-radius:3px;background:#83dbc8;min-width:5px;height:12px;padding:0}.note.hit{background:#f1b977;height:15px}.chat{height:250px;overflow:auto;background:#101c2e;border-radius:8px;padding:10px}.bubble{padding:10px;border-radius:9px;margin:7px 0;background:#293c54;font-size:.9rem}.bubble.user{background:#245247;margin-left:18px}.hide{display:none}#wave{width:100%;height:65px;background:#101c2e;border-radius:8px}input[type=number]{width:85px}input[type=text],input[type=url],input[type=password]{min-width:0;flex:1}.grow{flex:1}.badge{font-size:.72rem;border:1px solid #52677d;border-radius:30px;padding:3px 8px}a{color:#8ce6cf}label{font-size:.82rem}@media(max-width:750px){.grid{grid-template-columns:1fr}main{padding:11px}header{align-items:flex-start}h1{font-size:1.7rem}}
+*{box-sizing:border-box}body{margin:0;background:#0d1523;color:#e9f4ff;font-family:system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:16px}h1{margin:0;font-size:2rem}h2{font-size:1.15rem}header,.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}header{justify-content:space-between}button,select,input{font:inherit;border:1px solid #455c78;background:#263950;color:white;border-radius:9px;padding:9px}button{cursor:pointer}button:disabled{opacity:.45}button.primary{background:#92e9ce;color:#12251f;font-weight:700;border:0}.grid{display:grid;grid-template-columns:1.15fr 1fr;gap:16px;margin-top:15px}.card{border:1px solid #33465f;background:#1a283d;padding:16px;border-radius:16px}.muted,small{color:#b3c6d9}.muted{font-size:.86rem}.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0}.status{font-size:.83rem;background:#101e32;border-radius:8px;padding:9px}.track{border:1px solid #40546c;border-radius:12px;padding:10px;margin:11px 0}.roll{height:100px;background:repeating-linear-gradient(90deg,#33465b 0 1px,transparent 1px 32px),repeating-linear-gradient(#33465b 0 1px,transparent 1px 16px),#0c1928;position:relative;margin-top:7px;border-radius:7px;overflow:hidden}.note{position:absolute;border:0;border-radius:3px;background:#83dbc8;min-width:5px;height:12px;padding:0}.note.hit{background:#f1b977;height:15px}.chat{height:250px;overflow:auto;background:#101c2e;border-radius:8px;padding:10px}.bubble{padding:10px;border-radius:9px;margin:7px 0;background:#293c54;font-size:.9rem}.bubble.user{background:#245247;margin-left:18px}.hide{display:none}#wave{width:100%;height:65px;background:#101c2e;border-radius:8px}input[type=number]{width:85px}input[type=text],input[type=url],input[type=password]{min-width:0;flex:1}.grow{flex:1}.badge{font-size:.72rem;border:1px solid #52677d;border-radius:30px;padding:3px 8px}a{color:#8ce6cf}.contour{padding:0;overflow:hidden}.cscroll{overflow:auto;max-height:340px;position:relative}.cinner{position:relative}.cinner canvas{position:sticky;left:0;display:block}.target{position:absolute;box-sizing:border-box;border:1px solid #92e9ce;border-radius:4px;background:rgba(95,211,181,.28);color:#e9fff8;font-size:10px;line-height:10px;padding:0 6px;white-space:nowrap;overflow:hidden;cursor:ns-resize;touch-action:none;user-select:none}.target.low{border-style:dashed;border-color:#f1b977;background:rgba(215,163,92,.28)}.target.selected,.target:focus{outline:2px solid #fff;outline-offset:1px;z-index:2}.target .edge{position:absolute;top:0;bottom:0;width:6px;cursor:ew-resize}.target .edge.start{left:0}.target .edge.end{right:0}.legend{display:inline-block;width:14px;height:3px;vertical-align:middle;margin:0 4px 0 8px}label{font-size:.82rem}@media(max-width:750px){.grid{grid-template-columns:1fr}main{padding:11px}header{align-items:flex-start}h1{font-size:1.7rem}}
 </style></head><body><main><header><div><h1>♫ Tandem <span class="badge">alpha</span></h1><div class="muted">Make music together</div></div><div class="bar"><button id="play" class="primary">▶ Play</button><button id="stop">■ Stop</button><button id="undo" disabled title="Nothing to undo">↶ Undo</button><button id="redo" disabled title="Nothing to redo">↷ Redo</button><button id="save">Save project</button><button id="load">Open project</button><input id="projectfile" class="hide" type="file" accept="application/json,.json"></div></header>
 <div class="grid"><section class="card"><h2>Capture your idea</h2><p class="muted">Hum, beatbox or sing. Audio stays on this device unless you choose server analysis or pitch correction.</p><div class="bar"><select id="mode"><option value="melody">Humming → melody</option><option value="rhythm">Beatbox → drums</option><option value="vocal">Singing → vocal</option></select><button id="record" class="primary">● Record</button><button id="finish" disabled>Stop recording</button><button id="import">Import audio</button><input id="audiofile" type="file" accept="audio/*" class="hide"></div><div id="status" class="status">Ready</div><canvas id="wave" width="640" height="80"></canvas><div class="bar"><button id="original" disabled>▶ Original</button><label for="polishstyle">Vocal preset</label><select id="polishstyle"><option value="studio">Studio (stronger)</option><option value="natural">Natural (subtle)</option></select><button id="polish" disabled>Polish vocal</button><button id="polished" disabled>▶ Polished</button><button id="analyze" disabled>Transcribe recording</button><label for="transcriber">Engine</label><select id="transcriber"><option value="basic-pitch">Basic Pitch (on device)</option><option value="heuristic">Server (fallback)</option></select></div><div class="bar"><label for="tunestrength">Pitch correction</label><input id="tunestrength" type="range" min="0" max="100" value="85" step="5"><span id="tunelevel">85%</span><button id="tune" disabled>Correct singing pitch</button><button id="playtuned" disabled>▶ Tuned</button><button id="downloadtuned" disabled>Download tuned voice</button></div>
 <div id="tuneinfo" class="muted">Open-source WORLD tuning preserves the vocal spectral envelope while correcting pitch. Best with isolated solo singing.</div>
-<div class="bar"><button id="detectvocal" disabled>Detect sung notes</button><button id="resetvocal" disabled>Reset note edits</button><span class="muted">Use −/+ on each note to select its target pitch.</span></div>
-<div id="vocalnoteeditor" class="track" aria-label="Vocal note editor">Record a solo vocal to detect and edit notes.</div>
+<div class="bar"><button id="detectvocal" disabled>Detect sung notes</button><button id="resetvocal" disabled>Reset note edits</button><label for="tunekey">Key</label><select id="tunekey"></select><select id="tunescale" aria-label="Scale"></select><button id="snapvocal" disabled>Snap notes to key</button></div>
+<div class="bar"><label for="vibrato">Keep vibrato</label><input id="vibrato" type="range" min="0" max="100" value="100" step="5"><span id="vibratolevel">100%</span><small><span class="legend" style="background:#7d93ad"></span>sung<span class="legend" style="background:#92e9ce"></span>after correction (preview)</small></div>
+<div id="vocalnoteeditor" class="track contour" aria-label="Vocal pitch contour editor">Record a solo vocal to detect and edit notes.</div>
+<div id="vocalnoteinfo" class="muted" aria-live="polite">Drag a note up or down to change its target pitch and drag its edges to change where it applies. With a note selected, the arrow keys step through the key and Delete removes the target.</div>
 <div class="bar"><button id="downloadvocal" disabled>Download polished vocal</button></div><div id="polishinfo" class="muted" aria-live="polite">Vocal polish changes tone and dynamics, not singing pitch.</div>
 <hr><h2>Arrange</h2><div class="bar"><label><input type="checkbox" id="melodylock" checked> Protect original melody from AI edits</label></div><div class="bar"><label>Tempo <input id="bpm" type="number" min="45" max="220" value="100"></label><label>Melody instrument <select id="instrument"><option value="piano">Piano</option><option value="marimba">Marimba</option><option value="strings">Strings</option><option value="bass">Bass</option><option value="chip">8-bit</option></select></label></div>
 <div class="track"><div class="row"><strong>Melody</strong><button id="addnote">+ Note</button><button id="clearnotes">Clear</button><small id="notecount"></small></div><div id="melodyroll" class="roll"></div><small>Tap a note to remove it. New notes are appended in sequence.</small></div>
@@ -16,8 +18,9 @@
 <script type="module">
 import {createHistory} from './history.js';
 import {createVersionStore,projectFromState} from './versions.js';
+import {KEY_NAMES,SCALES,noteName,noteCentre,scalePitchClasses,snapToScale,stepInScale,snapNotesToScale,previewCorrection,contourRange,resizeNote} from './contour.js';
 const $=id=>document.getElementById(id), state={bpm:100,instrument:'piano',notes:[],drums:[],melody_locked:true};
-const edits=createHistory({limit:100}),conversation=[];let ctx=null,recorder=null,mic=null,chunks=[],audio=null,polished=null,tuned=null,source=null,vocalNotes=null,originalVocalNotes=null;
+const edits=createHistory({limit:100}),conversation=[];let ctx=null,recorder=null,mic=null,chunks=[],audio=null,polished=null,tuned=null,source=null,vocalNotes=null,originalVocalNotes=null,vocalContour=null,audioDuration=0,tuningKey={tonic:0,scale:'chromatic'};
 const setting=k=>localStorage.getItem('tandem-'+k)||'';
 $('api').value=setting('api');$('token').value=setting('token');
 function context(){return ctx||(ctx=new (window.AudioContext||window.webkitAudioContext)())}
@@ -27,8 +30,8 @@ function message(s,role='assistant'){const e=document.createElement('div');e.cla
 // which records a before/after snapshot in history.js. Vocal targets belong to the current recording,
 // so loading a new recording drops them from every stored snapshot (see loadAudio).
 function normalize(){state.bpm=Math.max(45,Math.min(220,Number(state.bpm)||100))}
-function snap(){normalize();return JSON.stringify({project:{bpm:state.bpm,instrument:state.instrument,melody_locked:state.melody_locked!==false,notes:state.notes,drums:state.drums},vocal:vocalNotes?{notes:vocalNotes,original:originalVocalNotes}:null})}
-function restore(s){const x=JSON.parse(s);Object.assign(state,x.project);vocalNotes=x.vocal?.notes??null;originalVocalNotes=x.vocal?.original??null;update();renderVocalNotes()}
+function snap(){normalize();return JSON.stringify({project:{bpm:state.bpm,instrument:state.instrument,melody_locked:state.melody_locked!==false,notes:state.notes,drums:state.drums},vocal:vocalNotes?{notes:vocalNotes,original:originalVocalNotes}:null,key:tuningKey})}
+function restore(s){const x=JSON.parse(s);Object.assign(state,x.project);vocalNotes=x.vocal?.notes??null;originalVocalNotes=x.vocal?.original??null;tuningKey=x.key??{tonic:0,scale:'chromatic'};update();renderVocalNotes()}
 function edit(label,fn){const before=snap();let recorded=false;try{fn()}finally{recorded=edits.record(before,snap(),label);update();renderVocalNotes()}return recorded}
 function refreshHistory(){for(const [id,can,label,verb] of [['undo',edits.canUndo,edits.undoLabel,'Undo'],['redo',edits.canRedo,edits.redoLabel,'Redo']]){$(id).disabled=!can;$(id).title=can?verb+': '+label:'Nothing to '+verb.toLowerCase()}}
 function undo(){const e=edits.undo(snap());if(e){restore(e.snapshot);status('Undid: '+e.label)}}
@@ -70,38 +73,115 @@ function midi(){const tempo=60000000/state.bpm;const events=[[0,[255,81,3,(tempo
 $('exportmidi').onclick=()=>download(midi(),'tandem.mid');
 async function decoded(blob){return await context().decodeAudioData(await blob.arrayBuffer())}
 function monoWav(buf){const x=new Float32Array(buf.length);for(let ch=0;ch<buf.numberOfChannels;ch++){const a=buf.getChannelData(ch);for(let i=0;i<x.length;i++)x[i]+=a[i]/buf.numberOfChannels}return wavBlob(x,buf.sampleRate)}
-async function loadAudio(blob){audio=blob;polished=null;tuned=null;vocalNotes=null;originalVocalNotes=null;edits.rewrite(s=>{const x=JSON.parse(s);x.vocal=null;return JSON.stringify(x)},snap());$('detectvocal').disabled=false;renderVocalNotes();refreshHistory();$('tune').disabled=false;$('playtuned').disabled=$('downloadtuned').disabled=true;$('tuneinfo').textContent='Ready to correct singing pitch. Best for one voice without background music.';$('polishinfo').textContent='Vocal polish changes tone and dynamics, not singing pitch.';$('polished').disabled=$('downloadvocal').disabled=true;for(const id of ['original','polish','analyze'])$(id).disabled=false;const buf=await decoded(blob),data=buf.getChannelData(0),c=$('wave'),g=c.getContext('2d');g.clearRect(0,0,c.width,c.height);g.fillStyle='#8fe3ce';const step=Math.max(1,Math.floor(data.length/c.width));for(let i=0;i<c.width;i++){let mx=0;for(let j=i*step;j<Math.min(data.length,(i+1)*step);j+=4)mx=Math.max(mx,Math.abs(data[j]));g.fillRect(i,c.height/2-mx*35,1,mx*70)}status('Recorded '+buf.duration.toFixed(1)+'s. Select Transcribe or Polish.')}
+async function loadAudio(blob){audio=blob;polished=null;tuned=null;vocalNotes=null;originalVocalNotes=null;vocalContour=null;selectedTarget=null;audioDuration=0;edits.rewrite(s=>{const x=JSON.parse(s);x.vocal=null;return JSON.stringify(x)},snap());$('detectvocal').disabled=false;renderVocalNotes();refreshHistory();$('tune').disabled=false;$('playtuned').disabled=$('downloadtuned').disabled=true;$('tuneinfo').textContent='Ready to correct singing pitch. Best for one voice without background music.';$('polishinfo').textContent='Vocal polish changes tone and dynamics, not singing pitch.';$('polished').disabled=$('downloadvocal').disabled=true;for(const id of ['original','polish','analyze'])$(id).disabled=false;const buf=await decoded(blob),data=buf.getChannelData(0);audioDuration=buf.duration;renderVocalNotes();const c=$('wave'),g=c.getContext('2d');g.clearRect(0,0,c.width,c.height);g.fillStyle='#8fe3ce';const step=Math.max(1,Math.floor(data.length/c.width));for(let i=0;i<c.width;i++){let mx=0;for(let j=i*step;j<Math.min(data.length,(i+1)*step);j+=4)mx=Math.max(mx,Math.abs(data[j]));g.fillRect(i,c.height/2-mx*35,1,mx*70)}status('Recorded '+buf.duration.toFixed(1)+'s. Select Transcribe or Polish.')}
 $('import').onclick=()=>$('audiofile').click();
 $('audiofile').onchange=async e=>{try{await loadAudio(e.target.files[0])}catch(err){status('Could not decode audio: '+err.message)}};
 $('record').onclick=async()=>{try{mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});chunks=[];recorder=new MediaRecorder(mic);recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=async()=>{mic.getTracks().forEach(t=>t.stop());try{await loadAudio(new Blob(chunks,{type:recorder.mimeType}))}catch(e){status(e.message)}};recorder.start();$('record').disabled=true;$('finish').disabled=false;status('Recording…')}catch(e){status('Mic unavailable: '+e.message)}};
 $('finish').onclick=()=>{if(recorder?.state==='recording')recorder.stop();$('record').disabled=false;$('finish').disabled=true};
 async function playBlob(blob){const ac=context();await ac.resume();const b=await decoded(blob),s=ac.createBufferSource();s.buffer=b;s.connect(ac.destination);s.start()}
-function noteName(midi){const names=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];return names[((midi%12)+12)%12]+(Math.floor(midi/12)-1)}
+// Pitch-contour editor (VOX.3). The sung pitch line and the predicted corrected line are drawn on a
+// canvas that stays in view while the take scrolls; each target note is a draggable slider above it.
+// Drags preview live and commit one history edit when released.
+const ROW=12,keyPcs=()=>scalePitchClasses(tuningKey.scale==='chromatic'?0:tuningKey.tonic,tuningKey.scale);
+let selectedTarget=null,drag=null,editorGeom=null;
+$('tunekey').append(...KEY_NAMES.map((k,i)=>new Option(k,i)));
+$('tunescale').append(...Object.entries(SCALES).map(([id,s])=>new Option(s.label,id)));
+const keyLabel=()=>tuningKey.scale==='chromatic'?'chromatic':KEY_NAMES[tuningKey.tonic]+' '+SCALES[tuningKey.scale].label.toLowerCase();
+function setKey(){edit('Set key: '+(($('tunescale').value==='chromatic')?'chromatic':KEY_NAMES[$('tunekey').value]+' '+SCALES[$('tunescale').value].label.toLowerCase()),()=>{tuningKey={tonic:Number($('tunekey').value),scale:$('tunescale').value}})}
+$('tunekey').onchange=setKey;$('tunescale').onchange=setKey;
+$('snapvocal').onclick=()=>{if(!vocalNotes?.length)return;const {notes,moved}=snapNotesToScale(vocalNotes,keyPcs(),vocalContour);edit('Snap vocal targets to '+keyLabel(),()=>{vocalNotes=notes});status(moved?'Moved '+moved+' vocal target'+(moved===1?'':'s')+' into '+keyLabel()+'.':'Every vocal target is already in '+keyLabel()+'.')};
+$('vibrato').oninput=()=>{$('vibratolevel').textContent=$('vibrato').value+'%';drawContour()};
+const tuningSettings=()=>({strength:Number($('tunestrength').value)/100,vibrato:Number($('vibrato').value)/100});
+// Notes as currently shown: the stored targets with the in-progress drag applied.
+const shownNotes=()=>drag?vocalNotes.map((n,i)=>i===drag.i?{...n,m:drag.m,t:drag.t,d:drag.d}:n):vocalNotes;
+function describeTarget(i){
+  const n=shownNotes()[i];if(!n)return'';
+  const centre=noteCentre(vocalContour,n),cents=centre==null?null:Math.round((centre-n.m)*100);
+  const sung=cents==null?'no steady sung pitch here':Math.abs(cents)<5?'sung on target':'sung '+Math.abs(cents)+' cents '+(cents>0?'above':'below')+' the target';
+  const conf=n.c==null?'':' · confidence '+Math.round(n.c*100)+'%'+(n.c<.4?' (low: check this note)':'');
+  return 'Note '+(i+1)+': '+n.t.toFixed(2)+'–'+(n.t+n.d).toFixed(2)+' s · target '+noteName(n.m)+' · '+sung+conf;
+}
+function select(i){selectedTarget=i;for(const el of document.querySelectorAll('#vocalnoteeditor .target'))el.classList.toggle('selected',Number(el.dataset.i)===i);$('vocalnoteinfo').textContent=describeTarget(i)}
+function placeTarget(el,n,g){el.style.left=(n.t*g.pps)+'px';el.style.width=Math.max(8,n.d*g.pps)+'px';el.style.top=((g.hi-n.m)*ROW+1)+'px';el.style.height=(ROW-2)+'px';el.setAttribute('aria-valuenow',n.m);el.setAttribute('aria-valuetext',noteName(n.m));el.lastChild.textContent=n.d*g.pps>34?noteName(n.m):''}
 function renderVocalNotes(){
-  const root=$('vocalnoteeditor');root.replaceChildren();$('resetvocal').disabled=!originalVocalNotes;
+  const root=$('vocalnoteeditor');$('resetvocal').disabled=!originalVocalNotes;$('snapvocal').disabled=!vocalNotes?.length||tuningKey.scale==='chromatic';
+  $('tunekey').value=tuningKey.tonic;$('tunescale').value=tuningKey.scale;$('tunekey').disabled=tuningKey.scale==='chromatic';
+  const hadFocus=root.contains(document.activeElement),oldScroll=root.querySelector('.cscroll'),scrollLeft=oldScroll?.scrollLeft||0,scrollTop=oldScroll?.scrollTop||0;
+  drag=null;editorGeom=null;root.replaceChildren();
   if(!vocalNotes){root.textContent=audio?'Press Detect sung notes to edit the pitch targets.':'Record a solo vocal to detect and edit notes.';return}
   if(!vocalNotes.length){root.textContent='No stable sung notes detected. Try a clean solo vocal with held notes.';return}
-  vocalNotes.forEach((note,i)=>{
-    const r=document.createElement('div');r.className='row';r.style.marginBottom='7px';
-    const label=document.createElement('span');label.textContent=(i+1)+'. '+note.t.toFixed(2)+'s · '+noteName(note.m);label.style.minWidth='110px';
-    const down=document.createElement('button');down.textContent='−';down.title='Lower target one semitone';
-    const up=document.createElement('button');up.textContent='+';up.title='Raise target one semitone';
-    down.onclick=()=>edit('Lower vocal target '+(i+1),()=>{note.m=Math.max(36,note.m-1)});
-    up.onclick=()=>edit('Raise vocal target '+(i+1),()=>{note.m=Math.min(96,note.m+1)});
-    r.append(label,down,up);root.append(r);
+  if(selectedTarget!=null&&selectedTarget>=vocalNotes.length)selectedTarget=vocalNotes.length?vocalNotes.length-1:null;
+  const duration=Math.max(audioDuration,...vocalNotes.map(n=>n.t+n.d)),{lo,hi}=contourRange(vocalNotes,vocalContour);
+  const scroll=document.createElement('div');scroll.className='cscroll';const inner=document.createElement('div');inner.className='cinner';const canvas=document.createElement('canvas');
+  scroll.append(inner);inner.append(canvas);root.append(scroll);
+  const view=Math.max(200,scroll.clientWidth),pps=Math.max(60,view/duration);
+  editorGeom={lo,hi,pps,duration,canvas,scroll,view};
+  inner.style.width=Math.ceil(duration*pps)+'px';inner.style.height=((hi-lo+1)*ROW)+'px';
+  vocalNotes.forEach((n,i)=>{
+    const el=document.createElement('div');el.className='target'+(n.c!=null&&n.c<.4?' low':'');el.dataset.i=i;el.dataset.t=n.t;el.dataset.d=n.d;el.tabIndex=0;el.setAttribute('role','slider');el.setAttribute('aria-valuemin',36);el.setAttribute('aria-valuemax',96);el.setAttribute('aria-label','Vocal target '+(i+1)+(n.c!=null?', confidence '+Math.round(n.c*100)+'%':''));
+    if(n.c!=null)el.style.opacity=.55+.45*n.c;
+    const a=document.createElement('span');a.className='edge start';a.dataset.edge='start';const b=document.createElement('span');b.className='edge end';b.dataset.edge='end';
+    // Resize edges only on targets wide enough to keep a body to grab for pitch drags.
+    if(n.d*pps>=30)el.append(a,b);el.append(document.createElement('span'));placeTarget(el,n,editorGeom);
+    el.onpointerdown=e=>startDrag(e,el,i);el.onpointermove=e=>moveDrag(e,el);el.onpointerup=e=>endDrag(e,el);el.onpointercancel=()=>{drag=null;renderVocalNotes()};
+    el.onfocus=()=>select(i);el.onkeydown=e=>targetKey(e,i);
+    inner.append(el);
   });
+  scroll.onscroll=drawContour;scroll.scrollLeft=scrollLeft;scroll.scrollTop=scrollTop;
+  drawContour();
+  if(selectedTarget!=null){select(selectedTarget);if(hadFocus)root.querySelector('.target[data-i="'+selectedTarget+'"]')?.focus({preventScroll:true})}
 }
+function drawContour(){
+  const g=editorGeom;if(!g||!vocalNotes)return;
+  const {canvas,scroll,lo,hi,pps}=g,w=scroll.clientWidth||g.view,h=(hi-lo+1)*ROW,dpr=window.devicePixelRatio||1,x0=scroll.scrollLeft;
+  canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);canvas.style.width=w+'px';canvas.style.height=h+'px';
+  const c=canvas.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.fillStyle='#0c1928';c.fillRect(0,0,w,h);
+  const pcs=keyPcs();
+  for(let m=lo;m<=hi;m++){const y=(hi-m)*ROW;if(pcs.includes(((m%12)+12)%12)&&tuningKey.scale!=='chromatic'){c.fillStyle='#14283d';c.fillRect(0,y,w,ROW)}c.fillStyle=m%12===0?'#3b5571':'#1d2f45';c.fillRect(0,y+ROW-1,w,1)}
+  c.font='10px system-ui,sans-serif';c.fillStyle='#8aa3bd';
+  for(let s=Math.floor(x0/pps);s*pps<x0+w;s++){const x=s*pps-x0;c.fillStyle='#22364d';c.fillRect(x,0,1,h);c.fillStyle='#8aa3bd';c.fillText(s+'s',x+3,h-3)}
+  for(let m=lo;m<=hi;m++)if(m%12===0){c.fillStyle='#b3c6d9';c.fillText(noteName(m),3,(hi-m)*ROW+ROW-2)}
+  if(!vocalContour)return;
+  const {t,m}=vocalContour,preview=previewCorrection(vocalContour,shownNotes(),tuningSettings()),y=v=>(hi+.5-v)*ROW;
+  const line=(values,color,only)=>{c.strokeStyle=color;c.lineWidth=1.6;c.beginPath();let pen=false,prev=-1;for(let i=0;i<t.length;i++){const x=t[i]*pps-x0;if(x<-10)continue;if(x>w+10)break;const v=values[i],skip=!Number.isFinite(v)||(only&&!only(i));if(skip){pen=false;continue}if(!pen||t[i]-prev>.05)c.moveTo(x,y(v));else c.lineTo(x,y(v));pen=true;prev=t[i]}c.stroke()};
+  line(m,'#7d93ad');
+  line(preview,'#92e9ce',i=>Math.abs(preview[i]-m[i])>.005);
+}
+function startDrag(e,el,i){
+  if(e.button)return;e.preventDefault();el.focus({preventScroll:true});select(i);
+  const n=vocalNotes[i],edge=e.target.dataset?.edge;
+  drag={i,mode:edge||'pitch',x:e.clientX,y:e.clientY,m:n.m,t:n.t,d:n.d,m0:n.m,moved:false};el.setPointerCapture(e.pointerId);
+}
+function moveDrag(e,el){
+  if(!drag||drag.i!==Number(el.dataset.i))return;const g=editorGeom,n=vocalNotes[drag.i];
+  if(drag.mode==='pitch'){const raw=drag.m0+(drag.y-e.clientY)/ROW,want=Math.max(36,Math.min(96,Math.round(raw)));drag.m=tuningKey.scale==='chromatic'?want:snapToScale(want,keyPcs(),raw)}
+  else{const time=(e.clientX-g.scroll.getBoundingClientRect().left+g.scroll.scrollLeft)/g.pps;Object.assign(drag,resizeNote(vocalNotes,drag.i,drag.mode,time,g.duration))}
+  drag.moved=drag.m!==n.m||drag.t!==n.t||drag.d!==n.d;placeTarget(el,{...n,m:drag.m,t:drag.t,d:drag.d},g);$('vocalnoteinfo').textContent=describeTarget(drag.i);drawContour();
+}
+function endDrag(e,el){
+  if(!drag)return;const d=drag;drag=null;el.releasePointerCapture?.(e.pointerId);
+  if(!d.moved){select(d.i);return}
+  const label=d.mode==='pitch'?'Move vocal target '+(d.i+1)+' to '+noteName(d.m):'Resize vocal target '+(d.i+1);
+  edit(label,()=>{Object.assign(vocalNotes[d.i],{m:d.m,t:d.t,d:d.d})});status(label);
+}
+function targetKey(e,i){
+  const n=vocalNotes[i];
+  if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();const m=stepInScale(n.m,keyPcs(),e.key==='ArrowUp'?1:-1);if(m!==n.m){const label='Move vocal target '+(i+1)+' to '+noteName(m);edit(label,()=>{n.m=m});status(label)}}
+  else if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();const label='Remove vocal target '+(i+1);edit(label,()=>{vocalNotes.splice(i,1)});status(label)}
+}
+let resizeTimer=null;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(renderVocalNotes,150)});
 $('detectvocal').onclick=async()=>{
   try{
     status('Detecting vocal notes…');
-    const {transcribeWithBasicPitch,VOCAL_TARGET_LIMITS}=await import('./transcription.js');
-    const notes=await transcribeWithBasicPitch(await decoded(audio),p=>status('Detecting vocal notes: '+p+'%'),VOCAL_TARGET_LIMITS);
+    const {detectVocalTargets}=await import('./transcription.js');
+    const {notes,contour}=await detectVocalTargets(await decoded(audio),p=>status('Detecting vocal notes: '+p+'%'));
+    vocalContour=contour;selectedTarget=null;
     edit('Detect sung notes',()=>{vocalNotes=notes.map(n=>({...n}));originalVocalNotes=notes.map(n=>({...n}))});
     status(notes.length+' vocal notes ready to edit.');
   }catch(e){status('Vocal note detection failed: '+e.message)}
 };
 $('resetvocal').onclick=()=>edit('Reset vocal targets',()=>{vocalNotes=originalVocalNotes?.map(n=>({...n}))??null});
-$('tunestrength').oninput=()=>{$('tunelevel').textContent=$('tunestrength').value+'%'};
+$('tunestrength').oninput=()=>{$('tunelevel').textContent=$('tunestrength').value+'%';drawContour()};
 $('tune').onclick=async()=>{try{
  status('Correcting singing pitch…');
  const strength=Number($('tunestrength').value)/100;
@@ -111,7 +191,8 @@ $('tune').onclick=async()=>{try{
  const send=async({wav,notes,strength})=>{
   const form=new FormData();form.append('file',new Blob([wav],{type:'audio/wav'}),'vocal.wav');
   if(notes?.length)form.append('notes_json',JSON.stringify(notes));
-  const r=await fetch(apiUrl('/api/tune?engine=world&strength='+encodeURIComponent(strength)),{method:'POST',body:form,headers:{'x-tandem-token':$('token').value.trim()}});
+  const shape=notes?.length?'&vibrato='+tuningSettings().vibrato:tuningKey.scale!=='chromatic'?'&scale='+keyPcs().join(','):'';
+  const r=await fetch(apiUrl('/api/tune?engine=world&strength='+encodeURIComponent(strength)+shape),{method:'POST',body:form,headers:{'x-tandem-token':$('token').value.trim()}});
   if(!r.ok){const text=await r.text();throw Object.assign(Error('HTTP '+r.status+': '+text.slice(0,180)),r.status===429?{retryAfter:Number(r.headers.get('Retry-After'))||10}:{})}
   return {wav:await r.arrayBuffer(),corrected:Number(r.headers.get('X-Tandem-Tuned-Notes')||0)};
  };

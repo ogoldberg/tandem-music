@@ -1,6 +1,6 @@
 # Architecture decision records (concise)
 
-Last reviewed: 2026-11-09. Decisions are revisable.
+Last reviewed: 2026-11-10. Decisions are revisable.
 
 ## ADR-001: Browser-first rather than MPC hardware
 **Decision:** Responsive web app for Mac and Android; no required Akai MPC. **Reason:** immediate access and low friction. **Trade-off:** browser audio/CPU/device differences require testing.
@@ -22,3 +22,6 @@ Last reviewed: 2026-11-09. Decisions are revisable.
 
 ## ADR-007: Tests and transparency
 **Decision:** Python and Node CI suites plus real-device QA and explicit implemented-vs-planned documentation. **Reason:** READY deployments do not demonstrate audio quality. **Trade-off:** ongoing evaluation and fixture maintenance.
+
+## ADR-008: Pitch-contour editor targets note centres
+**Decision (VOX.3, 2026-11-10):** The editor stays note-based: one target pitch per detected note, drawn over the sung pitch line, with the server moving each note by its target minus its sung centre and keeping a chosen share of the vibrato (`vibrato`, editor default 100%, API default 0). Basic Pitch fragments are merged into whole notes in the browser; confidence stays client-side. **Reason:** dragging whole notes is what the roadmap asked for and what `/api/tune` can do statelessly; moving the note centre (not each frame) is what lets a target be dragged further than the old 250-cent cap and keep vibrato. **Trade-off:** no free-hand curve drawing or drift editing; the corrected line is a preview from Basic Pitch's contour, not WORLD's own analysis; the 100% default is unverified by ear until VOX.2.
