@@ -28,15 +28,18 @@ export function createVersionStore(storage, { now = () => Date.now(), limit = MA
     throw TypeError("Expected a Storage object");
   }
 
-  // Newest first. Unparseable data is an error: overwriting it would destroy the user's versions.
-  function read() {
+  // Every stored entry, newest first, including ones this version does not recognise (a newer
+  // format or a hand edit): those are hidden from the list but written back untouched, never
+  // deleted. Unparseable data is an error: overwriting it would destroy the user's versions.
+  function readAll() {
     const raw = storage.getItem(VERSIONS_KEY);
     if (raw === null) return [];
     let parsed;
     try { parsed = JSON.parse(raw); } catch { throw Error("Saved versions are unreadable in this browser's storage."); }
     if (!Array.isArray(parsed)) throw Error("Saved versions are unreadable in this browser's storage.");
-    return parsed.filter(isEntry);
+    return parsed;
   }
+  const read = () => readAll().filter(isEntry);
 
   function write(entries) {
     try {
@@ -58,12 +61,14 @@ export function createVersionStore(storage, { now = () => Date.now(), limit = MA
       const clean = String(name ?? "").trim().slice(0, MAX_NAME_LENGTH);
       if (!clean) throw Error("Give the version a name.");
       if (!isProject(project)) throw Error("Only a project with note and drum lists can be saved.");
-      const entries = read();
+      const entries = readAll();
       const savedAt = now();
       let id = String(savedAt), n = 1;
-      while (entries.some(e => e.id === id)) id = `${savedAt}-${n++}`;
+      while (entries.some(e => e?.id === id)) id = `${savedAt}-${n++}`;
       const entry = { id, name: clean, savedAt, project: projectFromState(project) };
-      write([entry, ...entries].slice(0, limit));
+      // The limit counts recognised versions only; the oldest of those beyond it are dropped.
+      let kept = 0;
+      write([entry, ...entries].filter(e => !isEntry(e) || ++kept <= limit));
       return { id, name: clean, savedAt };
     },
 
@@ -73,8 +78,8 @@ export function createVersionStore(storage, { now = () => Date.now(), limit = MA
     },
 
     remove(id) {
-      const entries = read();
-      const kept = entries.filter(e => e.id !== id);
+      const entries = readAll();
+      const kept = entries.filter(e => !(isEntry(e) && e.id === id));
       if (kept.length === entries.length) return false;
       write(kept);
       return true;

@@ -466,3 +466,20 @@ def test_access_token_kept_for_this_tab_only(studio):
     page.click("#connect")
     page.wait_for_function("sessionStorage.getItem('tandem-token') === null")
     assert page.evaluate("localStorage.getItem('tandem-token')") is None
+
+
+def test_restoring_a_version_without_tempo_or_instrument_uses_the_defaults(studio):
+    """Issue #21: like Open project, Restore falls back to 100 bpm and piano when a stored version lacks them."""
+    page = studio
+    entry = {"id": "hand", "name": "Hand edited", "savedAt": 1, "project": {"notes": [{"m": 62, "t": 0, "d": 0.5}], "drums": []}}
+    page.evaluate("e => localStorage.setItem('tandem-versions', JSON.stringify([e]))", entry)
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    page.fill("#bpm", "150")
+    page.dispatch_event("#bpm", "change")
+    page.select_option("#instrument", "marimba")
+    page.click("#versionlist .version:has-text('Hand edited') >> text=Restore")
+    expect(page.locator("#status")).to_have_text("Restored version: Hand edited")
+    assert note_pitches(page) == [62]
+    assert page.input_value("#bpm") == "100"
+    assert page.input_value("#instrument") == "piano"
