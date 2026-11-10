@@ -29,7 +29,17 @@ class DesktopError(Exception):
     """A launch problem the person can act on; the message says what to do."""
 
 
+def _someone_listens(port):
+    """Whether a program accepts connections on 127.0.0.1:<port>, including one listening on all
+    interfaces (0.0.0.0), which macOS lets a SO_REUSEADDR socket bind beside (issue #48)."""
+    with socket.socket() as s:
+        s.settimeout(1)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
 def _port_is_free(port):
+    if _someone_listens(port):
+        return False
     with socket.socket() as s:
         try:
             s.bind(("127.0.0.1", port))
@@ -72,10 +82,13 @@ def load_port(home=None):
 def bind(port):
     """A listening socket on 127.0.0.1:<port> only, never on other interfaces."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # Lets a relaunch reuse the port while the last run's connections are in TIME_WAIT; it does
-    # not allow binding while another process is listening on the port.
+    # Lets a relaunch reuse the port while the last run's connections are in TIME_WAIT. On macOS it
+    # would also let the bind succeed beside a program listening on 0.0.0.0:<port>, so that case
+    # is caught first by trying to connect.
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
+        if _someone_listens(port):
+            raise OSError(f"something is listening on port {port}")
         sock.bind(("127.0.0.1", port))
         sock.listen(128)
     except OSError as exc:

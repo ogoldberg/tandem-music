@@ -58,6 +58,15 @@ def test_binding_a_port_in_use_says_tandem_may_already_be_running():
             desk.bind(busy.getsockname()[1])
 
 
+def test_a_port_another_program_holds_on_all_interfaces_is_refused():
+    # Issue #48: on macOS, SO_REUSEADDR let 127.0.0.1:<port> bind beside a 0.0.0.0:<port> listener.
+    with socket.socket() as busy:
+        busy.bind(("0.0.0.0", 0))
+        busy.listen()
+        with pytest.raises(desk.DesktopError, match="already running"):
+            desk.bind(busy.getsockname()[1])
+
+
 def test_the_server_binds_to_loopback_only():
     sock = desk.bind(free_port())
     try:
