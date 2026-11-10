@@ -1,0 +1,12 @@
+{
+  "name": "Tandem Capture",
+  "short_name": "Capture",
+  "id": "./capture",
+  "start_url": "./capture",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0e1522",
+  "background_color": "#0d1523",
+  "description": "Record song ideas in one tap and develop them in Tandem"
+}

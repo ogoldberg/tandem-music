@@ -60,13 +60,16 @@ def server_url(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def browser_type_launch_args(browser_type_launch_args):
+def browser_type_launch_args(browser_type_launch_args, browser_name):
     """Let Chromium fall back to software WebGL (SwiftShader) on GPU-less machines such as CI runners.
 
     Chromium no longer does that by default, so Basic Pitch's TensorFlow.js would drop to its
     pure-JS CPU backend, which is too slow to transcribe a long take within the test timeouts.
     """
-    args = [*browser_type_launch_args.get("args", []), "--enable-unsafe-swiftshader"]
+    args = [*browser_type_launch_args.get("args", [])]
+    if browser_name == "chromium":
+        # A synthetic microphone (a beeping tone) and no permission prompt, for the capture tests (MOB.1).
+        args += ["--enable-unsafe-swiftshader", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"]
     return {**browser_type_launch_args, "args": args}
 
 
