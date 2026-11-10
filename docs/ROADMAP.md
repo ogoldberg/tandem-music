@@ -99,9 +99,9 @@ This is the working task list, in strategic order: protect the deployment, prove
   - Decided 2026-11-10 (ADR-011): no accounts for now; local-first, with the user's own storage and AI keys.
 - [ ] **STORE.2** Local storage plus bring-your-own storage
   - Split into the parts below; STORE.2 is done when STORE.2a and STORE.2b are (STORE.2c is optional and can stay open). No Tandem server storage and no per-user quotas (there are no users to give them to).
-- [ ] **STORE.2a** Keep projects, versions and recordings on the device in IndexedDB and OPFS
+- [x] **STORE.2a** Keep projects, versions and recordings on the device in IndexedDB and OPFS
   - Projects, the draft and named versions move from `localStorage` to IndexedDB, with existing `localStorage` data migrated once and left readable if the migration fails. Recordings (original and processed audio) are saved in OPFS and linked from the project, so reopening a project brings its audio back. Request persistent storage and show whether it was granted; report a full quota instead of losing data.
-  - Progress: the draft and named versions are in IndexedDB (`storage.js`), migrated from `localStorage` on start, with persistent storage requested on Save version and its state shown in the Versions panel. Recordings in OPFS are next.
+  - Done: the draft and named versions are in IndexedDB (`storage.js`), migrated from `localStorage` on start, with persistent storage requested on Save version and its state shown in the Versions panel. Recordings (original, polished, tuned) are kept in OPFS by `recordings.js` and linked from the draft and each version; they come back after a reload, unlinked files are collected, and a full quota is reported. Evidence: Node tests (`tests/storage.test.mjs`, `tests/versions.test.mjs`, `tests/recordings.test.mjs`) and Chromium browser tests in `e2e/test_studio.py`, including a full browser restart. Not verified: Safari's OPFS `createWritable` and any real-device QA.
   - **Acceptance:** a project with a recording, its versions and the draft survive a reload and a browser restart in a real browser; old `localStorage` versions and draft appear after the upgrade; covered by Node unit tests (with an in-memory stand-in for the IndexedDB store) and browser tests against Chromium's IndexedDB.
 - [ ] **STORE.2b** Save to folder: read and write projects in a folder the user picks
   - **Depends:** STORE.2a
@@ -124,11 +124,11 @@ This is the working task list, in strategic order: protect the deployment, prove
   - **Acceptance:** the VOX.1 benchmark fixtures give results within documented tolerances of the server version; a long recording tunes in a real browser offline with no API call.
 
 ### 7. Hand work on to other music tools
-Tandem is where an idea starts; people finish it in their own DAW or notation app. Interchange is through standard files, not plugins or third-party cloud accounts (ADR-011). Each export carries the tempo, key and part names.
+Tandem is where an idea starts; people finish it in their own DAW or notation app. Interchange is through standard files, not plugins or third-party cloud accounts (ADR-011). Each export carries the tempo, key and part names where the format allows (a WAV stem cannot).
 - [ ] **EXP.1** Export stems and multi-track MIDI for any DAW
   - **Depends:** STORE.2a (the recorded and tuned vocal must be kept to export it)
   - One WAV per part (melody, harmony, drums, and the original, polished and tuned vocal when present), all the same length and starting at zero so they line up when dropped into a DAW, offered as one zip. A type-1 MIDI file with one named track per part (melody, harmony, drums on channel 10) plus tempo and key signature, alongside the existing single-track export or replacing it.
-  - **Acceptance:** stems line up sample-exactly with the mixed WAV (their sum matches it within rounding); the MIDI parses with a standard parser into named tracks with the right tempo, key and notes; checked by importing into at least one real DAW (GarageBand, Logic, Ableton Live, Reaper or BandLab) and recorded as manual QA; Node unit tests and a browser test.
+  - **Acceptance:** the melody, harmony and drum stems line up sample-exactly with the mixed WAV (their sum matches it within rounding; vocal stems are not part of the mix); the MIDI parses with a standard parser into named tracks with the right tempo, key and notes; checked by importing into a real DAW, GarageBand first and then Logic (others such as Ableton Live, Reaper or BandLab later), and recorded as manual QA; Node unit tests and a browser test.
 - [ ] **EXP.2** Export the melody (and harmony) as MusicXML for notation apps
   - Quantized to the project grid with the detected or chosen key, time signature 4/4, tempo, and a chord-symbol or second staff for the harmony. Notes are split into tied, notatable durations.
   - **Acceptance:** the file validates against the MusicXML 4.0 schema; a fixture melody round-trips (pitches and durations) through a MusicXML parser; opened in MuseScore and recorded as manual QA.
@@ -137,7 +137,7 @@ Tandem is where an idea starts; people finish it in their own DAW or notation ap
   - The open DAWproject format (zip with `project.xml`, `metadata.xml` and audio) with one track per part, note clips for melody, harmony and drums, audio clips for the vocal, and the tempo.
   - **Acceptance:** the XML validates against the DAWproject schema; the project opens with its tracks and audio in at least one DAW that imports DAWproject (Bitwig Studio, Studio One or Cubase), recorded as manual QA.
 - [ ] **EXP.4** Web MIDI: play and record from a MIDI keyboard, and send playback to MIDI outputs
-  - Only where the browser has Web MIDI (Chromium); hidden elsewhere. Input records notes into the melody as one undoable edit at the project tempo; output plays melody, harmony and drums to a chosen device and channel.
+  - Only where the browser has Web MIDI (Chromium and Firefox on desktop, not Safari); hidden elsewhere. Input records notes into the melody as one undoable edit at the project tempo; output plays melody, harmony and drums to a chosen device and channel.
   - **Acceptance:** browser test with a mocked `MIDIAccess`; recording with a real keyboard and playing to a real synth recorded as manual QA.
 
 ### 8. Later

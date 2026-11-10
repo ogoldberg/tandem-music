@@ -1003,3 +1003,143 @@ def test_indexeddb_store_updates_are_atomic_in_a_real_browser(studio):
       return out;
     }""")
     assert result == {"refused": "no thanks", "afterRefusal": [1], "list": [1, 3, 4, 5], "a": {"x": 1}, "b": "two", "missing": True}
+
+
+IDB_GET = """key => new Promise((resolve, reject) => {
+  const open = indexedDB.open('tandem');
+  open.onerror = () => reject(open.error);
+  open.onsuccess = () => {
+    const db = open.result, req = db.transaction('kv').objectStore('kv').get(key);
+    req.onsuccess = () => { db.close(); resolve(req.result ?? null); };
+    req.onerror = () => reject(req.error);
+  };
+})"""
+
+OPFS_FILES = """async () => {
+  const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('recordings', { create: true });
+  const names = [];
+  for await (const entry of dir.values()) names.push(entry.name);
+  return names.sort();
+}"""
+
+
+def draft_audio(page):
+    return page.evaluate(IDB_GET, "draft-audio") or {}
+
+
+def wait_for_draft_audio(page, slots):
+    page.wait_for_function(f"""async () => {{ const v = await ({IDB_GET})('draft-audio');
+        return !!v && {json.dumps(sorted(slots))}.every(s => v[s]) && Object.keys(v).length === {len(slots)}; }}""")
+    return draft_audio(page)
+
+
+def import_recording(page, path):
+    page.set_input_files("#audiofile", str(path))
+    expect(page.locator("#status")).to_contain_text("Recorded")
+
+
+def test_recording_and_polish_survive_a_reload(studio, tmp_path):
+    """STORE.2a: the imported recording and its polished take are kept in OPFS and restored with the draft."""
+    page = studio
+    import_recording(page, tone_wav(tmp_path / "a.wav"))
+    links = wait_for_draft_audio(page, ["original"])
+    assert page.evaluate(OPFS_FILES) == [links["original"]["id"]]
+    page.click("#polish")
+    expect(page.locator("#status")).to_have_text("Vocal polished. Compare Original and Polished.")
+    links = wait_for_draft_audio(page, ["original", "polished"])
+    assert links["polished"]["type"] == "audio/wav"
+    assert page.evaluate(OPFS_FILES) == sorted([links["original"]["id"], links["polished"]["id"]])
+
+    page.reload()
+    expect(page.locator("#status")).to_have_text("Restored the draft and its recording.")
+    for button in ["#original", "#polished", "#downloadvocal", "#tune", "#analyze"]:
+        expect(page.locator(button)).to_be_enabled()
+    expect(page.locator("#playtuned")).to_be_disabled()
+    # The restored polished take is the same audio that was stored.
+    with page.expect_download() as info:
+        page.click("#downloadvocal")
+    saved = tmp_path / "restored.wav"
+    info.value.save_as(saved)
+    digest = page.evaluate("async b => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(b)))].map(x => x.toString(16).padStart(2, '0')).join('')",
+                           list(saved.read_bytes()))
+    assert digest == links["polished"]["id"]
+
+
+def test_versions_keep_their_own_recordings(studio, tmp_path):
+    """STORE.2a: each version restores the recording saved with it; a version saved without one keeps the
+    current recording; deleting a version deletes recordings nothing else links to."""
+    page = studio
+    page.fill("#versionname", "No audio")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: No audio")
+    import_recording(page, tone_wav(tmp_path / "a.wav"))
+    a = wait_for_draft_audio(page, ["original"])["original"]["id"]
+    page.fill("#versionname", "Take A")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: Take A")
+    import_recording(page, tone_wav(tmp_path / "b.wav", seconds=0.4))
+    page.wait_for_function(f"async () => (await ({IDB_GET})('draft-audio'))?.original?.id !== '{a}'")
+    b = draft_audio(page)["original"]["id"]
+    page.fill("#versionname", "Take B")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: Take B")
+    assert page.evaluate(OPFS_FILES) == sorted([a, b])
+
+    page.click("#versionlist .version:has-text('Take A') >> text=Restore")
+    expect(page.locator("#status")).to_have_text("Restored version: Take A")
+    assert draft_audio(page) == {"original": {"id": a, "type": "audio/wav"}}
+    page.click("#versionlist .version:has-text('No audio') >> text=Restore")
+    expect(page.locator("#status")).to_have_text("Restored version: No audio")
+    expect(page.locator("#original")).to_be_enabled()
+    assert draft_audio(page)["original"]["id"] == a
+    page.click("#versionlist .version:has-text('Take B') >> text=Restore")
+    expect(page.locator("#status")).to_have_text("Restored version: Take B")
+    page.wait_for_function(f"async () => (await ({IDB_GET})('draft-audio'))?.original?.id === '{b}'")
+
+    # A is linked only from Take A now, so deleting Take A deletes its file.
+    page.click("#versionlist .version:has-text('Take A') >> text=Delete")
+    expect(page.locator("#status")).to_have_text("Deleted version: Take A")
+    page.wait_for_function(f"async () => JSON.stringify(await ({OPFS_FILES})()) === '{json.dumps([b])}'")
+    page.reload()
+    expect(page.locator("#status")).to_have_text("Restored the draft and its recording.")
+    assert page.evaluate(OPFS_FILES) == [b]
+
+
+def test_a_missing_recording_is_reported(studio, tmp_path):
+    """STORE.2a: if a linked recording has gone from the device, start-up says so and keeps the project."""
+    page = studio
+    import_recording(page, tone_wav(tmp_path / "a.wav"))
+    a = wait_for_draft_audio(page, ["original"])["original"]["id"]
+    page.evaluate(f"""async () => {{ const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('recordings');
+                                     await dir.removeEntry('{a}'); }}""")
+    page.reload()
+    expect(page.locator("#status")).to_have_text("Restored the draft. The original recording is no longer on this device.")
+    expect(page.locator("#original")).to_be_disabled()
+
+
+def test_full_storage_is_reported_when_keeping_a_recording(studio, tmp_path):
+    """STORE.2a: a quota error while writing the recording is reported, and the recording still plays."""
+    page = studio
+    page.add_init_script("""FileSystemWritableFileStream.prototype.write = function () {
+      return Promise.reject(new DOMException('full', 'QuotaExceededError'));
+    };""")
+    page.reload()
+    page.wait_for_function("!document.body.inert")
+    page.set_input_files("#audiofile", str(tone_wav(tmp_path / "a.wav")))
+    expect(page.locator("#status")).to_have_text("Could not keep the recording on this device: Browser storage is full. Delete older versions or recordings, then try again.")
+    expect(page.locator("#original")).to_be_enabled()
+    assert draft_audio(page) == {}
+    assert page.evaluate(OPFS_FILES) == []
+
+
+def test_without_opfs_recordings_work_but_are_not_kept(studio, tmp_path):
+    """STORE.2a: in a browser without OPFS the studio still records, and says the recording will not be kept."""
+    page = studio
+    page.add_init_script("delete StorageManager.prototype.getDirectory;")
+    page.reload()
+    message = "Recordings cannot be kept on this device in this browser, so a recording lasts only until the page is closed."
+    expect(page.locator("#status")).to_have_text(message)
+    page.set_input_files("#audiofile", str(tone_wav(tmp_path / "a.wav")))
+    expect(page.locator("#status")).to_contain_text("Recorded")
+    expect(page.locator("#status")).to_contain_text(message)
+    expect(page.locator("#original")).to_be_enabled()

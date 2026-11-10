@@ -2,10 +2,12 @@
 // DOM-free so Node tests import it directly. The studio passes the IndexedDB key-value store from
 // storage.js (STORE.2a); before that, versions lived in localStorage under "tandem-versions" and
 // storage.js migrates them. Versions live only on this device (ADR-011). Each stored version is a
-// portable tandem-project object, the same shape as a saved project file, so it carries no audio.
+// portable tandem-project object, the same shape as a saved project file, so it carries no audio;
+// the entry next to it may link the recordings (recordings.js) that were loaded when it was saved.
 
 export { VERSIONS_KEY } from "./storage.js";
 import { VERSIONS_KEY } from "./storage.js";
+import { cleanLinks, linkedIds } from "./recordings.js";
 export const MAX_VERSIONS = 50;
 export const MAX_NAME_LENGTH = 60;
 
@@ -50,17 +52,19 @@ export function createVersionStore(kv, { now = () => Date.now(), limit = MAX_VER
     },
 
     // Read-modify-write in one transaction, so a version saved in another tab at the same time is kept.
-    async save(name, project) {
+    async save(name, project, audio = null) {
       const clean = String(name ?? "").trim().slice(0, MAX_NAME_LENGTH);
       if (!clean) throw Error("Give the version a name.");
       if (!isProject(project)) throw Error("Only a project with note and drum lists can be saved.");
       const stored = copy(projectFromState(project));
+      const links = cleanLinks(audio);
       return kv.update(VERSIONS_KEY, value => {
         const entries = entriesOf(value);
         const savedAt = now();
         let id = String(savedAt), n = 1;
         while (entries.some(e => e?.id === id)) id = `${savedAt}-${n++}`;
         const entry = { id, name: clean, savedAt, project: stored };
+        if (Object.keys(links).length) entry.audio = links;
         // The limit counts recognised versions only; the oldest of those beyond it are dropped.
         let kept = 0;
         return [[entry, ...entries].filter(e => !isEntry(e) || ++kept <= limit), { id, name: clean, savedAt }];
@@ -70,6 +74,18 @@ export function createVersionStore(kv, { now = () => Date.now(), limit = MAX_VER
     async get(id) {
       const entry = (await read()).find(e => e.id === id);
       return entry ? copy(entry.project) : null;
+    },
+
+    // The recording links saved with a version, or null if it has none.
+    async audio(id) {
+      const entry = (await read()).find(e => e.id === id);
+      const links = cleanLinks(entry?.audio);
+      return Object.keys(links).length ? links : null;
+    },
+
+    // Every recording linked from any stored entry, recognised or not, so none of them is collected.
+    async audioIds() {
+      return linkedIds(entriesOf(await kv.get(VERSIONS_KEY)).map(e => e?.audio));
     },
 
     async remove(id) {

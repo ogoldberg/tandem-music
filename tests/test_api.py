@@ -245,6 +245,16 @@ def test_storage_module_is_served_and_precached(client):
     sw=run(client("GET","/sw.js"))
     assert "./storage.js" in sw.text
 
+def test_recordings_module_is_served_and_precached(client):
+    # STORE.2a: index.html imports recordings.js (recordings in the Origin Private File System) at startup.
+    js=run(client("GET","/recordings.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export async function openRecordings" in js.text
+    assert "from './recordings.js'" in run(client("GET","/")).text
+    assert 'from "./recordings.js"' in run(client("GET","/versions.js")).text
+    sw=run(client("GET","/sw.js"))
+    assert "./recordings.js" in sw.text
+
 def test_chat_project_accepts_an_optional_harmony_part():
     # ARR.1c: the harmony part is optional, so projects saved before it still validate.
     assert server.ChatProject().harmony==[] and server.ChatProject().harmony_instrument=="piano"
