@@ -209,7 +209,9 @@ def decode_wav(data):
             return arr,rate
     except (wave.Error,EOFError) as exc: raise HTTPException(400,"Invalid WAV: "+str(exc))
 def encode_wav(arr,rate):
-    samples=(np.clip(arr,-1,1)*32767).astype("<i2")
+    # Inverse of decode_wav (int16/32768): round on the same scale so a 16-bit WAV round-trips
+    # exactly; truncating with *32767 shrank every sample by up to one step per pass.
+    samples=np.clip(np.round(np.asarray(arr,dtype=np.float64)*32768),-32768,32767).astype("<i2")
     out=io.BytesIO()
     with wave.open(out,"wb") as w:
         w.setnchannels(1);w.setsampwidth(2);w.setframerate(rate);w.writeframes(samples.tobytes())

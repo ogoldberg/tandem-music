@@ -208,6 +208,7 @@ def test_undo_redo_across_manual_ai_load_and_vocal_target_edits(studio, tmp_path
     expect(page.locator("#detectvocal")).to_be_enabled()
     page.click("#detectvocal")
     expect(page.locator("#status")).to_have_text("Vocal notes ready to edit.", timeout=60_000)
+    assert history_state(page)["undo"] == (True, "Undo: Detect sung notes")
     first = page.locator("#vocalnoteeditor .row").first.locator("span")
     detected = first.text_content()
     page.locator("#vocalnoteeditor .row").first.locator("button", has_text="+").click()

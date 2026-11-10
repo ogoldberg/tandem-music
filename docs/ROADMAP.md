@@ -71,17 +71,20 @@ This is the working task list, in strategic order: protect the deployment, prove
   - **Acceptance:** assets verified by hash or served from this app; transcription still works; supply-chain note in `docs/SECURITY.md` updated.
 
 ### 5. Vocal quality and editing
-- [ ] **VOX.1** Build an automated vocal pitch-correction benchmark
+- [x] **VOX.1** Build an automated vocal pitch-correction benchmark
   - Generate fixtures with known MIDI pitches and timing at several sample rates, with vibrato, noise and transitions; measure pitch error, duration and loudness change of `/api/tune`, and 0%-strength equivalence.
   - **Acceptance:** runs under `pytest`; records metrics; thresholds documented in `docs/AUDIO.md`.
 - [ ] **VOX.2** *(HUMAN)* Blinded A/B listening test of WORLD tuning on real singing
   - **Depends:** VOX.1
   - **Acceptance:** recordings used with consent; results and artifacts noted in `docs/AUDIO.md`.
-- [x] **EDIT.1** Proper undo/redo and project versioning
+- [x] **EDIT.1** Proper undo/redo
   - Replace ad hoc note-list edits with an edit history covering manual edits, AI actions and tuning targets.
-  - Done: `history.js` (bounded, labelled undo/redo with no-op detection) records every project and vocal-target edit; Redo button and keyboard shortcuts; Node unit tests and a browser test across manual, AI, load and vocal-target edits. History is per page session; persistent named project versions are not implemented (see ARCHITECTURE.md, Edit history).
+  - Done: `history.js` (bounded, labelled undo/redo with no-op detection) records every project and vocal-target edit; Redo button and keyboard shortcuts; Node unit tests and a browser test across manual, AI, load and vocal-target edits. History is per page session; persistent named project versions moved to EDIT.2.
   - **Depends:** CI.2
   - **Acceptance:** undo/redo works across all edit types; tests cover history behavior.
+- [ ] **EDIT.2** Project versioning: named, persisted versions of a project
+  - **Depends:** EDIT.1
+  - **Acceptance:** a user can save, list and restore named versions; they survive reload and are covered by unit and browser tests.
 - [ ] **VOX.3** Continuous pitch-contour editor
   - Replace the +/- target note list with a visual contour: drag notes, keep vibrato, key/scale selection, per-note confidence.
   - **Depends:** VOX.1, EDIT.1
