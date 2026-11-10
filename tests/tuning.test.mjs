@@ -168,3 +168,14 @@ test("with note targets set, a chunk that has none keeps its original audio inst
   await tuneInChunks(x, sr, { strength: 1, send, sleep: async () => {} });
   assert.equal(sent.length, 3);
 });
+
+test("encodeWav16 uses the same 32768 scale as decodeWav16, so untouched audio round-trips exactly", () => {
+  // Every 16-bit code, as decodeWav16 produces it, must encode back to the same code.
+  const codes = Int16Array.from({ length: 65536 }, (_, i) => i - 32768);
+  const x = Float32Array.from(codes, c => c / 32768);
+  const { samples } = decodeWav16(encodeWav16(x, 22050));
+  assert.deepEqual(Array.from(samples), Array.from(x));
+  // Full scale clips to the int16 range instead of wrapping.
+  const v = new DataView(encodeWav16(Float32Array.from([1, -1, 1.5, -1.5]), 22050));
+  assert.deepEqual([0, 1, 2, 3].map(i => v.getInt16(44 + i * 2, true)), [32767, -32768, 32767, -32768]);
+});
