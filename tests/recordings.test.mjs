@@ -101,7 +101,7 @@ test("a full device is reported as a storage-full error and nothing is kept", as
   dir.failWrites = Object.assign(new Error("quota"), { name: "QuotaExceededError" });
   await assert.rejects(store.put(blob("big take")), /storage is full/i);
   const b = blob("big take");
-  assert.equal(dir.files.get(await recordingId(b))?.length ?? 0, 0);
+  assert.ok(!dir.files.has(await recordingId(b)), "the file created for the failed write is removed");
 });
 
 test("garbage collection removes only unreferenced recordings", async () => {

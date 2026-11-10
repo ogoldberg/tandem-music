@@ -930,7 +930,7 @@ def test_controls_are_inert_while_storage_opens(page, server_url):
 
 
 def test_work_survives_a_browser_restart(browser_type, browser_type_launch_args, server_url, tmp_path):
-    """STORE.2a: the draft and versions are on disk in the browser profile, not only in the open page."""
+    """STORE.2a: the draft, versions and recordings are on disk in the browser profile, not only in the open page."""
     profile = tmp_path / "profile"
     problems = []
 
@@ -944,6 +944,10 @@ def test_work_survives_a_browser_restart(browser_type, browser_type_launch_args,
         return context, page
 
     context, page = open_studio()
+    import_recording(page, tone_wav(tmp_path / "a.wav"))
+    page.click("#polish")
+    expect(page.locator("#status")).to_have_text("Vocal polished. Compare Original and Polished.")
+    links = wait_for_draft_audio(page, ["original", "polished"])
     page.click("#demo")
     page.fill("#versionname", "Before restart")
     page.click("#saveversion")
@@ -956,6 +960,13 @@ def test_work_survives_a_browser_restart(browser_type, browser_type_launch_args,
 
     context, page = open_studio()
     try:
+        expect(page.locator("#status")).to_have_text("Restored the draft and its recording.")
+        for button in ["#original", "#polished", "#downloadvocal"]:
+            expect(page.locator(button)).to_be_enabled()
+        assert draft_audio(page) == links
+        assert page.evaluate(OPFS_FILES) == sorted(link["id"] for link in links.values())
+        version_audio = page.evaluate(IDB_GET, "versions")[0]["audio"]
+        assert version_audio == links
         assert page.input_value("#bpm") == "141"
         assert len(note_pitches(page)) == 8 and count(page, "hitcount") == 0
         expect_versions(page, ["Before restart"])
