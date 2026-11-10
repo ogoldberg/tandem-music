@@ -179,15 +179,18 @@ test("quantizeProject rejects bad settings", () => {
 });
 
 // Known limits (issue #29). These pin current behaviour so a change to it is deliberate and the docs follow.
-test("limit: a pickup into even eighths is taken as the beat", () => {
-  // 120 bpm, pickup at 0.75 then even eighths from 1.0: both phases have the same count, so the earliest
-  // (the pickup's) wins and the real downbeats become swung offbeats.
-  const t = [0.75, ...Array.from({ length: 8 }, (_, i) => 1.0 + i * 0.25)];
-  const project = { bpm: 120, notes: t.map(x => ({ m: 60, t: x, d: 0.1 })), drums: [] };
-  const out = quantizeProject(project, { division: 2, swing: 1, strength: 1 });
-  const want = [0.75, 0.75 + 1 / 3, 1.25, 1.25 + 1 / 3, 1.75, 1.75 + 1 / 3, 2.25, 2.25 + 1 / 3, 2.75];
-  out.notes.forEach((n, i) => assert.ok(close(n.t, want[i], 1e-6), `${i}: ${n.t} vs ${want[i]}`));
-});
+for (const run of [8, 9]) {
+  test(`limit: a pickup into ${run} even eighths is taken as the beat`, () => {
+    // 120 bpm, pickup at 0.75 then even eighths from 1.0. With 8 eighths the pickup's phase has more onsets
+    // (5 to 4) and wins outright; with 9 they tie (5 to 5) and the earliest phase, the pickup's, wins.
+    // Either way the real downbeats become offbeats and swing moves them.
+    const t = [0.75, ...Array.from({ length: run }, (_, i) => 1.0 + i * 0.25)];
+    const project = { bpm: 120, notes: t.map(x => ({ m: 60, t: x, d: 0.1 })), drums: [] };
+    const out = quantizeProject(project, { division: 2, swing: 1, strength: 1 });
+    const want = t.map((x, i) => (i % 2 ? x - 0.25 + 1 / 3 : x));
+    out.notes.forEach((n, i) => assert.ok(close(n.t, want[i], 1e-6), `${i}: ${n.t} vs ${want[i]}`));
+  });
+}
 
 for (const bpm of [60, 70, 75, 79]) {
   test(`limit: slow quarters with an eighth every second beat read double at ${bpm} bpm`, () => {
