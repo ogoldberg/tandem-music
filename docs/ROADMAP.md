@@ -59,7 +59,7 @@ This is the working task list, in strategic order: protect the deployment, prove
 - [ ] **AI.2** Verify structured AI edits end to end on production
   - **Depends:** AI.1
   - **Acceptance:** a small authenticated edit succeeds on the deployed app; melody lock still blocks melody changes; result recorded in `docs/TESTING.md`.
-- [ ] **AI.3** Replace the localStorage access token with a safer session model
+- [x] **AI.3** Replace the localStorage access token with a safer session model
   - **Acceptance:** the shared token is no longer stored in `localStorage`; `docs/SECURITY.md` updated.
 
 ### 4. Safety net before larger UI work

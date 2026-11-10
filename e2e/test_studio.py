@@ -428,3 +428,41 @@ def test_named_versions_save_list_restore_survive_reload_and_delete(studio):
     page.reload()
     page.wait_for_function("document.getElementById('notecount').textContent !== ''")
     assert version_names(page) == ["Example groove"]
+
+
+def test_access_token_kept_for_this_tab_only(studio):
+    """AI.3: the access token lives in sessionStorage for the tab's lifetime; the old localStorage copy is removed."""
+    page = studio
+    loaded = "document.getElementById('notecount').textContent !== ''"
+
+    # A token an older version saved in localStorage is deleted on load and not filled in.
+    page.evaluate("localStorage.setItem('tandem-token', 'old-saved-token')")
+    page.reload()
+    page.wait_for_function(loaded)
+    assert page.evaluate("localStorage.getItem('tandem-token')") is None
+    assert page.input_value("#token") == ""
+
+    # A successful connection keeps the token for this tab only, never in localStorage.
+    page.fill("#token", "tab-secret")
+    page.click("#connect")
+    expect(page.locator("#status")).to_have_text("Backend connection succeeded")
+    assert page.evaluate("sessionStorage.getItem('tandem-token')") == "tab-secret"
+    assert page.evaluate("localStorage.getItem('tandem-token')") is None
+
+    # It survives a reload of the same tab...
+    page.reload()
+    page.wait_for_function(loaded)
+    assert page.input_value("#token") == "tab-secret"
+
+    # ...but a new tab starts without it.
+    other = page.context.new_page()
+    other.goto(page.url)
+    other.wait_for_function(loaded)
+    assert other.input_value("#token") == ""
+    other.close()
+
+    # Clearing the field and connecting again forgets the token.
+    page.fill("#token", "")
+    page.click("#connect")
+    page.wait_for_function("sessionStorage.getItem('tandem-token') === null")
+    assert page.evaluate("localStorage.getItem('tandem-token')") is None
