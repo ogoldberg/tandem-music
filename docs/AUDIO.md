@@ -19,7 +19,8 @@ The browser calls Basic Pitch to detect vocal note targets and shows them in the
 - Consonant, breath, transient and unvoiced regions; vibrato flattening when Keep vibrato is 0.
 - Audible timbre changes and mechanical artifacts even with formant-aware synthesis.
 - Short notes and blended pitches may not produce reliable targets.
-- The contour editor edits one target pitch per note plus its time span; it does not draw free-hand pitch curves, edit drift within a note, or split/join notes by hand. The corrected line is a preview computed from Basic Pitch's contour; the server measures pitch with WORLD, so the result can differ slightly, especially at note edges.
+- The contour editor edits one target pitch per note plus its time span; it does not draw free-hand pitch curves, edit drift within a note, or split/join notes by hand. The corrected line is a preview computed from Basic Pitch's contour (its legend says "approximate preview"); the server measures pitch with WORLD, so the result can differ slightly, especially at note edges.
+- If every detected target is deleted, Tune is disabled and the editor says so until Undo or Reset note edits brings a target back. Without that, tuning would get no targets and snap the whole take to the key or nearest semitone.
 
 ## Pitch-contour editor (VOX.3)
 `contour.js` (pure, Node-tested) turns Basic Pitch's contour output into a continuous sung pitch line: for each model frame (about 11.6 ms), the strongest of 264 salience bins (3 per semitone) marks the frame voiced when it reaches 0.3, and the salience-weighted mean of the bins around it gives sub-semitone pitch. Bin 1 is MIDI 21: with bin 0 every steady test tone read exactly 33 cents sharp; with the offset they read within 1 cent. Frame times use the bundle's own frame-to-time mapping.
