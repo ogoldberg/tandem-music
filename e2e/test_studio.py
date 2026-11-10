@@ -577,3 +577,44 @@ def test_detect_tempo_and_quantize_with_swing_are_undoable(studio, tmp_path):
     assert draft(page)["drums"] == before["drums"]
     page.click("#undo")
     assert page.input_value("#bpm") == "100"
+
+
+def test_every_instrument_plays_and_exports_its_own_sound(studio, tmp_path):
+    """ARR.1b: each melody instrument plays and renders a distinct, unclipped WAV; picks survive reload."""
+    page = studio
+    options = page.locator("#instrument option").evaluate_all("els => els.map(e => [e.value, e.textContent])")
+    assert [v for v, _ in options] == ["piano", "marimba", "strings", "bass", "chip", "organ", "guitar", "flute"]
+    assert dict(options)["chip"] == "8-bit"
+    page.click("#demo")
+    rendered = {}
+    for value, _ in options:
+        page.select_option("#instrument", value)
+        page.click("#play")
+        expect(page.locator("#status")).to_have_text("Playing composition")
+        page.click("#stop")
+        wav = download(page, "#exportwav", tmp_path).read_bytes()
+        with wave.open(io.BytesIO(wav)) as w:
+            samples = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float)
+        peak = np.abs(samples).max()
+        assert 1000 < peak < 32000, f"{value}: peak {peak}"
+        rendered[value] = samples
+    # Same notes and drums, so any difference comes from the voice.
+    names = list(rendered)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            n = min(len(rendered[a]), len(rendered[b]))
+            diff = np.abs(rendered[a][:n] - rendered[b][:n]).mean()
+            assert diff > 50, f"{a} and {b} sound the same (mean diff {diff:.1f})"
+    page.select_option("#instrument", "flute")
+    assert page.get_attribute("#undo", "title") == "Undo: Change instrument"
+    page.reload()
+    expect(page.locator("#instrument")).to_have_value("flute")
+
+
+def test_opening_a_project_with_an_unknown_instrument_is_rejected(studio, tmp_path):
+    page = studio
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": 100, "instrument": "kazoo", "notes": [], "drums": []}))
+    page.set_input_files("#projectfile", str(bad))
+    expect(page.locator("#status")).to_have_text("Unsupported instrument: kazoo")
+    expect(page.locator("#instrument")).to_have_value("piano")

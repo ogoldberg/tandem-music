@@ -12,6 +12,7 @@ flowchart TD
   UI --> History[history.js: undo/redo edit history]
   UI --> Versions[versions.js: named versions in localStorage]
   UI --> Groove[groove.js: tempo detection and quantize with swing]
+  UI --> Voices[voices.js: melody instrument voices]
   UI -->|same-origin HTTPS| API[FastAPI / tandem_backend.py]
   API --> DSP[NumPy / SciPy: onset and melody fallback]
   API --> World[WORLD / PyWorld: vocal tuning]
@@ -73,6 +74,14 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - **Quantize** snaps note and drum start times to a 1/4, 1/8 or 1/16 grid at the current tempo. The grid follows the beat the onsets agree on: of the onset phases within one beat, the one most onsets fit (ties to the earliest), anchored on the earliest onset in that phase, so leading silence is kept and a pickup note before the downbeat does not turn the offbeats into beats. A note that snaps before 0 s is clamped to 0. Swing (0-100%) moves the second step of each pair from halfway (straight) to two thirds (triplet feel); it does nothing on the 1/4 grid. Strength (100/75/50%) moves each event that fraction of the way. Durations are kept. Events that land on the same grid point merge: same pitch keeps the longer note, same drum keeps one hit. It is one undoable edit labelled with the grid and swing; quantizing an already-quantized project records nothing.
 - Swing is baked into the note times, not stored as a playback setting, so exports and other apps hear the same feel. The settings (grid, swing, strength) are UI state, not part of the project or history. Quantize is a user edit, so melody lock (which guards AI edits) does not block it.
 
+## Instrument voices (ARR.1b)
+`voices.js` is pure (imported by `index.html` and the Node tests) and holds the melody instruments: piano, marimba, strings, bass, 8-bit (`chip`), organ, guitar and flute. Each voice is a few oscillator layers (wave type, frequency ratio, detune and weight), an amplitude envelope (attack, decay, sustain, release), an optional low-pass filter whose cutoff sweeps with the note (a ratio of the note frequency) and optional delayed vibrato on the layers' detune. `planNote` turns a note into plain numbers and `playNote` builds the Web Audio graph from them, the same way for live playback and the 22,050 Hz WAV export, so both sound alike.
+- Layer weights are normalised to the voice's peak gain (0.10-0.16, like the old single oscillators) so a voice change does not change loudness much and exports do not clip.
+- A note shorter than the attack or decay releases from the level it had reached. Voices that decay to silence (marimba, guitar) end shortly after they fade instead of holding a silent release.
+- Partials at or above 95% of Nyquist are dropped and filter cutoffs are clamped below it, so high notes do not alias in the lower-rate export.
+- `INSTRUMENTS` in `voices.js` is the instrument list. The Instrument menu is built from it, opening a project file with any other instrument is rejected, and `tandem_backend.py` keeps the same tuple for `ChatProject`, `normalize_actions` and the system prompt. A Node test fails if the two lists differ.
+- The voices are synthesised, not sampled. Whether they sound good is a listening judgement that has not been made on real devices (see TESTING.md).
+
 ## LLM orchestration
 `invoke_llm` supports `openai-compatible` (including gateways and local OpenAI-style endpoints), `anthropic`, and `gemini`, selected through environment variables. Models return JSON; `normalize_actions` allowlists edit types and clamps values. Melody lock rejects AI modifications to melody note events by default. The client applies the validated actions as one undoable edit (see Edit history).
 
@@ -92,6 +101,7 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | history.js | Undo/redo edit history (pure; imported by index.html and Node tests) |
 | versions.js | Named project versions in localStorage (pure; imported by index.html and Node tests) |
 | groove.js | Tempo detection and quantize with swing (pure; imported by index.html and Node tests) |
+| voices.js | Melody instrument voices for playback and WAV export (pure; imported by index.html and Node tests) |
 | tandem_backend.py | FastAPI, DSP, LLM adapters, validation |
 | world_tuning.py | WORLD tuning |
 | request_guards.py | Rate limits (Upstash Redis), body-size caps |
