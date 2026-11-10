@@ -10,6 +10,7 @@ flowchart TD
   UI --> Basic[transcription.js / self-hosted Spotify Basic Pitch]
   UI --> Polish[polish.js: on-device vocal polish]
   UI --> History[history.js: undo/redo edit history]
+  UI --> Versions[versions.js: named versions in localStorage]
   UI -->|same-origin HTTPS| API[FastAPI / tandem_backend.py]
   API --> DSP[NumPy / SciPy: onset and melody fallback]
   API --> World[WORLD / PyWorld: vocal tuning]
@@ -57,7 +58,12 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - Undo/Redo buttons (disabled when empty; the title names the edit), Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl+Y. Shortcuts are ignored in text fields so they keep native text undo.
 - A new edit clears redo; an edit that changed nothing (for example clearing an empty track, or a tempo clamped back to its value) is not recorded. The undo stack is capped at 100 edits.
 - Vocal targets belong to the recording they were detected from. Loading or recording new audio removes targets from every stored snapshot (`rewrite`) and discards edits that become no-ops, so undo never applies old targets to a new recording.
-- Not in history: the recordings and processed audio (polished/tuned results), transport and UI settings (mode, engine, tuning strength, presets), and the chat transcript. The history lives in memory for the page session; it is not saved in project files or the localStorage draft, and there are no named project versions.
+- Not in history: the recordings and processed audio (polished/tuned results), transport and UI settings (mode, engine, tuning strength, presets), and the chat transcript. The history lives in memory for the page session; it is not saved in project files or the localStorage draft. Named versions (below) are the persistent counterpart.
+
+## Named versions (EDIT.2)
+`versions.js` is a pure store over an injected `Storage` (the studio passes `localStorage`, key `tandem-versions`). Save version stores the current project as a portable `tandem-project` object (no audio, no vocal targets) under a trimmed name of 1-60 characters, newest first, keeping at most 50 (the oldest is dropped). Each row restores or deletes one version. Restoring goes through `edit()`, so it is a single undoable edit labelled "Restore version: <name>". Deleting is not part of the edit history.
+- Versions live only in that browser profile (ADR-006: no server-side storage); clearing site data removes them. Export a project file to move work between devices.
+- A full storage quota fails the save with a message and leaves existing versions unchanged. Unparseable stored data is reported rather than overwritten; malformed entries are skipped.
 
 ## LLM orchestration
 `invoke_llm` supports `openai-compatible` (including gateways and local OpenAI-style endpoints), `anthropic`, and `gemini`, selected through environment variables. Models return JSON; `normalize_actions` allowlists edit types and clamps values. Melody lock rejects AI modifications to melody note events by default. The client applies the validated actions as one undoable edit (see Edit history).
@@ -76,6 +82,7 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | index.html | Main studio UI and browser audio |
 | transcription.js | Browser model adapter, resampling and note conversion |
 | history.js | Undo/redo edit history (pure; imported by index.html and Node tests) |
+| versions.js | Named project versions in localStorage (pure; imported by index.html and Node tests) |
 | tandem_backend.py | FastAPI, DSP, LLM adapters, validation |
 | world_tuning.py | WORLD tuning |
 | request_guards.py | Rate limits (Upstash Redis), body-size caps |
