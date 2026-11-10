@@ -83,7 +83,9 @@ test("chord style voices a triad per bar inside the chord range with smooth voic
       assert.ok(n.d < 2 && n.d > 1.8, "held for most of the bar, released before the next");
     }
   }
-  // Voice leading: no voice jumps more than a fifth between neighbouring chords.
+  // Voice leading: each chord takes the inversion nearest the previous one (G under C moves to
+  // B-D-G below, not up to G-B-D), so no voice jumps more than a fifth.
+  assert.deepEqual([0, 2, 4, 6].map(t => h.notes.filter(n => n.t === t).map(n => n.m)), [[52, 55, 60], [53, 57, 60], [50, 55, 59], [52, 55, 60]]);
   for (let b = 1; b < 4; b++) {
     const prev = h.notes.filter(n => n.t === (b - 1) * 2).map(n => n.m).sort((x, y) => x - y);
     const cur = h.notes.filter(n => n.t === b * 2).map(n => n.m).sort((x, y) => x - y);
@@ -143,4 +145,19 @@ test("generateHarmony does not mutate the project", () => {
   const copy = JSON.parse(JSON.stringify(project));
   generateHarmony(project);
   assert.deepEqual(project, copy);
+});
+
+test("a melody note sounding on the downbeat counts double", () => {
+  // F for one beat on the downbeat, then B for a beat and a half. Counted once each, G (B, against
+  // F) would win; with the downbeat doubled, F (F, against B) wins.
+  const notes = [{ m: 65, t: 0, d: 0.5 }, { m: 71, t: 0.5, d: 0.75 }];
+  assert.deepEqual(generateHarmony({ bpm: 120, notes }, { key: { tonic: 0, mode: "major" } }).chords.map(c => c.name), ["F"]);
+});
+
+test("a melody too long for a 1024-note harmony part is refused", () => {
+  // 342 bars of chords would be 1026 notes, over what projects and /api/chat accept.
+  const long = Array.from({ length: 342 }, (_, b) => ({ m: 60, t: b * 2, d: 1.9 }));
+  long.push({ m: 64, t: 0.5, d: 0.2 }, { m: 67, t: 1, d: 0.2 });
+  assert.throws(() => generateHarmony({ bpm: 120, notes: long }), /too long/);
+  assert.equal(generateHarmony({ bpm: 120, notes: long }, { style: "bass" }).notes.length, 684);
 });

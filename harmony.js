@@ -12,6 +12,8 @@ export const BEATS_PER_BAR = 4;
 // studio's note rolls and the AI accept).
 export const CHORD_RANGE = Object.freeze([48, 67]);
 export const BASS_LOW = 36;
+// Projects and /api/chat accept at most this many harmony notes (ChatProject.harmony).
+export const MAX_HARMONY_NOTES = 1024;
 // Each generated note ends a little before the next one starts, so repeated pitches re-strike.
 const RELEASE = 0.94;
 const MIN_KEY_NOTES = 3;
@@ -183,5 +185,8 @@ export function generateHarmony(project, { style = "chords", key = null } = {}) 
       notes.push({ m: root + 7, t: round3(origin + b * bar + half), d: round3(half * RELEASE) });
     }
   });
+  if (notes.length > MAX_HARMONY_NOTES) {
+    throw new Error(`The melody is too long for a harmony part: ${bars} bars would need ${notes.length} notes, over the ${MAX_HARMONY_NOTES}-note limit.`);
+  }
   return { key: { tonic: useKey.tonic, mode: useKey.mode }, chords: chordList, notes };
 }
