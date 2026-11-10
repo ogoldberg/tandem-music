@@ -223,6 +223,16 @@ def test_harmony_module_is_served_and_precached(client):
     sw=run(client("GET","/sw.js"))
     assert "./harmony.js" in sw.text
 
+def test_phrases_module_is_served_and_precached(client):
+    # ARR.1d: index.html imports phrases.js (phrase editing) at startup, so it is precached.
+    js=run(client("GET","/phrases.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function detectPhrases" in js.text
+    page=run(client("GET","/"))
+    assert "from './phrases.js'" in page.text
+    sw=run(client("GET","/sw.js"))
+    assert "./phrases.js" in sw.text
+
 def test_chat_project_accepts_an_optional_harmony_part():
     # ARR.1c: the harmony part is optional, so projects saved before it still validate.
     assert server.ChatProject().harmony==[] and server.ChatProject().harmony_instrument=="piano"

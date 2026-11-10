@@ -743,3 +743,77 @@ def test_generated_harmony_is_editable_undoable_exported_and_saved(studio, tmp_p
     bad.write_text(json.dumps({"format": "tandem-project", "version": 1, "notes": [], "drums": [], "harmony": [], "harmony_instrument": "kazoo"}))
     page.set_input_files("#projectfile", str(bad))
     expect(page.locator("#status")).to_have_text("Unsupported harmony instrument: kazoo")
+
+
+def phrase_labels(page):
+    return page.locator("#phraselist button").all_inner_texts()
+
+
+def test_phrases_are_detected_and_moved_copied_and_transposed_with_undo(studio, tmp_path):
+    """ARR.1d: the melody splits into phrases at rests; a chosen phrase moves, copies and transposes as one undoable edit."""
+    page = studio
+    expect(page.locator("#phraselist")).to_have_text("None yet")
+    expect(page.locator("#phrasecopy")).to_be_disabled()
+
+    # The example (100 bpm, 0.6 s beat) has no rest of a beat, so it is one phrase.
+    page.click("#demo")
+    assert phrase_labels(page) == ["1 · 0.0–3.5 s"]
+    example = draft(page)["notes"]
+    page.click("#genharmony")
+    harmony = draft(page)["harmony"]
+    assert harmony
+
+    # Choose phrase 1; its notes are marked in the roll and the tools switch on.
+    page.locator("#phraselist button").first.click()
+    expect(page.locator("#phraselist button").first).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#melodyroll .note.inphrase")).to_have_count(8)
+    expect(page.locator("#phrasecopy")).to_be_enabled()
+
+    # Moving earlier is refused at the start of the song and records no edit.
+    page.click("#phraseearlier")
+    expect(page.locator("#status")).to_have_text("The phrase cannot move before the start of the song.")
+    assert page.get_attribute("#undo", "title") == "Undo: Generate chords in C major"
+
+    # Copy to the end: two 2.4 s bars later (the phrase lasts 3.51 s), as a second phrase that is now chosen.
+    page.click("#phrasecopy")
+    expect(page.locator("#status")).to_have_text("Copy phrase 1 to the end (2 bars later). Generate the harmony again to follow it.")
+    assert phrase_labels(page) == ["1 · 0.0–3.5 s", "2 · 4.8–8.3 s"]
+    expect(page.locator("#phraselist button").nth(1)).to_have_attribute("aria-pressed", "true")
+    notes = draft(page)["notes"]
+    assert notes[:8] == example
+    assert [(n["m"], n["t"]) for n in notes[8:]] == [(n["m"], round(n["t"] + 4.8, 3)) for n in example]
+    assert draft(page)["harmony"] == harmony, "phrase edits leave the harmony alone"
+
+    # Transpose the copy up an octave and move it a beat later; phrase 1 is untouched.
+    page.click("#phraseoctup")
+    assert page.get_attribute("#undo", "title") == "Undo: Transpose phrase 2 up an octave"
+    page.click("#phraselater")
+    assert page.get_attribute("#undo", "title") == "Undo: Move phrase 2 a beat later"
+    assert phrase_labels(page) == ["1 · 0.0–3.5 s", "2 · 5.4–8.9 s"]
+    notes = draft(page)["notes"]
+    assert notes[:8] == example
+    assert [(n["m"], n["t"]) for n in notes[8:]] == [(n["m"] + 12, round(n["t"] + 5.4, 3)) for n in example]
+    page.click("#phrasedown")
+    assert draft(page)["notes"][8]["m"] == 71
+    expect(page.locator("#status")).to_have_text("Transpose phrase 2 down 1 semitone. Generate the harmony again to follow it.")
+
+    # Undo walks back through each phrase edit and clears the choice; redo reapplies.
+    for label in ["Transpose phrase 2 down 1 semitone", "Move phrase 2 a beat later", "Transpose phrase 2 up an octave"]:
+        page.click("#undo")
+        expect(page.locator("#status")).to_have_text("Undid: " + label)
+    expect(page.locator("#phrasecopy")).to_be_disabled()
+    assert [n["m"] for n in draft(page)["notes"][8:]] == [n["m"] for n in example]
+    page.click("#redo")
+    assert [n["m"] for n in draft(page)["notes"][8:]] == [n["m"] + 12 for n in example]
+    page.click("#undo")
+    page.click("#undo")
+    assert draft(page)["notes"] == example
+
+    # A faster tempo shortens the beat, so the same 0.5 s rest splits the melody into two phrases.
+    rest = tmp_path / "rest.json"
+    rest.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": 100, "notes": [{"m": 60, "t": 0, "d": 0.4}, {"m": 62, "t": 0.9, "d": 0.4}], "drums": []}))
+    page.set_input_files("#projectfile", str(rest))
+    assert phrase_labels(page) == ["1 · 0.0–1.3 s"]
+    page.fill("#bpm", "140")
+    page.press("#bpm", "Enter")
+    assert phrase_labels(page) == ["1 · 0.0–0.4 s", "2 · 0.9–1.3 s"]

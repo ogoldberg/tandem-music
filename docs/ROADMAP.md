@@ -93,7 +93,7 @@ This is the working task list, in strategic order: protect the deployment, prove
   - **Acceptance:** edited targets drive `/api/tune` and go through the EDIT.1 history; covered by unit tests and the CI.2 browser tests.
 
 ### 6. Later
-- [ ] **ARR.1** Better arrangement: richer instruments, harmony, swing and phrase-aware editing
+- [x] **ARR.1** Better arrangement: richer instruments, harmony, swing and phrase-aware editing
   - **Depends:** CI.2
   - Split into the parts below; ARR.1 is done when all four are.
 - [x] **ARR.1a** Groove: detect tempo and quantize with swing
@@ -105,8 +105,9 @@ This is the working task list, in strategic order: protect the deployment, prove
 - [x] **ARR.1c** Harmony: generate an editable chord or bass accompaniment from the melody's key
   - **Depends:** ARR.1a
   - Done: `harmony.js` detects the melody's key (or takes a chosen one) and generates one diatonic chord per 4/4 bar, as voiced triads or a root-and-fifth bass line. The part is stored as the project's optional `harmony` notes with its own instrument; Generate, Clear, instrument changes and note taps are undoable, and playback, WAV/MIDI export (channel 2), project files, versions and the draft include it. Covered by Node unit tests and a browser test. Not yet judged by ear on real devices.
-- [ ] **ARR.1d** Phrase-aware editing: detect phrases and move, copy or transpose a whole phrase
+- [x] **ARR.1d** Phrase-aware editing: detect phrases and move, copy or transpose a whole phrase
   - **Depends:** ARR.1a
+  - Done: `phrases.js` splits the melody into phrases at rests of a beat or more at the project tempo. In the Melody track a chosen phrase moves a beat earlier or later, transposes by a semitone or an octave, or is copied to the end a whole number of bars later; each is one undoable edit, and out-of-range edits are refused. The harmony is left alone (generate it again). Covered by Node unit tests and a browser test. Not yet tried by users on real devices.
 - [ ] **STORE.1** *(HUMAN)* Decide the account model and cloud storage for projects and recordings
 - [ ] **STORE.2** Accounts, durable project/recording storage and per-user quotas
   - **Depends:** STORE.1, SEC.1
