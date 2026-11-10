@@ -193,6 +193,16 @@ def test_versions_module_is_served_and_precached(client):
     sw=run(client("GET","/sw.js"))
     assert "./versions.js" in sw.text
 
+def test_groove_module_is_served_and_precached(client):
+    # ARR.1: index.html imports groove.js (Detect tempo, Quantize) at startup, so it is precached.
+    js=run(client("GET","/groove.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function quantizeProject" in js.text
+    page=run(client("GET","/"))
+    assert "from './groove.js'" in page.text
+    sw=run(client("GET","/sw.js"))
+    assert "./groove.js" in sw.text
+
 def test_contour_module_is_served_and_precached(client):
     # VOX.3: index.html imports contour.js at startup (the pitch-contour editor), and
     # transcription.js imports it too, so it has its own route and is precached.

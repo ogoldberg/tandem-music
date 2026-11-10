@@ -95,6 +95,16 @@ This is the working task list, in strategic order: protect the deployment, prove
 ### 6. Later
 - [ ] **ARR.1** Better arrangement: richer instruments, harmony, swing and phrase-aware editing
   - **Depends:** CI.2
+  - Split into the parts below; ARR.1 is done when all four are.
+- [x] **ARR.1a** Groove: detect tempo and quantize with swing
+  - Done: `groove.js` estimates the tempo from note and drum onsets and quantizes them to a 1/4, 1/8 or 1/16 grid with swing and strength; Detect tempo and Quantize in the Arrange panel are undoable edits. Covered by Node unit tests and a browser test that checks the swung timing in the MIDI export.
+  - **Acceptance:** tempo detection within 2 bpm on jittered fixtures without doubling; quantize/swing timing verified in the exported MIDI; both undoable.
+- [ ] **ARR.1b** Richer instrument voices (layered oscillators, filters and envelopes) and more instruments, in playback and WAV export
+  - **Depends:** ARR.1a
+- [ ] **ARR.1c** Harmony: generate an editable chord or bass accompaniment from the melody's key
+  - **Depends:** ARR.1a
+- [ ] **ARR.1d** Phrase-aware editing: detect phrases and move, copy or transpose a whole phrase
+  - **Depends:** ARR.1a
 - [ ] **STORE.1** *(HUMAN)* Decide the account model and cloud storage for projects and recordings
 - [ ] **STORE.2** Accounts, durable project/recording storage and per-user quotas
   - **Depends:** STORE.1, SEC.1
