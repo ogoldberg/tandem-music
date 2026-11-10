@@ -20,9 +20,17 @@ function clock(start = 1_700_000_000_000) {
   return () => (t += 1000);
 }
 
+test("projectFromState keeps the harmony part, and defaults it for projects without one", () => {
+  const harmony = [{ m: 48, t: 0, d: 1.9 }, { m: 52, t: 0, d: 1.9 }];
+  const p = projectFromState({ ...project(120), harmony, harmony_instrument: "organ" });
+  assert.deepEqual(p.harmony, harmony);
+  assert.equal(p.harmony_instrument, "organ");
+  assert.deepEqual(projectFromState({ ...project(120), harmony: "junk" }).harmony, []);
+});
+
 test("projectFromState keeps only the portable project fields", () => {
   const p = projectFromState({ ...project(120), extra: "x", melody_locked: false });
-  assert.deepEqual(p, { format: "tandem-project", version: 1, bpm: 120, instrument: "piano", melody_locked: false, notes: [{ m: 60, t: 0, d: 0.4 }], drums: [{ k: "kick", t: 0 }] });
+  assert.deepEqual(p, { format: "tandem-project", version: 1, bpm: 120, instrument: "piano", melody_locked: false, notes: [{ m: 60, t: 0, d: 0.4 }], drums: [{ k: "kick", t: 0 }], harmony: [], harmony_instrument: "piano" });
 });
 
 test("starts empty", () => {

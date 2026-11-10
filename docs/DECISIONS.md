@@ -28,3 +28,6 @@ Last reviewed: 2026-11-10. Decisions are revisable.
 
 ## ADR-009: Access token lives for the tab only
 **Decision (AI.3, 2026-11-10):** The browser keeps the shared access token in `sessionStorage` after a successful connection and deletes any `tandem-token` older versions left in `localStorage`. **Reason:** the token no longer outlives the tab or sits on disk for other users of the device, with no new server secret or session state. **Trade-off:** users re-enter it in each new tab; script on the page can still read it while the tab is open; an HttpOnly cookie session is deferred until there are real accounts.
+
+## ADR-010: Harmony is a separate optional part
+**Decision (ARR.1c, 2026-11-10):** Generated accompaniment is stored as an optional `harmony` note list with its own `harmony_instrument`, alongside `notes` and `drums`, in format version 1; no AI action edits it. **Reason:** the transcribed melody and melody lock stay intact, older projects stay valid, and the part is editable and exportable with the existing note tools. **Trade-off:** the AI can read but not change the harmony, and harmony does not follow later melody edits until it is generated again.
