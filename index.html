@@ -302,9 +302,12 @@ function apply(actions){return edit('AI edit',()=>{for(const a of actions||[]){s
 $('chatform').onsubmit=async e=>{e.preventDefault();const text=$('prompt').value.trim();if(!text)return;$('prompt').value='';message(text,'user');try{const response=await request('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,project:state,history:conversation.slice(-10)})});const answer=await response.json();const changed=apply(answer.actions);message(answer.reply||'Updated the composition.');conversation.push({role:'user',content:text},{role:'assistant',content:answer.reply||''});status(changed?'Applied '+(answer.actions||[]).length+' AI edit(s). Undo is available.':'The AI reply did not change the project.')}catch(err){message('Could not contact the AI: '+err.message);status('AI request failed')}};
 // STORE.2a: open IndexedDB, bring in what older versions left in localStorage, then read the draft. If storage is
 // unavailable, say so, show a legacy draft read-only and keep working without saving.
+// Input is ignored until the stored draft is read, so an edit made meanwhile is not overwritten by it.
+document.body.inert=true;
 const useDraft=d=>{if(d&&typeof d==='object'&&Array.isArray(d.notes)&&Array.isArray(d.drums))Object.assign(state,d,harmonyPart(d))};
 try{const db=await openKV(window.indexedDB);const moved=await migrateLegacy(db,localStorage);versions=createVersionStore(db);useDraft(await db.get(DRAFT_KEY));kv=db;if(moved.problems.length)status(moved.problems.join(' '))}
 catch(e){versions=null;storageProblem='Saving on this device is unavailable: '+e.message;status(storageProblem);try{useDraft(JSON.parse(localStorage.getItem(LEGACY_DRAFT_KEY)||'null'))}catch{}}
+document.body.inert=false;
 if(!INSTRUMENTS.includes(state.instrument))status('The saved draft uses an unsupported instrument ('+state.instrument+'). Choose an instrument before playing.');
 else if(!INSTRUMENTS.includes(state.harmony_instrument))status('The saved draft uses an unsupported harmony instrument ('+state.harmony_instrument+'). Choose one before playing.');
 update();renderVocalNotes();renderVersions();if(kv)showPersistence();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});

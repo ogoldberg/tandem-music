@@ -117,16 +117,24 @@ export async function migrateLegacy(kv, local) {
 
   if (legacyVersions) {
     // The merge reads and writes in one transaction, so a version another tab saves meanwhile is kept.
+    // If the stored versions are unreadable, nothing is merged and both copies stay; the draft still moves.
+    const unreadable = Error("Saved versions are unreadable in this browser's storage, so versions saved by an older version of Tandem were left in this browser's localStorage.");
+    let versionsMoved = true;
     report.versions = await kv.update(VERSIONS_KEY, current => {
       const existing = current === undefined ? [] : current;
-      if (!Array.isArray(existing)) throw Error("Saved versions are unreadable in this browser's storage.");
+      if (!Array.isArray(existing)) throw unreadable;
       const ids = new Set(existing.map(e => e?.id).filter(id => typeof id === "string"));
       const added = legacyVersions.filter(e => !(typeof e?.id === "string" && ids.has(e.id)));
       // Newest first, as the version list keeps them.
       const merged = [...existing, ...added].sort((a, b) => (Number(b?.savedAt) || 0) - (Number(a?.savedAt) || 0));
       return [merged, added.length];
+    }).catch(err => {
+      if (err !== unreadable) throw err;
+      versionsMoved = false;
+      report.problems.push(err.message);
+      return 0;
     });
-    clear.push(LEGACY_VERSIONS_KEY);
+    if (versionsMoved) clear.push(LEGACY_VERSIONS_KEY);
   }
   if (writes.length) await kv.setMany(writes);
   for (const key of clear) { try { local.removeItem(key); } catch { /* keep going */ } }

@@ -84,12 +84,18 @@ test("when IndexedDB cannot be written, localStorage keeps everything", async ()
   assert.notEqual(local.getItem(LEGACY_VERSIONS_KEY), null);
 });
 
-test("unreadable versions already in IndexedDB stop the merge without losing either copy", async () => {
+test("unreadable versions already in IndexedDB skip the versions merge, keep both copies and still move the draft", async () => {
   const kv = memoryKV({ [VERSIONS_KEY]: "broken" });
-  const local = memoryStorage({ [LEGACY_VERSIONS_KEY]: JSON.stringify([entry("a", 1)]) });
-  await assert.rejects(migrateLegacy(kv, local), /unreadable/i);
+  const local = memoryStorage({ [LEGACY_DRAFT_KEY]: JSON.stringify(draft), [LEGACY_VERSIONS_KEY]: JSON.stringify([entry("a", 1)]) });
+  const report = await migrateLegacy(kv, local);
+  assert.equal(report.draft, true);
+  assert.equal(report.versions, 0);
+  assert.equal(report.problems.length, 1);
+  assert.match(report.problems[0], /unreadable/i);
   assert.equal(kv.data.get(VERSIONS_KEY), "broken");
   assert.notEqual(local.getItem(LEGACY_VERSIONS_KEY), null);
+  assert.deepEqual(kv.data.get(DRAFT_KEY), draft);
+  assert.equal(local.getItem(LEGACY_DRAFT_KEY), null);
 });
 
 test("an unavailable localStorage is skipped", async () => {

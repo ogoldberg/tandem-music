@@ -879,6 +879,56 @@ def test_unreadable_old_versions_are_reported_and_kept(studio):
     expect_versions(page, [])
 
 
+IDB_PUT = """([key, value]) => new Promise((resolve, reject) => {
+  const open = indexedDB.open('tandem');
+  open.onerror = () => reject(open.error);
+  open.onsuccess = () => {
+    const db = open.result, tx = db.transaction('kv', 'readwrite');
+    tx.objectStore('kv').put(value, key);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => reject(tx.error);
+  };
+})"""
+
+
+def test_unreadable_stored_versions_keep_the_draft_saving(studio):
+    """STORE.2a: if the versions already in IndexedDB are unreadable, start-up reports it, keeps the old
+    localStorage versions and still moves and saves the draft."""
+    page = studio
+    page.evaluate(IDB_PUT, ["versions", "broken"])
+    old_draft = {"bpm": 120, "instrument": "piano", "melody_locked": True, "notes": [{"m": 62, "t": 0, "d": 0.5}], "drums": []}
+    old_version = {"id": "old", "name": "Old", "savedAt": 1, "project": {"bpm": 90, "notes": [], "drums": []}}
+    page.evaluate("""([d, v]) => { localStorage.setItem('tandem-draft', JSON.stringify(d));
+                                    localStorage.setItem('tandem-versions', JSON.stringify([v])); }""", [old_draft, old_version])
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    expect(page.locator("#status")).to_contain_text("unreadable")
+    expect(page.locator("#versionlist")).to_contain_text("unreadable")
+    assert note_pitches(page) == [62]
+    assert page.evaluate("[localStorage.getItem('tandem-draft'), JSON.parse(localStorage.getItem('tandem-versions'))[0].id]") == [None, "old"]
+    page.click("#addnote")
+    assert len(draft(page)["notes"]) == 2
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    assert len(note_pitches(page)) == 2
+
+
+def test_controls_are_inert_while_storage_opens(page, server_url):
+    """STORE.2a: an edit made while the stored draft is still loading would be overwritten by it, so the page
+    ignores input until start-up has read the draft."""
+    page.add_init_script("""(() => {
+      const open = IDBFactory.prototype.open;
+      IDBFactory.prototype.open = function (...args) {
+        if (args[0] === 'tandem' && window.__inertAtOpen === undefined) window.__inertAtOpen = document.body.inert;
+        return open.apply(this, args);
+      };
+    })()""")
+    page.goto(server_url + "/")
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    assert page.evaluate("window.__inertAtOpen") is True
+    assert page.evaluate("document.body.inert") is False
+
+
 def test_work_survives_a_browser_restart(browser_type, browser_type_launch_args, server_url, tmp_path):
     """STORE.2a: the draft and versions are on disk in the browser profile, not only in the open page."""
     profile = tmp_path / "profile"
