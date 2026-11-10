@@ -11,6 +11,7 @@ flowchart TD
   UI --> Polish[polish.js: on-device vocal polish]
   UI --> History[history.js: undo/redo edit history]
   UI --> Versions[versions.js: named versions in localStorage]
+  UI --> Groove[groove.js: tempo detection and quantize with swing]
   UI -->|same-origin HTTPS| API[FastAPI / tandem_backend.py]
   API --> DSP[NumPy / SciPy: onset and melody fallback]
   API --> World[WORLD / PyWorld: vocal tuning]
@@ -66,6 +67,12 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - Versions live only in that browser profile (ADR-006: no server-side storage); clearing site data removes them. Export a project file to move work between devices.
 - A full storage quota fails the save with a message and leaves existing versions unchanged. Unparseable stored data is reported rather than overwritten. Entries the store does not recognise (a newer format or a hand edit) are hidden from the list but written back untouched on save and delete, and do not count towards the 50-version cap.
 
+## Groove: Detect tempo and Quantize (ARR.1)
+`groove.js` is pure (imported by `index.html` and the Node tests) and works on the project's own timing; the schema is unchanged, so playback, WAV/MIDI export and project files need nothing new.
+- **Detect tempo** estimates a whole-number bpm in 60-180 from the note and drum onsets (at least four distinct onsets; otherwise it says so and changes nothing). Each candidate tempo is scored by how close the onsets sit to its eighth-note grid plus half the same score on its beat grid (Gaussian, 20 ms), each anchored at the best of the first four onsets and reduced by what random onsets would score on that grid. The chance term stops a finer grid (double tempo) from winning on sloppy timing; the beat term stops half tempo from winning when every onset is on the beat, since the half-tempo eighth grid would fit those just as well. An evenly spaced run (only eighths, say) cannot be told from the same notes at double or half the tempo, so it may come back an octave off (70 bpm eighths read as 140); type the tempo in that case. It sets the Tempo field as one undoable edit.
+- **Quantize** snaps note and drum start times to a 1/4, 1/8 or 1/16 grid at the current tempo. The grid follows the beat the onsets agree on: of the onset phases within one beat, the one most onsets fit (ties to the earliest), anchored on the earliest onset in that phase, so leading silence is kept and a pickup note before the downbeat does not turn the offbeats into beats. A note that snaps before 0 s is clamped to 0. Swing (0-100%) moves the second step of each pair from halfway (straight) to two thirds (triplet feel); it does nothing on the 1/4 grid. Strength (100/75/50%) moves each event that fraction of the way. Durations are kept. Events that land on the same grid point merge: same pitch keeps the longer note, same drum keeps one hit. It is one undoable edit labelled with the grid and swing; quantizing an already-quantized project records nothing.
+- Swing is baked into the note times, not stored as a playback setting, so exports and other apps hear the same feel. The settings (grid, swing, strength) are UI state, not part of the project or history. Quantize is a user edit, so melody lock (which guards AI edits) does not block it.
+
 ## LLM orchestration
 `invoke_llm` supports `openai-compatible` (including gateways and local OpenAI-style endpoints), `anthropic`, and `gemini`, selected through environment variables. Models return JSON; `normalize_actions` allowlists edit types and clamps values. Melody lock rejects AI modifications to melody note events by default. The client applies the validated actions as one undoable edit (see Edit history).
 
@@ -84,6 +91,7 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | transcription.js | Browser model adapter, resampling and note conversion |
 | history.js | Undo/redo edit history (pure; imported by index.html and Node tests) |
 | versions.js | Named project versions in localStorage (pure; imported by index.html and Node tests) |
+| groove.js | Tempo detection and quantize with swing (pure; imported by index.html and Node tests) |
 | tandem_backend.py | FastAPI, DSP, LLM adapters, validation |
 | world_tuning.py | WORLD tuning |
 | request_guards.py | Rate limits (Upstash Redis), body-size caps |

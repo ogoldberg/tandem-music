@@ -501,3 +501,79 @@ def test_restoring_a_version_without_tempo_or_instrument_uses_the_defaults(studi
     assert note_pitches(page) == [62]
     assert page.input_value("#bpm") == "100"
     assert page.input_value("#instrument") == "piano"
+
+
+def draft(page):
+    return page.evaluate("JSON.parse(localStorage.getItem('tandem-draft'))")
+
+
+def midi_drum_ticks(data):
+    """Absolute ticks of the drum-channel note-ons in Tandem's single-track MIDI export."""
+    assert data[:4] == b"MThd" and data[14:18] == b"MTrk"
+    i, end, tick, out = 22, 22 + int.from_bytes(data[18:22], "big"), 0, []
+    while i < end:
+        delta = 0
+        while True:
+            b = data[i]; i += 1
+            delta = (delta << 7) | (b & 127)
+            if b < 128:
+                break
+        tick += delta
+        status = data[i]
+        if status == 255:
+            i += 3 + data[i + 2]
+        else:
+            if status == 153:
+                out.append(tick)
+            i += 3
+    return out
+
+
+def test_detect_tempo_and_quantize_with_swing_are_undoable(studio, tmp_path):
+    """ARR.1: Detect tempo sets the bpm from the timing; Quantize snaps to a swung grid; both undo."""
+    page = studio
+    page.click("#quantize")
+    expect(page.locator("#status")).to_have_text("Nothing to quantize yet.")
+    page.click("#detecttempo")
+    expect(page.locator("#status")).to_have_text("Detect tempo needs at least four notes or drum hits.")
+
+    page.click("#demo")
+    before = draft(page)
+    page.click("#detecttempo")
+    expect(page.locator("#status")).to_have_text("Detected tempo: 133 bpm")
+    assert page.input_value("#bpm") == "133"
+    assert page.get_attribute("#undo", "title") == "Undo: Detect tempo"
+
+    page.select_option("#grid", "2")
+    page.fill("#swing", "100")
+    page.dispatch_event("#swing", "input")
+    expect(page.locator("#swingvalue")).to_have_text("100%")
+    page.click("#quantize")
+    expect(page.locator("#status")).to_have_text("Quantize to 1/8 with 100% swing at 133 bpm")
+    assert page.get_attribute("#undo", "title") == "Undo: Quantize to 1/8 with 100% swing"
+    beat = 60 / 133
+    after = draft(page)
+    assert [n["m"] for n in after["notes"]] == [n["m"] for n in before["notes"]]
+    for i, n in enumerate(after["notes"]):
+        assert abs(n["t"] - i * beat) < 1e-5
+    # Every other hit was an offbeat eighth; full swing moves it to two thirds of the beat.
+    for i, h in enumerate(after["drums"]):
+        want = (i // 2) * beat + (beat * 2 / 3 if i % 2 else 0)
+        assert abs(h["t"] - want) < 1e-5, (i, h["t"], want)
+    assert len(after["drums"]) == 16
+
+    # The exported MIDI carries the swung timing: at 960 ticks per beat, drum hits land on 0, 640, 960, 1600...
+    hits = midi_drum_ticks(download(page, "#exportmidi", tmp_path).read_bytes())
+    assert hits[:4] == [0, 640, 960, 1600]
+    assert len(hits) == 16
+
+    # Quantizing again changes nothing and records no edit.
+    page.click("#quantize")
+    expect(page.locator("#status")).to_have_text("Already on the 1/8 grid")
+    assert page.get_attribute("#undo", "title") == "Undo: Quantize to 1/8 with 100% swing"
+
+    page.click("#undo")
+    assert draft(page)["notes"] == before["notes"]
+    assert draft(page)["drums"] == before["drums"]
+    page.click("#undo")
+    assert page.input_value("#bpm") == "100"

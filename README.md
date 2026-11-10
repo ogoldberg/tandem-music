@@ -46,6 +46,7 @@ A checked box means the feature is **implemented in code**, not that it has been
 - [ ] Proven natural vocal quality (VOX.1, VOX.2).
 - [x] Undo/redo history across manual, AI, project-load and vocal-target edits (EDIT.1; per session).
 - [x] Named project versions saved in this browser: save, list, restore (undoable) and delete (EDIT.2).
+- [x] Detect tempo from the notes and drums, and quantize to a 1/4, 1/8 or 1/16 grid with swing and strength (ARR.1, first part).
 - [ ] Reliable pitch contour editing (VOX.3).
 - [ ] Production AI model configured and verified (AI.1, AI.2).
 - [ ] Mature instrument sounds and arrangement (ARR.1).
@@ -70,14 +71,14 @@ Open http://localhost:8000. Recording/transcription/voice processing need no pai
 
 ```bash
 python -m pytest -q
-node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs
+node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs
 ```
 
 See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for deployment and configuration, and [TESTING.md](docs/TESTING.md) for verification standards.
 
 ## Repository layout
 
-`index.html` (UI), `transcription.js` (Basic Pitch), `polish.js` (on-device polish), `tuning.js` (chunked pitch correction), `history.js` (undo/redo), `versions.js` (named versions), `tandem_backend.py` (FastAPI/LLM/DSP), `world_tuning.py` (active vocal pitch correction), `api/index.py` (Vercel), `tests/` (automated checks).
+`index.html` (UI), `transcription.js` (Basic Pitch), `polish.js` (on-device polish), `tuning.js` (chunked pitch correction), `history.js` (undo/redo), `versions.js` (named versions), `groove.js` (tempo detection and quantize), `tandem_backend.py` (FastAPI/LLM/DSP), `world_tuning.py` (active vocal pitch correction), `api/index.py` (Vercel), `tests/` (automated checks).
 
 ## Contributions
 
