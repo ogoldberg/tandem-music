@@ -177,3 +177,30 @@ test("quantizeProject rejects bad settings", () => {
   assert.throws(() => quantizeProject({ ...p, bpm: 0 }, { division: 2, swing: 0, strength: 1 }), /tempo/);
   assert.throws(() => quantizeProject(p, { division: 2, swing: 0, strength: 0 }), /strength/);
 });
+
+// Known limits (issue #29). These pin current behaviour so a change to it is deliberate and the docs follow.
+test("limit: a pickup into even eighths is taken as the beat", () => {
+  // 120 bpm, pickup at 0.75 then even eighths from 1.0: both phases have the same count, so the earliest
+  // (the pickup's) wins and the real downbeats become swung offbeats.
+  const t = [0.75, ...Array.from({ length: 8 }, (_, i) => 1.0 + i * 0.25)];
+  const project = { bpm: 120, notes: t.map(x => ({ m: 60, t: x, d: 0.1 })), drums: [] };
+  const out = quantizeProject(project, { division: 2, swing: 1, strength: 1 });
+  const want = [0.75, 0.75 + 1 / 3, 1.25, 1.25 + 1 / 3, 1.75, 1.75 + 1 / 3, 2.25, 2.25 + 1 / 3, 2.75];
+  out.notes.forEach((n, i) => assert.ok(close(n.t, want[i], 1e-6), `${i}: ${n.t} vs ${want[i]}`));
+});
+
+for (const bpm of [60, 70, 75, 79]) {
+  test(`limit: slow quarters with an eighth every second beat read double at ${bpm} bpm`, () => {
+    const b = 60 / bpm, times = [];
+    for (let i = 0; i < 16; i++) { times.push(0.3 + i * b); if (i % 2) times.push(0.3 + i * b + b / 2); }
+    assert.equal(estimateTempo(times), 2 * bpm);
+  });
+}
+
+test("the same slow pattern reads correctly from 80 bpm", () => {
+  for (const bpm of [80, 90]) {
+    const b = 60 / bpm, times = [];
+    for (let i = 0; i < 16; i++) { times.push(0.3 + i * b); if (i % 2) times.push(0.3 + i * b + b / 2); }
+    assert.equal(estimateTempo(times), bpm);
+  }
+});

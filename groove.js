@@ -91,8 +91,9 @@ function beatOrigin(times, beat) {
 }
 
 // Snap note and drum start times to a (possibly swung) grid at the project tempo.
-// The grid follows the beat the onsets agree on (see beatOrigin), so leading silence and
-// pickup notes are kept in place relative to the beat.
+// The grid follows the beat the onsets agree on (see beatOrigin), so leading silence is kept.
+// A pickup stays a pickup only when more onsets fall on the downbeats than on the offbeats;
+// on a tie (a pickup into even eighths) the pickup's phase is taken as the beat.
 // Durations are kept. Events that land on the same grid point merge (same pitch: the
 // longer note wins; same drum: one hit). Returns new {notes, drums}; the input is unchanged.
 export function quantizeProject(project, { division, swing = 0, strength = 1 }) {
