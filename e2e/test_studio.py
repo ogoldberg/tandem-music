@@ -270,3 +270,59 @@ def test_vocal_note_targets_cover_a_three_minute_recording(studio, tmp_path):
     assert len(starts) > 128, f"only {len(starts)} targets: still capped at 128"
     assert max(starts) > 170, f"last target at {max(starts)} s: detection stops before the end"
     assert sum(1 for s in starts if s >= 60) > 100, "few targets after 60 s"
+
+
+def version_names(page):
+    return [t.split(" · ")[0] for t in page.locator("#versionlist .version span").all_text_contents()]
+
+
+def test_named_versions_save_list_restore_survive_reload_and_delete(studio):
+    """EDIT.2: named project versions are saved, listed, restored (undoably), kept across reloads and deleted."""
+    page = studio
+    expect(page.locator("#versionlist")).to_have_text("No saved versions yet.")
+
+    page.click("#demo")
+    assert len(note_pitches(page)) == 8
+    page.fill("#versionname", "Example groove")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: Example groove")
+    assert page.input_value("#versionname") == ""
+
+    page.click("#clearnotes")
+    page.click("#addnote")
+    page.fill("#bpm", "150")
+    page.dispatch_event("#bpm", "change")
+    page.fill("#versionname", "Sparse")
+    page.press("#versionname", "Enter")
+    expect(page.locator("#status")).to_have_text("Saved version: Sparse")
+    assert version_names(page) == ["Sparse", "Example groove"]
+
+    # A blank name is refused and saves nothing.
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Give the version a name.")
+    assert version_names(page) == ["Sparse", "Example groove"]
+
+    # Restoring brings back that version's notes, drums and tempo, and is one undoable edit.
+    page.click("#versionlist .version:has-text('Example groove') >> text=Restore")
+    expect(page.locator("#status")).to_have_text("Restored version: Example groove")
+    assert note_pitches(page) == [60, 64, 67, 69, 67, 64, 62, 60]
+    assert count(page, "hitcount") == 16
+    assert page.input_value("#bpm") == "100"
+    assert page.get_attribute("#undo", "title") == "Undo: Restore version: Example groove"
+    page.click("#undo")
+    assert note_pitches(page) == [60]
+    assert page.input_value("#bpm") == "150"
+
+    # Versions survive a reload.
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    assert version_names(page) == ["Sparse", "Example groove"]
+    page.click("#versionlist .version:has-text('Example groove') >> text=Restore")
+    assert len(note_pitches(page)) == 8
+
+    page.click("#versionlist .version:has-text('Sparse') >> text=Delete")
+    expect(page.locator("#status")).to_have_text("Deleted version: Sparse")
+    assert version_names(page) == ["Example groove"]
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    assert version_names(page) == ["Example groove"]

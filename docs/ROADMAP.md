@@ -82,7 +82,8 @@ This is the working task list, in strategic order: protect the deployment, prove
   - Done: `history.js` (bounded, labelled undo/redo with no-op detection) records every project and vocal-target edit; Redo button and keyboard shortcuts; Node unit tests and a browser test across manual, AI, load and vocal-target edits. History is per page session; persistent named project versions moved to EDIT.2.
   - **Depends:** CI.2
   - **Acceptance:** undo/redo works across all edit types; tests cover history behavior.
-- [ ] **EDIT.2** Project versioning: named, persisted versions of a project
+- [x] **EDIT.2** Project versioning: named, persisted versions of a project
+  - Done: `versions.js` keeps up to 50 named versions in localStorage; the Versions panel saves, lists, restores (one undoable edit) and deletes them. Covered by Node unit tests and a browser test that includes a reload. Versions are per browser profile, not synced.
   - **Depends:** EDIT.1
   - **Acceptance:** a user can save, list and restore named versions; they survive reload and are covered by unit and browser tests.
 - [ ] **VOX.3** Continuous pitch-contour editor

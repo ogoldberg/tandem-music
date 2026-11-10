@@ -34,6 +34,10 @@ def service_worker():
 def history_js():
     return FileResponse(Path(__file__).resolve().parent / "history.js", media_type="text/javascript")
 
+@app.get("/versions.js", include_in_schema=False)
+def versions_js():
+    return FileResponse(Path(__file__).resolve().parent / "versions.js", media_type="text/javascript")
+
 @app.get("/polish.js", include_in_schema=False)
 def polish_js():
     return FileResponse(Path(__file__).resolve().parent / "polish.js", media_type="text/javascript")

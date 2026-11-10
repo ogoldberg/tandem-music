@@ -183,6 +183,16 @@ def test_edit_history_module_is_served_and_precached(client):
     sw=run(client("GET","/sw.js"))
     assert "./history.js" in sw.text
 
+def test_versions_module_is_served_and_precached(client):
+    # EDIT.2: index.html imports versions.js at startup, so the service worker precaches it.
+    js=run(client("GET","/versions.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function createVersionStore" in js.text
+    page=run(client("GET","/"))
+    assert "from './versions.js'" in page.text
+    sw=run(client("GET","/sw.js"))
+    assert "./versions.js" in sw.text
+
 @pytest.mark.parametrize("provider,path,body",[
     ("openai-compatible","/chat/completions",'{"choices":[{"message":{"content":"OK"}}]}'),
     ("anthropic","/v1/messages",'{"content":[{"type":"text","text":"OK"}]}'),
