@@ -1,6 +1,6 @@
 # Security, privacy and cost controls
 
-Last reviewed: 2026-11-09. Tandem is an **experimental public web app**, not a production-ready multi-user service.
+Last reviewed: 2026-11-10. Tandem is an **experimental public web app**, not a production-ready multi-user service.
 
 ## Current boundaries
 - GitHub repository is public. Outsiders can read/fork/propose PRs; they cannot push without permissions. **Branch-protection status has not been verified**. Configure rulesets: required PR review, tests, no force pushes, restrict bypass.

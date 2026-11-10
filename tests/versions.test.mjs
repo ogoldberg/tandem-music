@@ -124,3 +124,37 @@ test("malformed entries are skipped when listing", () => {
   const storage = memoryStorage({ [VERSIONS_KEY]: JSON.stringify([good, { id: "x" }, null, "junk"]) });
   assert.deepEqual(createVersionStore(storage).list().map(v => v.id), ["g"]);
 });
+
+test("entries it does not recognise are kept on save and remove, only hidden from the list (issue #21)", () => {
+  const future = { id: "f", name: "from a newer Tandem", savedAt: 1, project: { format: "tandem-project", version: 2, tracks: [] } };
+  const storage = memoryStorage({ [VERSIONS_KEY]: JSON.stringify([future, { id: "x" }, "junk"]) });
+  const store = createVersionStore(storage, { now: clock() });
+  assert.deepEqual(store.list(), []);
+  assert.equal(store.get("f"), null);
+  const a = store.save("a", project());
+  assert.equal(store.remove("f"), false, "an unrecognised entry is not removable through the store");
+  const b = store.save("b", project());
+  assert.equal(store.remove(a.id), true);
+  const stored = JSON.parse(storage.data.get(VERSIONS_KEY));
+  assert.deepEqual(stored.map(e => e?.id ?? e), [b.id, "f", "x", "junk"]);
+  assert.deepEqual(stored[1], future);
+  assert.deepEqual(store.list().map(v => v.name), ["b"]);
+});
+
+test("the version limit counts only recognised entries and never drops unrecognised ones", () => {
+  const future = { id: "f", name: "future", savedAt: 1, project: { version: 2 } };
+  const storage = memoryStorage({ [VERSIONS_KEY]: JSON.stringify([future]) });
+  const store = createVersionStore(storage, { now: clock(), limit: 2 });
+  for (const n of ["v1", "v2", "v3"]) store.save(n, project());
+  assert.deepEqual(store.list().map(v => v.name), ["v3", "v2"]);
+  assert.ok(JSON.parse(storage.data.get(VERSIONS_KEY)).some(e => e.id === "f"));
+});
+
+test("a new id never collides with an unrecognised entry's id", () => {
+  const savedAt = 1_700_000_001_000;
+  const storage = memoryStorage({ [VERSIONS_KEY]: JSON.stringify([{ id: String(savedAt), name: "future", savedAt: 1, project: {} }]) });
+  const store = createVersionStore(storage, { now: () => savedAt });
+  const v = store.save("a", project());
+  assert.notEqual(v.id, String(savedAt));
+  assert.deepEqual(store.get(v.id).bpm, 100);
+});
