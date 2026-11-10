@@ -86,8 +86,9 @@ This is the working task list, in strategic order: protect the deployment, prove
   - Done: `versions.js` keeps up to 50 named versions in localStorage; the Versions panel saves, lists, restores (one undoable edit) and deletes them. Covered by Node unit tests and a browser test that includes a reload. Versions are per browser profile, not synced.
   - **Depends:** EDIT.1
   - **Acceptance:** a user can save, list and restore named versions; they survive reload and are covered by unit and browser tests.
-- [ ] **VOX.3** Continuous pitch-contour editor
+- [x] **VOX.3** Continuous pitch-contour editor
   - Replace the +/- target note list with a visual contour: drag notes, keep vibrato, key/scale selection, per-note confidence.
+  - Done: `contour.js` and the editor in `index.html` draw the sung pitch line from Basic Pitch's contour and a live preview of the corrected line. Targets are dragged for pitch, resized at their edges, stepped with the arrow keys and deleted. A key/scale selection drives drags, steps, Snap notes to key and untargeted tuning. Keep vibrato is sent to `/api/tune` as `vibrato`. Vibrato fragments are merged into whole notes, and confidence shows on each target. Every change goes through the EDIT.1 history. Covered by Python, Node and browser tests (ADR-008); real-voice listening stays with VOX.2.
   - **Depends:** VOX.1, EDIT.1
   - **Acceptance:** edited targets drive `/api/tune` and go through the EDIT.1 history; covered by unit tests and the CI.2 browser tests.
 
@@ -114,7 +115,7 @@ This is the working task list, in strategic order: protect the deployment, prove
 - Initial “polish” was just EQ/dynamics; users wanted **actual pitch correction**.
 - Added an experimental proprietary-free pitch shifter, then replaced the active path with WORLD/PyWorld for formant-aware resynthesis.
 - Original PyWorld distribution failed in Vercel Python 3.12; switched to a prebuilt wheel and observed a READY deployment. The new audio path still requires quality testing.
-- Added simple detected vocal target note +/- controls; a real visual pitch-contour editor remains planned.
+- Added simple detected vocal target note +/- controls; VOX.3 replaced them with a visual pitch-contour editor.
 
 ## Decisions still open
 Provider choice for conversation and generation; user-account model; cloud storage; license audits for distribution; offline mode strategy; audio quality targets and sample library; monetization/hosting tier; whether to add a native Mac companion/plugin host.

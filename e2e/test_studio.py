@@ -209,21 +209,23 @@ def test_undo_redo_across_manual_ai_load_and_vocal_target_edits(studio, tmp_path
     page.click("#detectvocal")
     expect(page.locator("#status")).to_have_text(re.compile(r"^\d+ vocal notes ready to edit\.$"), timeout=60_000)
     assert history_state(page)["undo"] == (True, "Undo: Detect sung notes")
-    first = page.locator("#vocalnoteeditor .row").first.locator("span")
-    detected = first.text_content()
-    page.locator("#vocalnoteeditor .row").first.locator("button", has_text="+").click()
-    assert first.text_content() != detected
-    assert history_state(page)["undo"] == (True, "Undo: Raise vocal target 1")
+    first = page.locator("#vocalnoteeditor .target").first
+    detected = first.get_attribute("aria-valuetext")
+    first.focus()
+    page.keyboard.press("ArrowUp")
+    raised = first.get_attribute("aria-valuetext")
+    assert raised != detected
+    assert history_state(page)["undo"] == (True, f"Undo: Move vocal target 1 to {raised}")
     page.click("#undo")
-    assert first.text_content() == detected
+    assert first.get_attribute("aria-valuetext") == detected
     page.click("#redo")
-    assert first.text_content() != detected
+    assert first.get_attribute("aria-valuetext") == raised
     page.click("#undo")
     page.click("#undo")  # detection itself
     expect(page.locator("#vocalnoteeditor")).to_have_text("Press Detect sung notes to edit the pitch targets.")
     expect(page.locator("#resetvocal")).to_be_disabled()
     page.click("#redo")
-    expect(page.locator("#vocalnoteeditor .row")).not_to_have_count(0)
+    expect(page.locator("#vocalnoteeditor .target")).not_to_have_count(0)
 
     # A new recording drops the old recording's targets from history instead of restoring them later.
     page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones-48k-2.wav")))
@@ -265,11 +267,111 @@ def test_vocal_note_targets_cover_a_three_minute_recording(studio, tmp_path):
     page.click("#detectvocal")
     expect(page.locator("#status")).to_have_text(re.compile(r"^\d+ vocal notes ready to edit\.$"), timeout=240_000)
 
-    labels = page.locator("#vocalnoteeditor .row span").all_text_contents()
-    starts = [float(re.match(r"\d+\. ([\d.]+)s", s).group(1)) for s in labels]
+    starts = [float(t) for t in page.locator("#vocalnoteeditor .target").evaluate_all("els => els.map(e => e.dataset.t)")]
     assert len(starts) > 128, f"only {len(starts)} targets: still capped at 128"
     assert max(starts) > 170, f"last target at {max(starts)} s: detection stops before the end"
     assert sum(1 for s in starts if s >= 60) > 100, "few targets after 60 s"
+
+
+def record_tune_requests(page):
+    """Wrap fetch so the test can read each /api/tune request's notes_json form field and URL.
+
+    Playwright does not expose multipart bodies built from Blobs, so read the FormData itself.
+    """
+    page.evaluate("""() => {
+      window.__tuneRequests = [];
+      const original = window.fetch;
+      window.fetch = (url, init) => {
+        if (String(url).includes('/api/tune')) window.__tuneRequests.push({url: String(url), notes: init.body.get('notes_json')});
+        return original(url, init);
+      };
+    }""")
+    return lambda: page.evaluate("() => window.__tuneRequests")
+
+
+def test_pitch_contour_editor_edits_drive_tuning_through_history(studio, tmp_path):
+    """VOX.3: drag, resize, key/scale snap, keyboard steps and delete edit the targets /api/tune receives."""
+    page = studio
+    page.select_option("#mode", "vocal")
+    page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones-48k.wav")))
+    expect(page.locator("#detectvocal")).to_be_enabled()
+    page.click("#detectvocal")
+    expect(page.locator("#status")).to_have_text(re.compile(r"^\d+ vocal notes ready to edit\.$"), timeout=60_000)
+
+    targets = page.locator("#vocalnoteeditor .target")
+    pitch = lambda i: targets.nth(i).get_attribute("aria-valuetext")  # noqa: E731
+    # One target per held tone, at the sung pitch, each with a confidence; the sung line is drawn.
+    expect(targets).to_have_count(3)
+    assert [pitch(i) for i in range(3)] == ["A4", "C5", "E5"]
+    for i in range(3):
+        assert re.search(r"confidence \d+%$", targets.nth(i).get_attribute("aria-label"))
+    assert page.locator("#vocalnoteeditor canvas").count() == 1
+    targets.nth(0).click()
+    expect(page.locator("#vocalnoteinfo")).to_have_text(re.compile(r"^Note 1: .* target A4 · sung on target · confidence \d+%"))
+
+    # Drag the second target up two rows (12 px each): C5 -> D5, recorded as one edit.
+    box = targets.nth(1).bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x, y - 12, steps=3)
+    page.mouse.move(x, y - 24, steps=3)
+    page.mouse.up()
+    assert pitch(1) == "D5"
+    assert history_state(page)["undo"] == (True, "Undo: Move vocal target 2 to D5")
+
+    # Drag the first target's end edge left: it now covers less of the tone.
+    before = float(targets.nth(0).get_attribute("data-d"))
+    edge = targets.nth(0).locator(".edge.end").bounding_box()
+    page.mouse.move(edge["x"] + edge["width"] / 2, edge["y"] + edge["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(edge["x"] - 40, edge["y"] + edge["height"] / 2, steps=4)
+    page.mouse.up()
+    shorter = float(targets.nth(0).get_attribute("data-d"))
+    assert 0.1 <= shorter < before - 0.05
+    assert history_state(page)["undo"] == (True, "Undo: Resize vocal target 1")
+
+    # Chromatic arrow step A4 -> A#4, then choose C major and snap: the tie between A4 and B4
+    # goes to the sung pitch (A4).
+    targets.nth(0).focus()
+    page.keyboard.press("ArrowUp")
+    assert pitch(0) == "A♯4"
+    expect(page.locator("#snapvocal")).to_be_disabled()
+    page.select_option("#tunescale", "major")
+    assert history_state(page)["undo"] == (True, "Undo: Set key: C major")
+    page.click("#snapvocal")
+    expect(page.locator("#status")).to_have_text("Moved 1 vocal target into C major.")
+    assert pitch(0) == "A4"
+    # In a key, arrow keys step by scale degree: E5 -> F5.
+    targets.nth(2).focus()
+    page.keyboard.press("ArrowUp")
+    assert pitch(2) == "F5"
+
+    # Delete removes a target; undo brings it back.
+    targets.nth(2).focus()
+    page.keyboard.press("Delete")
+    expect(targets).to_have_count(2)
+    page.click("#undo")
+    expect(targets).to_have_count(3)
+    assert pitch(2) == "F5"
+
+    # The edited targets and the Keep vibrato amount are what /api/tune receives.
+    page.evaluate("v => { const e = document.getElementById('vibrato'); e.value = v; e.dispatchEvent(new Event('input')); }", "40")
+    expect(page.locator("#vibratolevel")).to_have_text("40%")
+    sent = record_tune_requests(page)
+    page.click("#tune")
+    expect(page.locator("#status")).to_have_text("Pitch correction complete", timeout=60_000)
+    (request,) = sent()
+    notes, url = json.loads(request["notes"]), request["url"]
+    assert [n["m"] for n in notes] == [69, 74, 77]
+    assert notes[0]["d"] == round(shorter, 3)
+    assert all(set(n) == {"m", "t", "d"} for n in notes), "confidence stays in the browser"
+    assert "vibrato=0.4" in url
+    expect(page.locator("#playtuned")).to_be_enabled()
+
+    # Undo walks back through the editor's own edits.
+    page.click("#undo")  # F5 step
+    assert pitch(2) == "E5"
 
 
 def version_names(page):

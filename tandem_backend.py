@@ -38,6 +38,10 @@ def history_js():
 def versions_js():
     return FileResponse(Path(__file__).resolve().parent / "versions.js", media_type="text/javascript")
 
+@app.get("/contour.js", include_in_schema=False)
+def contour_js():
+    return FileResponse(Path(__file__).resolve().parent / "contour.js", media_type="text/javascript")
+
 @app.get("/polish.js", include_in_schema=False)
 def polish_js():
     return FileResponse(Path(__file__).resolve().parent / "polish.js", media_type="text/javascript")
@@ -270,9 +274,20 @@ async def analyze(file:UploadFile=File(...),mode:str="melody"):
     return {"duration":round(len(x)/sr,2),"notes":analyze_melody(x,sr) if mode=="melody" else [],"drums":analyze_drums(x,sr) if mode=="rhythm" else []}
 @app.post("/api/tune")
 async def tune(file:UploadFile=File(...),strength:float=.85,engine:str="world",
-               notes_json:str=Form(default="")):
+               notes_json:str=Form(default=""),vibrato:float=0.,scale:str|None=None):
     if not (0<=strength<=1):
         raise HTTPException(400,"Strength must be between 0 and 1")
+    if not (0<=vibrato<=1):
+        raise HTTPException(400,"Vibrato must be between 0 and 1")
+    pitch_classes=None
+    if scale is not None:
+        # Comma-separated MIDI pitch classes for snapping without note targets (VOX.3 key/scale).
+        try:
+            pitch_classes=sorted(int(p) for p in scale.split(","))
+        except ValueError as exc:
+            raise HTTPException(400,"Scale must list MIDI pitch classes 0..11") from exc
+        if not pitch_classes or len(set(pitch_classes))!=len(pitch_classes) or not all(0<=p<=11 for p in pitch_classes):
+            raise HTTPException(400,"Scale must list MIDI pitch classes 0..11")
     if engine!="world":
         raise HTTPException(400,"Only the open-source WORLD tuning engine is supported")
     x,sr=decode_wav(await read_upload(file))
@@ -293,7 +308,7 @@ async def tune(file:UploadFile=File(...),strength:float=.85,engine:str="world",
         except (ValueError,TypeError,KeyError) as exc:
             raise HTTPException(400,"Invalid vocal note targets") from exc
     try:
-        corrected,details=world_tune(x,sr,strength=strength,notes=notes)
+        corrected,details=world_tune(x,sr,strength=strength,notes=notes,scale=pitch_classes,vibrato=vibrato)
     except ImportError as exc:
         raise HTTPException(503,"WORLD pitch correction is not installed on the server") from exc
     except ValueError as exc:

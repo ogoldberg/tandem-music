@@ -193,6 +193,17 @@ def test_versions_module_is_served_and_precached(client):
     sw=run(client("GET","/sw.js"))
     assert "./versions.js" in sw.text
 
+def test_contour_module_is_served_and_precached(client):
+    # VOX.3: index.html imports contour.js at startup (the pitch-contour editor), and
+    # transcription.js imports it too, so it has its own route and is precached.
+    js=run(client("GET","/contour.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function previewCorrection" in js.text
+    page=run(client("GET","/"))
+    assert "from './contour.js'" in page.text
+    sw=run(client("GET","/sw.js"))
+    assert "./contour.js" in sw.text
+
 @pytest.mark.parametrize("provider,path,body",[
     ("openai-compatible","/chat/completions",'{"choices":[{"message":{"content":"OK"}}]}'),
     ("anthropic","/v1/messages",'{"content":[{"type":"text","text":"OK"}]}'),
@@ -457,3 +468,36 @@ def test_transcription_loads_basic_pitch_only_from_this_app():
     assert "https://" not in source and "http://" not in source
     assert '"/vendor/basic-pitch-1.0.1/basic-pitch.mjs"' in source
     assert '"/vendor/basic-pitch-1.0.1/model/model.json"' in source
+
+
+def capture_world_tune(monkeypatch):
+    seen={}
+    def fake(x,sr,**kwargs):
+        seen.update(kwargs)
+        return x,{"corrected_frames":0,"engine":"world"}
+    monkeypatch.setattr(server,"world_tune",fake)
+    return seen
+
+def test_tune_passes_vibrato_and_scale_to_world(client,monkeypatch):
+    """VOX.3: the contour editor's Keep vibrato amount and key/scale reach the tuner."""
+    seen=capture_world_tune(monkeypatch)
+    notes=json.dumps([{"m":60,"t":0,"d":.5,"c":.8}])
+    r=run(client("POST","/api/tune?strength=1&vibrato=0.75",files={"file":("v.wav",wav_bytes(np.zeros(16000)),"audio/wav")},data={"notes_json":notes}))
+    assert r.status_code==200,r.text
+    assert seen["vibrato"]==.75 and seen["notes"]==[{"m":60,"t":0.,"d":.5}]
+    seen.clear()
+    r=run(client("POST","/api/tune?strength=1&scale=2,4,6,7,9,11,1",files={"file":("v.wav",wav_bytes(np.zeros(16000)),"audio/wav")}))
+    assert r.status_code==200,r.text
+    assert seen["scale"]==[1,2,4,6,7,9,11] and seen["vibrato"]==0 and seen["notes"] is None
+
+def test_tune_defaults_keep_the_vox1_behaviour(client,monkeypatch):
+    seen=capture_world_tune(monkeypatch)
+    r=run(client("POST","/api/tune",files={"file":("v.wav",wav_bytes(np.zeros(16000)),"audio/wav")}))
+    assert r.status_code==200,r.text
+    assert seen["vibrato"]==0 and seen["scale"] is None
+
+@pytest.mark.parametrize("query",["vibrato=-0.1","vibrato=1.5","scale=12","scale=","scale=a,b","scale=0,0,1"])
+def test_tune_rejects_bad_vibrato_or_scale(client,monkeypatch,query):
+    capture_world_tune(monkeypatch)
+    r=run(client("POST","/api/tune?"+query,files={"file":("v.wav",wav_bytes(np.zeros(16000)),"audio/wav")}))
+    assert r.status_code==400,query

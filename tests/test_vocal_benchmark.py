@@ -51,6 +51,8 @@ MAX_TRANSITION_SHIFT_S = 0.02     # note changes stay where they were sung
 MAX_NOTE_LOUDNESS_CHANGE_DB = 1.0
 MAX_CLIP_LOUDNESS_CHANGE_DB = 0.5
 MAX_HALF_STRENGTH_RATIO = (0.35, 0.65)  # strength .5 leaves this share of the original error
+MAX_KEEP_VIBRATO_CENTRE_CENTS = 5.0     # vibrato=1: each note's median pitch lands on its target
+KEEP_VIBRATO_DEPTH_RATIO = (0.8, 1.2)   # vibrato=1: per-note pitch spread stays within this share
 
 
 def midi_hz(m):
@@ -188,11 +190,12 @@ def tune():
         mp.setattr(guards, "upstash_transport", None)
         guards.reset_memory_store()
 
-        def call(x, rate, strength, notes=None):
+        def call(x, rate, strength, notes=None, vibrato=None):
             async def go():
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app), base_url="http://test") as c:
                     data = {"notes_json": json.dumps(notes)} if notes is not None else {}
-                    return await c.post(f"/api/tune?strength={strength}", files={"file": ("v.wav", wav_bytes(x, rate), "audio/wav")}, data=data)
+                    extra = f"&vibrato={vibrato}" if vibrato is not None else ""
+                    return await c.post(f"/api/tune?strength={strength}{extra}", files={"file": ("v.wav", wav_bytes(x, rate), "audio/wav")}, data=data)
             r = asyncio.run(go())
             assert r.status_code == 200, r.text
             return r.content
@@ -271,6 +274,34 @@ def test_note_targets_beat_snapping_when_sung_more_than_half_a_semitone_off(rate
     assert np.median(snap) >= 80, m
     assert np.median(after) <= MAX_MEDIAN_CENTS_TARGETS, m
     assert np.percentile(after, 90) <= MAX_P90_CENTS_TARGETS, m
+
+
+def note_cents(x, rate, notes):
+    """Per note: signed cents from the intended pitch over voiced note-interior frames."""
+    times, f0 = yin(x, rate)
+    out = []
+    for n in notes:
+        sel = (times >= n["t"] + EDGE_SECONDS) & (times < n["t"] + n["d"] - EDGE_SECONDS) & np.isfinite(f0)
+        out.append(1200 * np.log2(f0[sel] / midi_hz(n["m"])))
+    return out
+
+
+@pytest.mark.parametrize("rate", RATES)
+def test_keep_vibrato_centres_each_note_and_keeps_its_wobble(rate, tune, report):
+    """VOX.3: with vibrato=1 the note centre moves onto the target and the vibrato survives."""
+    x, notes = render("vibrato", rate)
+    y, _ = wav_samples(tune(x, rate, 1.0, notes, vibrato=1))
+    assert len(y) == len(x)
+    before, after = note_cents(x, rate, notes), note_cents(y, rate, notes)
+    centre = [float(np.mean(a)) for a in after]
+    depth_before = [float(np.std(b)) for b in before]
+    depth_after = [float(np.std(a)) for a in after]
+    report[f"keep_vibrato/vibrato/{rate}"] = {"note_centre_cents": [round(c, 2) for c in centre],
+                                             "vibrato_std_cents_before": [round(d, 2) for d in depth_before],
+                                             "vibrato_std_cents_after": [round(d, 2) for d in depth_after]}
+    assert max(abs(c) for c in centre) <= MAX_KEEP_VIBRATO_CENTRE_CENTS, report[f"keep_vibrato/vibrato/{rate}"]
+    for b, a in zip(depth_before, depth_after):
+        assert KEEP_VIBRATO_DEPTH_RATIO[0] * b <= a <= KEEP_VIBRATO_DEPTH_RATIO[1] * b, report[f"keep_vibrato/vibrato/{rate}"]
 
 
 @pytest.mark.parametrize("rate", RATES)

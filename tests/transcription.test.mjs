@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeBasicPitchNotes, resampleForBasicPitch, transcribeWithBasicPitch, BASIC_PITCH_SAMPLE_RATE, PROJECT_MELODY_LIMITS, VOCAL_TARGET_LIMITS } from "../transcription.js";
+import { normalizeBasicPitchNotes, resampleForBasicPitch, transcribeWithBasicPitch, detectVocalTargets, BASIC_PITCH_SAMPLE_RATE, PROJECT_MELODY_LIMITS, VOCAL_TARGET_LIMITS } from "../transcription.js";
 test("sorts and converts Basic Pitch notes into portable project schema",()=>{
   assert.deepEqual(normalizeBasicPitchNotes([
     {pitchMidi:72,startTimeSeconds:1.25,durationSeconds:.4},
@@ -92,4 +92,24 @@ test("vocal target detection clips a note that runs past the end of the recordin
     noteFramesToTime:()=>[{pitchMidi:67,startTimeSeconds:179.5,durationSeconds:3}],
   });
   assert.deepEqual(await transcribeWithBasicPitch(buffer22k(180),()=>{},{...VOCAL_TARGET_LIMITS,loadModule:load}),[{m:67,t:179.5,d:.5}]);
+});
+
+test("vocal targets can carry a 0..1 confidence from the note's mean activation; project notes never do",()=>{
+  const events=[{pitchMidi:60,startTimeSeconds:0,durationSeconds:.5,amplitude:.734},{pitchMidi:62,startTimeSeconds:.5,durationSeconds:.5,amplitude:1.3},{pitchMidi:64,startTimeSeconds:1,durationSeconds:.5}];
+  assert.deepEqual(normalizeBasicPitchNotes(events,{...VOCAL_TARGET_LIMITS,confidence:true}).map(n=>n.c),[.73,1,0]);
+  assert.ok(normalizeBasicPitchNotes(events).every(n=>!("c" in n)),"the project schema forbids extra keys");
+});
+test("detectVocalTargets returns confident notes and the sung pitch contour across the recording",async()=>{
+  // Two frames peaking at A4 (MIDI 69, contour bin 145), then a silent frame.
+  const peak=Array.from({length:264},(_,b)=>b===145?.9:0),silent=new Array(264).fill(0);
+  const load=async()=>({
+    BasicPitch:class{async evaluateModel(_b,onFrames,onProgress){onFrames([[0],[0],[0]],[[0],[0],[0]],[peak,peak,silent]);onProgress(1)}},
+    outputToNotesPoly:()=>[],addPitchBendsToNoteEvents:(_c,raw)=>raw,
+    noteFramesToTime:()=>[{pitchMidi:69,startTimeSeconds:0,durationSeconds:.2,amplitude:.5}],
+  });
+  const {notes,contour}=await detectVocalTargets(buffer22k(180),()=>{},{loadModule:load});
+  assert.deepEqual(notes,[{m:69,t:0,d:.2,c:.5}]);
+  assert.equal(contour.m.length,3);
+  assert.ok(Math.abs(contour.m[0]-69)<1e-6 && Math.abs(contour.m[1]-69)<1e-6);
+  assert.ok(Number.isNaN(contour.m[2]));
 });
