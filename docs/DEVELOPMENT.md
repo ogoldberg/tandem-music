@@ -24,7 +24,7 @@ If a PyWorld wheel is unsupported on your workstation's OS/architecture, investi
 
 ```bash
 python -m pytest -q
-node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs
+node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs
 # Browser end-to-end, once: pip install -r requirements-e2e.txt && python -m playwright install chromium
 python -m pytest e2e -q
 ```

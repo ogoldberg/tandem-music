@@ -203,6 +203,26 @@ def test_groove_module_is_served_and_precached(client):
     sw=run(client("GET","/sw.js"))
     assert "./groove.js" in sw.text
 
+def test_voices_module_is_served_and_precached(client):
+    # ARR.1b: index.html imports voices.js (melody instrument voices) at startup, so it is precached.
+    js=run(client("GET","/voices.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function playNote" in js.text
+    page=run(client("GET","/"))
+    assert "from './voices.js'" in page.text
+    sw=run(client("GET","/sw.js"))
+    assert "./voices.js" in sw.text
+
+def test_new_instruments_are_accepted_everywhere():
+    # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.
+    for name in ("organ","guitar","flute"):
+        assert server.ChatProject(instrument=name).instrument==name
+        assert server.normalize_actions([{"type":"set_instrument","instrument":name}])==[{"type":"set_instrument","instrument":name}]
+    assert "set_instrument (piano, marimba, strings, bass, chip, organ, guitar, flute)" in server.SYSTEM
+    with pytest.raises(Exception):
+        server.ChatProject(instrument="kazoo")
+    assert server.normalize_actions([{"type":"set_instrument","instrument":"kazoo"}])==[]
+
 def test_contour_module_is_served_and_precached(client):
     # VOX.3: index.html imports contour.js at startup (the pitch-contour editor), and
     # transcription.js imports it too, so it has its own route and is precached.

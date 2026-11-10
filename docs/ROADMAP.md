@@ -8,14 +8,14 @@ Last reviewed: 2026-11-10. This is a prioritized working plan, not a delivery pr
 | Implemented, needs device QA | Responsive browser studio | Mac/Android browser targets, recording/import, playback |
 | Implemented, experimental | Humming-to-note transcription | Basic Pitch + 22,050 Hz resampling, fallback heuristic |
 | Implemented, experimental | Beatbox-to-drum events | Onset and centroid heuristics |
-| Implemented, limited | Two-track arrangement | Basic synthesized instruments/drums and simple editing |
+| Implemented, limited | Two-track arrangement | Eight synthesized melody voices (layered oscillators, envelopes, filters), basic drums and simple editing |
 | Implemented, limited | WAV/MIDI/JSON export | No embedded recorded audio in JSON |
 | Backend implemented, not live-configured | Model-agnostic text conversation | OpenAI-compatible, Anthropic, Gemini; production AI credentials absent on last inspection |
 | Implemented, experimental | EQ/dynamics vocal polish | Not tuning |
 | Implemented, experimental | Vocal pitch correction | WORLD/PyWorld; semi-automatic note targets; not Melodyne-level |
 | Planned | Reliable vocal contour editor | Drag notes, retain vibrato, key/scale UI, confidence |
 | Planned | Better vocal quality | Quality benchmark, artifact handling, phoneme preservation |
-| Planned | Better arrangement | Richer instruments, harmony, swing, phrase-aware editing |
+| Planned | Better arrangement | Harmony and phrase-aware editing (swing and richer voices are done) |
 | Planned | Music generation | Capability-specific adapters for externally hosted or self-hosted audio models |
 | Planned | Conversational speech | Spoken chat and audio intent alongside text |
 | Planned | Privacy/storage/auth | Accounts, durable projects/recordings, rate limiting and safe spending controls |
@@ -99,8 +99,9 @@ This is the working task list, in strategic order: protect the deployment, prove
 - [x] **ARR.1a** Groove: detect tempo and quantize with swing
   - Done: `groove.js` estimates the tempo from note and drum onsets and quantizes them to a 1/4, 1/8 or 1/16 grid with swing and strength; Detect tempo and Quantize in the Arrange panel are undoable edits. Covered by Node unit tests and a browser test that checks the swung timing in the MIDI export.
   - **Acceptance:** tempo detection within 2 bpm on jittered fixtures without doubling; quantize/swing timing verified in the exported MIDI; both undoable.
-- [ ] **ARR.1b** Richer instrument voices (layered oscillators, filters and envelopes) and more instruments, in playback and WAV export
+- [x] **ARR.1b** Richer instrument voices (layered oscillators, filters and envelopes) and more instruments, in playback and WAV export
   - **Depends:** ARR.1a
+  - Done: `voices.js` gives each instrument layered oscillators, an ADSR envelope, an optional swept low-pass filter and vibrato, used by both playback and WAV export; adds organ, guitar and flute. The instrument list is shared by the UI, project open, `/api/chat` validation, the AI action filter and the prompt. Covered by Node unit tests (envelope, Nyquist, graph wiring, list sync) and a browser test that exports every instrument and checks each WAV is distinct and unclipped. Not yet judged by ear on real devices.
 - [ ] **ARR.1c** Harmony: generate an editable chord or bass accompaniment from the melody's key
   - **Depends:** ARR.1a
 - [ ] **ARR.1d** Phrase-aware editing: detect phrases and move, copy or transpose a whole phrase
