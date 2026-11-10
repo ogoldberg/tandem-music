@@ -179,3 +179,31 @@ test("a new id never collides with an unrecognised entry's id", async () => {
   assert.notEqual(v.id, String(savedAt));
   assert.deepEqual((await store.get(v.id)).bpm, 100);
 });
+
+// STORE.2a: a version can link the recordings that were loaded when it was saved.
+const A = "a".repeat(64), B = "b".repeat(64), C = "c".repeat(64);
+
+test("a version keeps the recording links it was saved with; one without links has none", async () => {
+  const kv = memoryKV(), store = createVersionStore(kv, { now: clock() });
+  const withAudio = await store.save("Take", project(), { original: { id: A, type: "audio/wav" }, tuned: { id: B, type: "audio/wav" }, junk: { id: C } });
+  const without = await store.save("Plain", project());
+  assert.deepEqual(await store.audio(withAudio.id), { original: { id: A, type: "audio/wav" }, tuned: { id: B, type: "audio/wav" } });
+  assert.equal(await store.audio(without.id), null);
+  assert.equal(await store.audio("missing"), null);
+  assert.equal("audio" in kv.data.get(VERSIONS_KEY).find(e => e.id === without.id), false, "no empty audio field is stored");
+  assert.equal("audio" in (await store.get(withAudio.id)), false, "the project itself carries no audio");
+});
+
+test("audioIds lists every linked recording, including those of entries it does not recognise", async () => {
+  const kv = memoryKV({ [VERSIONS_KEY]: [{ id: "future", format: 99, audio: { original: { id: C, type: "" } } }] });
+  const store = createVersionStore(kv, { now: clock() });
+  await store.save("Take", project(), { original: { id: A, type: "" }, polished: { id: B, type: "" } });
+  assert.deepEqual([...(await store.audioIds())].sort(), [A, B, C]);
+});
+
+test("removing a version drops its links from audioIds", async () => {
+  const kv = memoryKV(), store = createVersionStore(kv, { now: clock() });
+  const v = await store.save("Take", project(), { original: { id: A, type: "" } });
+  await store.remove(v.id);
+  assert.deepEqual([...(await store.audioIds())], []);
+});

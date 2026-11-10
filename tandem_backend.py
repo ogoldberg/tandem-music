@@ -40,6 +40,9 @@ def groove_js():
 @app.get("/storage.js", include_in_schema=False)
 def storage_js():
     return FileResponse(Path(__file__).resolve().parent / "storage.js", media_type="text/javascript")
+@app.get("/recordings.js", include_in_schema=False)
+def recordings_js():
+    return FileResponse(Path(__file__).resolve().parent / "recordings.js", media_type="text/javascript")
 
 
 @app.get("/phrases.js", include_in_schema=False)
