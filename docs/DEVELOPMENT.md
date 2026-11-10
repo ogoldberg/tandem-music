@@ -53,7 +53,7 @@ Vercel project settings: https://vercel.com/oren-goldbergs-projects-c0a37bd5/tan
 
 On the last inspected Vercel environment (2026-11-09), no model configuration variables were present. Check current settings directly before relying on this historical observation.
 
-To generate a long random access token on macOS: `openssl rand -hex 32`. Store it in Vercel Production environment variables and enter the same token in the browser's **Connection** panel. Avoid shared computers since the browser currently saves this token in localStorage. Redeploy after environment changes. Do not paste credentials into issues, chat, screenshots or source.
+To generate a long random access token on macOS: `openssl rand -hex 32`. Store it in Vercel Production environment variables and enter the same token in the browser's **Connection** panel. The browser keeps the token only for that tab (sessionStorage), so you re-enter it in each new tab. Redeploy after environment changes. Do not paste credentials into issues, chat, screenshots or source.
 
 ### Sanity check after deploy
 
