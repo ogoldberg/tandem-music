@@ -27,7 +27,7 @@ flowchart TD
   UI --> Export[WAV + MIDI export]
 ```
 
-**Direction (ADR-011, ADR-012).** Tandem is local-first: the draft, versions and recordings are already kept on the device in IndexedDB/OPFS (STORE.2a, implemented). Planned, not implemented: a Mac app that runs this same backend on `127.0.0.1` in a native window (no hosted limits, projects as files, AI keys in the Keychain), then local AI audio models in that backend (Demucs, MusicGen-Melody, RAVE). The Vercel deployment stays as the hosted web mode. See ROADMAP.md sections 6-8.
+**Direction (ADR-011, ADR-012).** Tandem is local-first: the draft, versions and recordings are already kept on the device in IndexedDB/OPFS (STORE.2a, implemented). Implemented from source, needs the operator's QA: a Mac app that runs this same backend on `127.0.0.1` in a native window (DESK.1, see below). Planned: no hosted limits, projects as files and AI keys in the Keychain in that app (DESK.2-DESK.3, AI.4), then local AI audio models in that backend (Demucs, MusicGen-Melody, RAVE). The Vercel deployment stays as the hosted web mode. See ROADMAP.md sections 6-8.
 
 Vercel runs `api/index.py` which imports `tandem_backend.app`. FastAPI serves the UI, manifest, service worker, the browser modules (transcription, polish, tuning, history), and endpoints. No independent database or music-generation worker is deployed. `vercel.json` configures function duration.
 
@@ -127,6 +127,9 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - **Choice.** The chosen phrase is remembered by one of its notes across phrase edits, so it stays chosen after it moves or is copied (the copy becomes the choice). Any other edit, undo or redo clears it.
 - **Harmony.** Phrase edits change only the melody. The harmony part is left as it is and the status line suggests generating it again (ADR-010: harmony does not follow melody edits).
 
+## Mac app (DESK.1)
+`tandem_desktop/` is the launcher. `__init__.py` has no pywebview import, so it is tested on any platform: `load_port` reads or creates `desktop.json` (one port, kept across launches, because the origin `http://127.0.0.1:<port>` owns the IndexedDB and OPFS data), `bind` opens a socket on `127.0.0.1` only, `guarded_app` wraps `tandem_backend.app` and answers `421 Unknown host` unless the Host header is exactly `127.0.0.1:<port>`, `allow_media` decides WebKit's capture requests (microphone only, own origin only), and `start_server`/`stop_server` run uvicorn on the pre-bound socket in a thread and set `TANDEM_RUNTIME=desktop`, which `/api/config` reports as `"runtime": "desktop"`. `__main__.py` opens the pywebview window with persistent storage and downloads allowed, adds WebKit's `webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:` method to pywebview's Cocoa delegate so the microphone answer comes from `allow_media` rather than a WebKit prompt on every launch, and stops the server when the window closes. `index.html` and `tandem_backend.py` are unchanged apart from the `runtime` field.
+
 ## LLM orchestration
 `invoke_llm` supports `openai-compatible` (including gateways and local OpenAI-style endpoints), `anthropic`, and `gemini`, selected through environment variables. Models return JSON; `normalize_actions` allowlists edit types and clamps values. Melody lock rejects AI modifications to melody note events by default. The client applies the validated actions as one undoable edit (see Edit history).
 
@@ -156,6 +159,8 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | tandem_backend.py | FastAPI, DSP, LLM adapters, validation |
 | world_tuning.py | WORLD tuning |
 | request_guards.py | Rate limits (Upstash Redis), body-size caps |
+| tandem_desktop/ | Mac app launcher: fixed loopback port, Host check, microphone rule, native window (DESK.1) |
+| requirements-desktop.txt | requirements.txt plus pywebview, for the Mac app |
 | api/index.py | Vercel FastAPI entry |
 | requirements.txt | Python dependencies including pyworld-prebuilt |
 | tests/ | Python and Node checks |
