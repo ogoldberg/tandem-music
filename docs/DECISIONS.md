@@ -6,7 +6,7 @@ Last reviewed: 2026-11-10. Decisions are revisable.
 **Decision:** Responsive web app for Mac and Android; no required Akai MPC. **Reason:** immediate access and low friction. **Trade-off:** browser audio/CPU/device differences require testing.
 
 ## ADR-002: Full-stack, not frontend-only
-**Decision:** Python FastAPI backend on Vercel for DSP and AI orchestration, browser UI for recording/editing/export. **Reason:** safe server-only credentials and native DSP libraries. **Trade-off:** function CPU/runtime/bundle constraints.
+**Decision:** Python FastAPI backend on Vercel for DSP and AI orchestration, browser UI for recording/editing/export. **Reason:** safe server-only credentials and native DSP libraries. **Trade-off:** function CPU/runtime/bundle constraints. **Revised by ADR-011:** the backend becomes an optional hosted mode; tuning and AI calls are planned to move to the browser.
 
 ## ADR-003: Capability-specific, provider-neutral models
 **Decision:** Portable project schema; configurable text LLM, on-device Basic Pitch transcription, WORLD tuning, future independent music-generation adapters. **Reason:** no single model does every job well. **Trade-off:** adapters/evals must be maintained. The present music-generation slot is not functional.
@@ -18,7 +18,7 @@ Last reviewed: 2026-11-10. Decisions are revisable.
 **Decision:** WORLD vocoder using `pyworld-prebuilt` rather than licensing/repackaging Melodyne or Antares. **Reason:** portability, cost and control. **Trade-off:** quality and note editing are currently experimental.
 
 ## ADR-006: Stateless initial storage
-**Decision:** Browser draft and portable JSON files; no cloud project DB on ephemeral Vercel functions. **Reason:** minimizes cost and complexity. **Trade-off:** projects/audio do not roam seamlessly across devices.
+**Decision:** Browser draft and portable JSON files; no cloud project DB on ephemeral Vercel functions. **Reason:** minimizes cost and complexity. **Trade-off:** projects/audio do not roam seamlessly across devices. **Extended by ADR-011:** still no Tandem server storage; durable storage is on the device and in storage the user brings.
 
 ## ADR-007: Tests and transparency
 **Decision:** Python and Node CI suites plus real-device QA and explicit implemented-vs-planned documentation. **Reason:** READY deployments do not demonstrate audio quality. **Trade-off:** ongoing evaluation and fixture maintenance.
@@ -31,3 +31,13 @@ Last reviewed: 2026-11-10. Decisions are revisable.
 
 ## ADR-010: Harmony is a separate optional part
 **Decision (ARR.1c, 2026-11-10):** Generated accompaniment is stored as an optional `harmony` note list with its own `harmony_instrument`, alongside `notes` and `drums`, in format version 1; no AI action edits it. **Reason:** the transcribed melody and melody lock stay intact, older projects stay valid, and the part is editable and exportable with the existing note tools. **Trade-off:** the AI can read but not change the harmony, and harmony does not follow later melody edits until it is generated again.
+
+## ADR-011: Local-first, bring your own storage and keys
+**Decision (STORE.1, operator-approved 2026-11-10):** Tandem is local-first and has no accounts for now. Everything a user makes lives on their device, and anything that leaves it goes to storage or a model provider the user chose and pays for.
+- **On the device.** Projects and named versions move from `localStorage` to IndexedDB, and recordings are kept in the Origin Private File System (OPFS). The app asks for persistent storage (`navigator.storage.persist()`) so the browser does not evict them under storage pressure; where it is refused, the app says so and the user can export.
+- **The user's own cloud storage, in order.** (1) The existing project file export/import. (2) "Save to folder" with the File System Access API, so a folder the user already syncs (Dropbox, iCloud Drive, Google Drive) carries projects between devices with no Tandem server; this works in Chromium desktop browsers only, so export/import stays the path everywhere else. (3) Optionally, the user's own S3-compatible bucket (for example Cloudflare R2 or Backblaze B2) with their own keys.
+- **The user's own AI keys, called from the browser.** OpenAI, Anthropic (which requires the `anthropic-dangerous-direct-browser-access` header for browser calls), Gemini, OpenRouter, and a local Ollama when it is configured to allow the app's origin. The checks `normalize_actions` and melody lock make on the server today are ported to the browser, so a model's reply is validated the same way whichever path it took. Keys kept in the browser require a strict Content Security Policy. The hosted `/api/chat` with the shared access token becomes optional.
+- **On-device tuning.** WORLD (C++) is compiled to WebAssembly with Emscripten, and the `world_tuning.py` logic is ported, so `/api/tune` can run in the browser. With transcription, polish and tuning on the device, the app can be a static, offline-capable PWA; the FastAPI backend, Upstash rate limits and spend guards are then needed only for an optional hosted mode.
+- **Not now.** Local-first sync frameworks are deferred; if multi-user collaboration becomes a goal, prefer Yjs or Automerge. No Rust rewrite.
+
+**Reason:** no server-side user data to secure, store or pay for; no shared AI spend to guard; works offline; users keep ownership of their recordings. **Trade-off:** no seamless cross-device roaming without a synced folder or bucket; folder sync is Chromium-desktop only; browser storage can still be cleared by the user or evicted where persistence is refused; keys in the browser are exposed to any script that runs on the page, so XSS and malicious extensions become key theft (hence the CSP); each provider's browser (CORS) support must be checked and can change; a WASM build of WORLD adds a toolchain and must match the server's results.

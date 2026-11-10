@@ -29,7 +29,18 @@ Enforced by `RequestGuardMiddleware` in `request_guards.py` before a route reads
 
 Vercel's own platform limit on a function request body is 4.5 MB (per Vercel's documentation; not yet measured against this app), below the app's 18 MB cap, so long uncompressed WAVs (about 50 s of 44.1 kHz mono) are refused in production before they reach the app.
 
+## Bring your own keys and storage (planned, ADR-011)
+Not implemented yet; these are the rules the work in ROADMAP.md section 6 must meet.
+- A user's own AI or storage key is kept only in their browser and sent only to the provider they chose, never to the Tandem server. A browser test must prove it.
+- Any script running on the page can read a key kept in the browser, so XSS or a malicious extension means key theft. Before any key is stored the app needs a strict Content Security Policy: no inline script that is not hashed (the studio script is inline today), no third-party script, and `connect-src` limited to the app and the providers in use.
+- How long a key is kept follows ADR-009 by default (the tab session); remembering it longer is an explicit user choice with a warning.
+- Model replies called from the browser are validated in the browser exactly as `normalize_actions` and melody lock do on the server, and checked against the same fixtures.
+- Users should set their own spend limits at their provider. The Tandem spend guards (shared token, Upstash rate limits) protect only the hosted mode.
+- Projects and recordings in IndexedDB/OPFS are readable by anyone using that browser profile; the shared-device advice above applies.
+
 ## Before enabling paid AI
+These apply to the optional hosted mode (operator's key on Vercel), not to bring-your-own keys.
+
 1. Set `TANDEM_ACCESS_TOKEN` to a strong random secret; set provider/model/key only on Vercel.
 2. Configure provider budget/caps and alerts. Be aware shared access tokens can be copied or stolen.
 3. Avoid logging audio, secrets or complete personal prompts.

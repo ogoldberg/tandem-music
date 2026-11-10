@@ -23,6 +23,8 @@ flowchart TD
   UI --> Export[WAV + MIDI export]
 ```
 
+**Planned direction (ADR-011, not implemented).** Tandem is becoming local-first: projects, versions and recordings in IndexedDB/OPFS, the user's own synced folder or bucket for roaming, AI called from the browser with the user's own key (validation ported to JS), and WORLD tuning compiled to WebAssembly. The backend described here then becomes an optional hosted mode. See ROADMAP.md section 6.
+
 Vercel runs `api/index.py` which imports `tandem_backend.app`. FastAPI serves the UI, manifest, service worker, the browser modules (transcription, polish, tuning, history), and endpoints. No independent database or music-generation worker is deployed. `vercel.json` configures function duration.
 
 ## Implemented API
@@ -110,7 +112,7 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 - Browser: microphone capture, display, editable music, Basic Pitch transcription, playback/export, local draft.
 - Backend: voice DSP, tuning, text-model invocation, action validation and expense guard.
 - External model host: optional text LLM; keys stored server-side. Browser never receives `TANDEM_API_KEY`.
-- No account system/cloud projects: there is no server-side database, and serverless storage must be treated as ephemeral.
+- No account system/cloud projects: there is no server-side database, and serverless storage must be treated as ephemeral. ADR-011 keeps it that way: durable storage is planned on the device and in storage the user brings.
 
 ## File map
 | File | Purpose |
