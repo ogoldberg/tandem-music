@@ -19,6 +19,7 @@ Last reviewed: 2026-11-10. This is a prioritized working plan, not a delivery pr
 | Planned | Music generation | Capability-specific adapters for externally hosted or self-hosted audio models |
 | Planned | Conversational speech | Spoken chat and audio intent alongside text |
 | Planned | Local-first storage | No accounts (ADR-011): IndexedDB/OPFS on the device, then a synced folder or the user's own bucket; rate limiting is done, spend guards only matter for the hosted mode |
+| Planned | Hand-off to other music tools | Stems and multi-track MIDI, MusicXML, DAWproject, Web MIDI (EXP.1-EXP.4) |
 | Planned | Production QA | Android/Mac e2e recording and audio quality evaluations |
 
 ## Task backlog
@@ -122,7 +123,24 @@ This is the working task list, in strategic order: protect the deployment, prove
   - Compile WORLD (C++) with Emscripten, self-hosted with hashes like Basic Pitch (SEC.3), and port `world_tuning.py` to a JS module so `tuning.js` can tune without `/api/tune`. With it the app can run as a static offline PWA; the server path stays for the hosted mode until this is proven.
   - **Acceptance:** the VOX.1 benchmark fixtures give results within documented tolerances of the server version; a long recording tunes in a real browser offline with no API call.
 
-### 7. Later
+### 7. Hand work on to other music tools
+Tandem is where an idea starts; people finish it in their own DAW or notation app. Interchange is through standard files, not plugins or third-party cloud accounts (ADR-011). Each export carries the tempo, key and part names.
+- [ ] **EXP.1** Export stems and multi-track MIDI for any DAW
+  - **Depends:** STORE.2a (the recorded and tuned vocal must be kept to export it)
+  - One WAV per part (melody, harmony, drums, and the original, polished and tuned vocal when present), all the same length and starting at zero so they line up when dropped into a DAW, offered as one zip. A type-1 MIDI file with one named track per part (melody, harmony, drums on channel 10) plus tempo and key signature, alongside the existing single-track export or replacing it.
+  - **Acceptance:** stems line up sample-exactly with the mixed WAV (their sum matches it within rounding); the MIDI parses with a standard parser into named tracks with the right tempo, key and notes; checked by importing into at least one real DAW (GarageBand, Logic, Ableton Live, Reaper or BandLab) and recorded as manual QA; Node unit tests and a browser test.
+- [ ] **EXP.2** Export the melody (and harmony) as MusicXML for notation apps
+  - Quantized to the project grid with the detected or chosen key, time signature 4/4, tempo, and a chord-symbol or second staff for the harmony. Notes are split into tied, notatable durations.
+  - **Acceptance:** the file validates against the MusicXML 4.0 schema; a fixture melody round-trips (pitches and durations) through a MusicXML parser; opened in MuseScore and recorded as manual QA.
+- [ ] **EXP.3** Export a DAWproject file
+  - **Depends:** EXP.1
+  - The open DAWproject format (zip with `project.xml`, `metadata.xml` and audio) with one track per part, note clips for melody, harmony and drums, audio clips for the vocal, and the tempo.
+  - **Acceptance:** the XML validates against the DAWproject schema; the project opens with its tracks and audio in at least one DAW that imports DAWproject (Bitwig Studio, Studio One or Cubase), recorded as manual QA.
+- [ ] **EXP.4** Web MIDI: play and record from a MIDI keyboard, and send playback to MIDI outputs
+  - Only where the browser has Web MIDI (Chromium); hidden elsewhere. Input records notes into the melody as one undoable edit at the project tempo; output plays melody, harmony and drums to a chosen device and channel.
+  - **Acceptance:** browser test with a mocked `MIDIAccess`; recording with a real keyboard and playing to a real synth recorded as manual QA.
+
+### 8. Later
 - [x] **ARR.1** Better arrangement: richer instruments, harmony, swing and phrase-aware editing
   - **Depends:** CI.2
   - Split into the parts below; ARR.1 is done when all four are.
