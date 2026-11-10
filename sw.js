@@ -8,15 +8,19 @@ const ASSETS=['./','./history.js','./versions.js','./groove.js','./voices.js','.
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE&&k!==VENDOR).map(k=>caches.delete(k))))));
 // Only whole responses can be cached (a 206 range response cannot).
-const keep=(name,req,r)=>{if(r.status===200){const copy=r.clone();caches.open(name).then(c=>c.put(req,copy)).catch(()=>{})}return r};
+// A page is stored under its address without the query, so ?idea= links do not each add a copy.
+const keyOf=req=>{const u=new URL(req.url);return req.mode==='navigate'&&u.search?u.origin+u.pathname:req};
+const keep=(name,req,r)=>{if(r.status===200){const copy=r.clone();caches.open(name).then(c=>c.put(keyOf(req),copy)).catch(()=>{})}return r};
 self.addEventListener('fetch',e=>{
   const req=e.request;
   if(req.method!=='GET'||!req.url.startsWith(self.location.origin)||req.url.includes('/api/'))return;
   if(new URL(req.url).pathname.startsWith('/vendor/')){
-    e.respondWith(caches.open(VENDOR).then(c=>c.match(req)).then(hit=>hit||fetch(req).then(r=>keep(VENDOR,req,r))));
+    e.respondWith(caches.open(VENDOR).then(c=>c.match(req,{ignoreVary:true})).then(hit=>hit||fetch(req).then(r=>keep(VENDOR,req,r))));
     return;
   }
+  // Lookups ignore Vary: the server sends Vary: Origin (CORS), and a module import carries an Origin
+  // header the precache request did not, which would miss every precached module offline.
   // Network first, so a deploy shows at once; offline, the cached copy. A page opened with a query
   // string (the studio's ?idea=) is the same cached page.
-  e.respondWith(fetch(req).then(r=>keep(CACHE,req,r)).catch(()=>caches.match(req,{ignoreSearch:req.mode==='navigate'}).then(hit=>hit||Response.error())));
+  e.respondWith(fetch(req).then(r=>keep(CACHE,req,r)).catch(()=>caches.match(req,{ignoreSearch:req.mode==='navigate',ignoreVary:true}).then(hit=>hit||Response.error())));
 });

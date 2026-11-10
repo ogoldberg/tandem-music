@@ -1,7 +1,9 @@
 """MOB.1: the phone capture page records ideas from a (fake) microphone, keeps them on the device and
 opens them in the studio. Runs in a phone-sized, touch context."""
 import json
+from contextlib import contextmanager
 
+import httpx
 import pytest
 from playwright.sync_api import expect
 
@@ -10,20 +12,33 @@ from test_studio import IDB_GET, OPFS_FILES, count
 PHONE = {"viewport": {"width": 390, "height": 844}, "device_scale_factor": 3, "has_touch": True}
 
 
-@pytest.fixture
-def phone(browser, browser_name, server_url):
+@contextmanager
+def phone_page(browser, browser_name, base_url):
     """A phone-sized page that fails the test on any page error or console error."""
     options = dict(PHONE)
     if browser_name == "chromium":
         options.update(is_mobile=True, permissions=["microphone"])
-    context = browser.new_context(base_url=server_url, **options)
+    context = browser.new_context(base_url=base_url, **options)
     page = context.new_page()
     problems = []
     page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
-    page.on("console", lambda msg: problems.append(f"console.{msg.type}: {msg.text}") if msg.type == "error" else None)
+    page.on("console", lambda msg: problems.append(f"console.{msg.type}: {msg.text} @ {msg.location.get('url')}") if msg.type == "error" else None)
     yield page
     context.close()
     assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+
+
+@pytest.fixture
+def phone(browser, browser_name, server_url):
+    with phone_page(browser, browser_name, server_url) as page:
+        yield page
+
+
+@pytest.fixture
+def phone_on_own_server(browser, browser_name, own_server):
+    """A phone page on a server the test can stop, for real offline checks (MOB.2)."""
+    with phone_page(browser, browser_name, own_server.url) as page:
+        yield page, own_server
 
 
 def open_capture(page):
@@ -197,21 +212,36 @@ def wait_for_service_worker(page):
     page.wait_for_function("window.__swReady === true")
 
 
-def test_capture_opens_records_and_keeps_an_idea_offline(phone):
-    # MOB.2: once the app has been opened, capture works with no network at all.
-    page = phone
-    open_capture(page)
+FETCH_SIZES = "async files => Promise.all(files.map(async f => (await (await fetch(f)).arrayBuffer()).byteLength))"
+
+
+def assert_server_down(server):
+    with pytest.raises(httpx.ConnectError):
+        httpx.get(server.url + "/api/health", timeout=2)
+
+
+def test_capture_opens_records_and_keeps_an_idea_offline(phone_on_own_server):
+    # MOB.2: once the app has been opened, capture works with the server gone.
+    page, server = phone_on_own_server
+    page.goto("/capture?from=homescreen")
+    expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
     wait_for_service_worker(page)
-    page.context.set_offline(True)
+    page.reload()
+    page.wait_for_function("!!navigator.serviceWorker.controller")
+    # A page opened with a query string is cached once, under its address without the query.
+    keys = page.evaluate("async () => (await Promise.all((await caches.keys()).map(async n => (await (await caches.open(n)).keys()).map(r => r.url)))).flat()")
+    assert not [k for k in keys if "?" in k], keys
+    server.stop()
+    assert_server_down(server)
     page.reload()
     expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
     record(page)
     expect(page.locator(".idea")).to_have_count(1)
     assert len(ideas(page)) == 1
-    # The studio opens offline too, including with an idea's query string.
+    # The studio opens offline too, from its cached page and precached modules (never loaded online in
+    # this test), with the idea's query string.
     page.click(".idea >> text=Open in studio")
     expect(page.locator("#status")).to_contain_text("Opened Idea · ")
-    page.context.set_offline(False)
 
 
 def test_both_manifests_pass_chromium_installability(phone, browser_name):
@@ -253,19 +283,28 @@ def test_persistent_storage_is_requested_when_the_first_idea_is_kept(phone, gran
     assert page.evaluate("window.__persistCalls") == 1
 
 
-def test_vendor_files_are_cached_on_first_use_and_served_offline(phone):
+VENDOR_CACHED = """async files => {
+  for (let i = 0; i < 50; i++) {
+    const c = await caches.open('tandem-vendor-1');
+    if ((await Promise.all(files.map(f => c.match(f)))).every(Boolean)) return true;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return false;
+}"""
+
+
+def test_vendor_files_are_cached_on_first_use_and_served_offline(phone_on_own_server):
     # MOB.2: Basic Pitch's model and the instrument samples are not precached (megabytes), but once
-    # fetched they are kept in their own cache, which survives app updates, and load with no network.
-    page = phone
+    # fetched they are kept in their own cache, which survives app updates, and load with the server gone.
+    page, server = phone_on_own_server
     open_capture(page)
     wait_for_service_worker(page)
     page.reload()  # now the worker controls the page
     page.wait_for_function("!!navigator.serviceWorker.controller")
     files = ["/vendor/basic-pitch-1.0.1/model/model.json", "/vendor/gm-samples-1/bass/24.mp3"]
-    sizes = page.evaluate("async files => Promise.all(files.map(async f => (await (await fetch(f)).arrayBuffer()).byteLength))", files)
+    sizes = page.evaluate(FETCH_SIZES, files)
     assert all(size > 0 for size in sizes)
-    page.wait_for_function("""async files => { const c = await caches.open('tandem-vendor-1');
-      return (await Promise.all(files.map(f => c.match(f)))).every(Boolean) }""", arg=files)
-    page.context.set_offline(True)
-    assert page.evaluate("async files => Promise.all(files.map(async f => (await (await fetch(f)).arrayBuffer()).byteLength))", files) == sizes
-    page.context.set_offline(False)
+    assert page.evaluate(VENDOR_CACHED, files)
+    server.stop()
+    assert_server_down(server)
+    assert page.evaluate(FETCH_SIZES, files) == sizes
