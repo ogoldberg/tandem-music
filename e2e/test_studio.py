@@ -503,6 +503,26 @@ def test_restoring_a_version_without_tempo_or_instrument_uses_the_defaults(studi
     assert page.input_value("#instrument") == "piano"
 
 
+def test_unknown_instrument_in_a_version_or_draft_is_reported(studio):
+    """Review of #31: a version or draft with an unknown instrument says so instead of failing at Play."""
+    page = studio
+    entry = {"id": "odd", "name": "Odd", "savedAt": 1, "project": {"instrument": "kazoo", "notes": [{"m": 62, "t": 0, "d": 0.5}], "drums": []}}
+    page.evaluate("e => localStorage.setItem('tandem-versions', JSON.stringify([e]))", entry)
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    page.click("#versionlist .version:has-text('Odd') >> text=Restore")
+    expect(page.locator("#status")).to_have_text("Unsupported instrument: kazoo")
+    assert page.input_value("#instrument") == "piano"
+
+    page.evaluate("localStorage.setItem('tandem-draft', JSON.stringify({bpm: 100, instrument: 'kazoo', notes: [{m: 60, t: 0, d: 0.5}], drums: []}))")
+    page.reload()
+    expect(page.locator("#status")).to_have_text("The saved draft uses an unsupported instrument (kazoo). Choose an instrument before playing.")
+    assert note_pitches(page) == [60], "the draft's notes are kept"
+    page.select_option("#instrument", "organ")
+    page.click("#play")
+    expect(page.locator("#status")).to_have_text("Playing composition")
+
+
 def draft(page):
     return page.evaluate("JSON.parse(localStorage.getItem('tandem-draft'))")
 
