@@ -47,10 +47,10 @@ A checked box means the feature is **implemented in code**, not that it has been
 - [x] Undo/redo history across manual, AI, project-load and vocal-target edits (EDIT.1; per session).
 - [x] Named project versions saved in this browser: save, list, restore (undoable) and delete (EDIT.2).
 - [x] Detect tempo from the notes and drums, and quantize to a 1/4, 1/8 or 1/16 grid with swing and strength (ARR.1, first part).
-- [ ] Reliable pitch contour editing (VOX.3).
-- [ ] Production AI model configured and verified (AI.1, AI.2).
-- [ ] Mature instrument sounds and arrangement (ARR.1).
-- [ ] Accounts and cloud project storage (STORE.1, STORE.2).
+- [x] Pitch-contour editor: drag, resize and step note targets over the sung pitch line, key/scale snapping, keep vibrato (VOX.3; not yet judged by ear, VOX.2).
+- [ ] AI edits with your own key, called from the browser (AI.4), verified with a real model (AI.2); the hosted model on Vercel (AI.1) is optional.
+- [x] Richer instrument voices, generated chord/bass harmony and phrase move/copy/transpose (ARR.1; not yet judged by ear on real devices).
+- [ ] Local-first storage with no accounts (ADR-011): projects, versions and recordings on the device (STORE.2a), then a synced folder (STORE.2b) or your own bucket (STORE.2c).
 - [ ] Generative music/audio models (GEN.1).
 - [ ] Voice conversation (SPEECH.1).
 

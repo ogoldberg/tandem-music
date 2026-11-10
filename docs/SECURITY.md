@@ -32,7 +32,7 @@ Vercel's own platform limit on a function request body is 4.5 MB (per Vercel's d
 ## Bring your own keys and storage (planned, ADR-011)
 Not implemented yet; these are the rules the work in ROADMAP.md section 6 must meet.
 - A user's own AI or storage key is kept only in their browser and sent only to the provider they chose, never to the Tandem server. A browser test must prove it.
-- Any script running on the page can read a key kept in the browser, so XSS or a malicious extension means key theft. Before any key is stored the app needs a strict Content Security Policy: no inline script that is not hashed (the studio script is inline today), no third-party script, and `connect-src` limited to the app and the providers in use.
+- Any script running on the page can read a key kept in the browser, so XSS or a malicious extension means key theft. Before any key is stored the app needs a strict Content Security Policy: no inline script that is not hashed (the studio script is inline today), no third-party script, and `connect-src` limited to the app, the providers in use and any backend URL or local Ollama address the user entered. The policy must still allow the page's inline styles (or move them out) and WebAssembly compilation (`wasm-unsafe-eval`) for on-device tuning (VOX.4).
 - How long a key is kept follows ADR-009 by default (the tab session); remembering it longer is an explicit user choice with a warning.
 - Model replies called from the browser are validated in the browser exactly as `normalize_actions` and melody lock do on the server, and checked against the same fixtures.
 - Users should set their own spend limits at their provider. The Tandem spend guards (shared token, Upstash rate limits) protect only the hosted mode.
