@@ -666,3 +666,50 @@ def test_capture_manifest_starts_at_the_capture_page(client):
     assert {"name":"Capture an idea","url":"./capture"}.items() <= studio["shortcuts"][0].items()
     # The studio imports ideas.js so its recording clean-up keeps every idea's audio.
     assert "from './ideas.js'" in run(client("GET","/")).text
+
+ICONS=("icon-192.png","icon-512.png","icon-maskable-512.png","apple-touch-icon.png")
+
+def png_size(data):
+    assert data[:8]==b"\x89PNG\r\n\x1a\n" and data[12:16]==b"IHDR"
+    return int.from_bytes(data[16:20],"big"),int.from_bytes(data[20:24],"big")
+
+def test_app_icons_are_served_precached_and_listed_in_both_manifests(client):
+    # MOB.2: real PNG icons, so the studio and capture pages install to the home screen on Android and iOS.
+    sizes={}
+    for name in ICONS:
+        r=run(client("GET","/icons/"+name))
+        assert r.status_code==200 and r.headers["content-type"]=="image/png"
+        sizes[name]=png_size(r.content)
+    assert sizes=={"icon-192.png":(192,192),"icon-512.png":(512,512),"icon-maskable-512.png":(512,512),"apple-touch-icon.png":(180,180)}
+    # Only the built icons are served, never the rest of the folder or a path outside it.
+    for bad in ("icon.svg","README.md","../tandem_backend.py","nope.png"):
+        assert run(client("GET","/icons/"+bad)).status_code==404
+    sw=run(client("GET","/sw.js")).text
+    for name in ICONS:
+        assert "'./icons/"+name+"'" in sw
+    for path in ("/manifest.webmanifest","/capture.webmanifest"):
+        icons=run(client("GET",path)).json()["icons"]
+        listed={(i["src"],i["sizes"],i.get("purpose","any")) for i in icons}
+        assert {("./icons/icon-192.png","192x192","any"),("./icons/icon-512.png","512x512","any"),
+                ("./icons/icon-maskable-512.png","512x512","maskable")} <= listed
+        assert all(i["type"]=="image/png" for i in icons)
+    # iOS ignores manifest icons and reads apple-touch-icon from the page.
+    for path in ("/","/capture"):
+        assert '<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">' in run(client("GET",path)).text
+
+def test_icon_sources_are_in_the_repo():
+    # MOB.2 acceptance: the icons are in the repo with their source and the script that renders them.
+    from pathlib import Path
+    root=Path(server.__file__).resolve().parent
+    assert (root/"icons"/"icon.svg").is_file() and (root/"icons"/"icon-maskable.svg").is_file()
+    assert (root/"tools"/"icons"/"build.py").is_file()
+
+def test_every_precached_asset_is_served(client):
+    # cache.addAll rejects if any one request fails, and then the service worker never installs and
+    # nothing works offline (MOB.2). The list once held ./index.html, which is not a route.
+    import re
+    sw=run(client("GET","/sw.js")).text
+    assets=re.findall(r"'(\./[^']*)'",re.search(r"const ASSETS=\[(.*?)\];",sw).group(1))
+    assert "./" in assets and "./capture" in assets
+    for asset in assets:
+        assert run(client("GET",asset[1:] or "/")).status_code==200, asset

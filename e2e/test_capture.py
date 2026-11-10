@@ -188,3 +188,84 @@ def test_without_device_storage_capture_says_so_and_does_not_record(phone):
     page.goto("/capture")
     expect(page.locator("#status")).to_contain_text("Ideas cannot be kept in this browser: no A private window cannot keep them")
     expect(page.locator("#record")).to_be_disabled()
+
+
+def wait_for_service_worker(page):
+    # The worker precaches the app on install; ready means it is active and the cache is filled.
+    # Waited for with a timeout: a worker whose install fails never becomes ready.
+    page.evaluate("() => { window.__swReady = false; navigator.serviceWorker.ready.then(() => { window.__swReady = true }) }")
+    page.wait_for_function("window.__swReady === true")
+
+
+def test_capture_opens_records_and_keeps_an_idea_offline(phone):
+    # MOB.2: once the app has been opened, capture works with no network at all.
+    page = phone
+    open_capture(page)
+    wait_for_service_worker(page)
+    page.context.set_offline(True)
+    page.reload()
+    expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
+    record(page)
+    expect(page.locator(".idea")).to_have_count(1)
+    assert len(ideas(page)) == 1
+    # The studio opens offline too, including with an idea's query string.
+    page.click(".idea >> text=Open in studio")
+    expect(page.locator("#status")).to_contain_text("Opened Idea · ")
+    page.context.set_offline(False)
+
+
+def test_both_manifests_pass_chromium_installability(phone, browser_name):
+    if browser_name != "chromium":
+        pytest.skip("installability errors come from the Chrome DevTools Protocol")
+    page = phone
+    cdp = page.context.new_cdp_session(page)
+    for path in ("/capture", "/"):
+        page.goto(path)
+        wait_for_service_worker(page)
+        errors = cdp.send("Page.getInstallabilityErrors")["installabilityErrors"]
+        assert errors == [], (path, errors)
+
+
+PERSIST_STUB = """(() => {
+  window.__persistCalls = 0;
+  const granted = %s;
+  let persisted = false;
+  navigator.storage.persisted = async () => persisted;
+  navigator.storage.persist = async () => { window.__persistCalls++; persisted = granted; return granted; };
+})()"""
+
+
+@pytest.mark.parametrize("granted", [True, False])
+def test_persistent_storage_is_requested_when_the_first_idea_is_kept(phone, granted):
+    page = phone
+    page.add_init_script(PERSIST_STUB % ("true" if granted else "false"))
+    open_capture(page)
+    expect(page.locator("#storageinfo")).to_contain_text("may clear saved work")
+    assert page.evaluate("window.__persistCalls") == 0
+    record(page)
+    if granted:
+        expect(page.locator("#storageinfo")).to_contain_text("will keep saved work until you clear it")
+    else:
+        expect(page.locator("#storageinfo")).to_contain_text("may clear saved work")
+    assert page.evaluate("window.__persistCalls") == 1
+    # Asked once per visit, not on every take.
+    record(page)
+    assert page.evaluate("window.__persistCalls") == 1
+
+
+def test_vendor_files_are_cached_on_first_use_and_served_offline(phone):
+    # MOB.2: Basic Pitch's model and the instrument samples are not precached (megabytes), but once
+    # fetched they are kept in their own cache, which survives app updates, and load with no network.
+    page = phone
+    open_capture(page)
+    wait_for_service_worker(page)
+    page.reload()  # now the worker controls the page
+    page.wait_for_function("!!navigator.serviceWorker.controller")
+    files = ["/vendor/basic-pitch-1.0.1/model/model.json", "/vendor/gm-samples-1/bass/24.mp3"]
+    sizes = page.evaluate("async files => Promise.all(files.map(async f => (await (await fetch(f)).arrayBuffer()).byteLength))", files)
+    assert all(size > 0 for size in sizes)
+    page.wait_for_function("""async files => { const c = await caches.open('tandem-vendor-1');
+      return (await Promise.all(files.map(f => c.match(f)))).every(Boolean) }""", arg=files)
+    page.context.set_offline(True)
+    assert page.evaluate("async files => Promise.all(files.map(async f => (await (await fetch(f)).arrayBuffer()).byteLength))", files) == sizes
+    page.context.set_offline(False)

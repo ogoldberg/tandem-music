@@ -56,7 +56,15 @@ python tools/gm-samples/build.py          # renders the samples into vendor/gm-s
 python tools/gm-samples/build.py --check  # rebuilds in a temp directory and diffs against the committed files
 ```
 
-The script downloads the SoundFont package and checks its SHA-256 before use. The files are served as immutable, so a changed sample set must move to a new versioned directory such as `gm-samples-2` (the build `dest`, the vendor route, `samples.js` and the tests), or browsers will mix old and new files. Bump the `CACHE` name in `sw.js` too. See [SECURITY.md](SECURITY.md) for the license and hashes.
+The script downloads the SoundFont package and checks its SHA-256 before use. The files are served as immutable, so a changed sample set must move to a new versioned directory such as `gm-samples-2` (the build `dest`, the vendor route, `samples.js` and the tests), or browsers will mix old and new files. Bump the `CACHE` name in `sw.js` too, and the `VENDOR` cache name, so browsers drop the old directory's cached files. See [SECURITY.md](SECURITY.md) for the license and hashes.
+
+The app icons (MOB.2) are drawn in `icons/icon.svg` (rounded, for manifest purpose "any") and `icons/icon-maskable.svg` (full bleed, notes inside the maskable safe zone). After changing either, render the PNGs with headless Chromium and commit them:
+
+```bash
+python tools/icons/build.py   # needs requirements-e2e.txt and `python -m playwright install chromium`
+```
+
+It writes `icons/icon-192.png`, `icons/icon-512.png`, `icons/icon-maskable-512.png` and `icons/apple-touch-icon.png`. A new icon file also needs adding to `ICON_FILES` in `tandem_backend.py` and to the precache list in `sw.js` (bump `CACHE`).
 
 ## Production deployment
 

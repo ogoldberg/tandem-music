@@ -9,6 +9,38 @@
   "background_color": "#0d1523",
   "description": "Collaborative AI music sketchpad",
   "shortcuts": [
-    {"name": "Capture an idea", "short_name": "Capture", "url": "./capture", "description": "Record a song idea in one tap"}
+    {
+      "name": "Capture an idea",
+      "short_name": "Capture",
+      "url": "./capture",
+      "description": "Record a song idea in one tap",
+      "icons": [
+        {
+          "src": "./icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }
