@@ -638,3 +638,108 @@ def test_opening_a_project_with_an_unknown_instrument_is_rejected(studio, tmp_pa
     page.set_input_files("#projectfile", str(bad))
     expect(page.locator("#status")).to_have_text("Unsupported instrument: kazoo")
     expect(page.locator("#instrument")).to_have_value("piano")
+
+
+def midi_note_ons(data, status):
+    """(tick, pitch) of every note-on with the given status byte in Tandem's single-track MIDI export."""
+    assert data[:4] == b"MThd" and data[14:18] == b"MTrk"
+    i, end, tick, out = 22, 22 + int.from_bytes(data[18:22], "big"), 0, []
+    while i < end:
+        delta = 0
+        while True:
+            b = data[i]; i += 1
+            delta = (delta << 7) | (b & 127)
+            if b < 128:
+                break
+        tick += delta
+        s = data[i]
+        if s == 255:
+            i += 3 + data[i + 2]
+        else:
+            if s == status:
+                out.append((tick, data[i + 1]))
+            i += 3
+    return out
+
+
+def wav_samples(path):
+    with wave.open(io.BytesIO(path.read_bytes())) as w:
+        return np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float)
+
+
+def test_generated_harmony_is_editable_undoable_exported_and_saved(studio, tmp_path):
+    """ARR.1c: Generate builds a chord or bass part from the melody's key; it plays, exports, undoes and persists."""
+    page = studio
+    page.click("#clearnotes")
+    page.click("#genharmony")
+    expect(page.locator("#status")).to_have_text("Add or transcribe a melody before generating harmony.")
+
+    page.click("#demo")
+    no_harmony = wav_samples(download(page, "#exportwav", tmp_path))
+    page.click("#genharmony")
+    expect(page.locator("#status")).to_have_text("Generate chords in C major (detected): C C")
+    assert page.get_attribute("#undo", "title") == "Undo: Generate chords in C major"
+    expect(page.locator("#harmonycount")).to_have_text("6 notes")
+    expect(page.locator("#harmonyroll .note")).to_have_count(6)
+    saved = draft(page)
+    assert saved["harmony_instrument"] == "piano"
+    assert sorted(n["m"] for n in saved["harmony"] if n["t"] == 0) == [52, 55, 60]
+    assert saved["notes"] == [{"m": m, "t": round(i * 0.45, 2), "d": 0.36} for i, m in enumerate([60, 64, 67, 69, 67, 64, 62, 60])]
+
+    page.click("#play")
+    expect(page.locator("#status")).to_have_text("Playing composition")
+    page.click("#stop")
+
+    # MIDI: harmony on channel 2, one chord per 4/4 bar (3840 ticks); the melody stays on channel 1.
+    data = download(page, "#exportmidi", tmp_path).read_bytes()
+    assert sorted(midi_note_ons(data, 145)) == [(0, 52), (0, 55), (0, 60), (3840, 52), (3840, 55), (3840, 60)]
+    assert [p for _, p in midi_note_ons(data, 144)] == [60, 64, 67, 69, 67, 64, 62, 60]
+    # WAV: the harmony is audible in the mix and the mix does not clip.
+    with_harmony = wav_samples(download(page, "#exportwav", tmp_path))
+    assert np.abs(with_harmony).max() < 32000
+    n = min(len(no_harmony), len(with_harmony))
+    assert np.abs(with_harmony[:n] - no_harmony[:n]).mean() > 50
+
+    # Tap a harmony note to remove it; that is an undoable edit.
+    page.locator("#harmonyroll .note").first.click()
+    expect(page.locator("#harmonycount")).to_have_text("5 notes")
+    assert page.get_attribute("#undo", "title") == "Undo: Remove harmony note"
+    page.click("#undo")
+    expect(page.locator("#harmonycount")).to_have_text("6 notes")
+
+    # A chosen key and the bass style replace the part; a chosen harmony instrument is kept.
+    page.select_option("#harmonyinstrument", "organ")
+    assert page.get_attribute("#undo", "title") == "Undo: Change harmony instrument"
+    page.select_option("#harmonystyle", "bass")
+    page.select_option("#harmonykey", "9:minor")
+    page.click("#genharmony")
+    expect(page.locator("#status")).to_have_text("Generate bass line in A minor: C Am")
+    assert [(n["m"], n["t"]) for n in draft(page)["harmony"]] == [(36, 0), (43, 1.2), (45, 2.4), (52, 3.6)]
+    expect(page.locator("#harmonyinstrument")).to_have_value("organ")
+
+    # Versions and saved projects carry the harmony part.
+    page.fill("#versionname", "with bass")
+    page.click("#saveversion")
+    page.click("#clearharmony")
+    expect(page.locator("#harmonycount")).to_have_text("0 notes")
+    page.get_by_title("Restore with bass").click()
+    expect(page.locator("#harmonycount")).to_have_text("4 notes")
+    expect(page.locator("#harmonyinstrument")).to_have_value("organ")
+    project = json.loads(download(page, "#save", tmp_path).read_text())
+    assert project["harmony_instrument"] == "organ" and len(project["harmony"]) == 4
+
+    page.reload()
+    expect(page.locator("#harmonycount")).to_have_text("4 notes")
+    expect(page.locator("#harmonyinstrument")).to_have_value("organ")
+
+    # A project saved before ARR.1c opens with no harmony; an unknown harmony instrument is rejected.
+    old = tmp_path / "old.json"
+    old.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": 100, "instrument": "piano", "notes": [{"m": 60, "t": 0, "d": 0.5}], "drums": []}))
+    page.set_input_files("#projectfile", str(old))
+    expect(page.locator("#status")).to_have_text("Project opened")
+    expect(page.locator("#harmonycount")).to_have_text("0 notes")
+    expect(page.locator("#harmonyinstrument")).to_have_value("piano")
+    bad = tmp_path / "bad-harmony.json"
+    bad.write_text(json.dumps({"format": "tandem-project", "version": 1, "notes": [], "drums": [], "harmony": [], "harmony_instrument": "kazoo"}))
+    page.set_input_files("#projectfile", str(bad))
+    expect(page.locator("#status")).to_have_text("Unsupported harmony instrument: kazoo")

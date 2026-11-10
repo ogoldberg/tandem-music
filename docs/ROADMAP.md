@@ -15,7 +15,7 @@ Last reviewed: 2026-11-10. This is a prioritized working plan, not a delivery pr
 | Implemented, experimental | Vocal pitch correction | WORLD/PyWorld; semi-automatic note targets; not Melodyne-level |
 | Planned | Reliable vocal contour editor | Drag notes, retain vibrato, key/scale UI, confidence |
 | Planned | Better vocal quality | Quality benchmark, artifact handling, phoneme preservation |
-| Planned | Better arrangement | Harmony and phrase-aware editing (swing and richer voices are done) |
+| Planned | Better arrangement | Phrase-aware editing (swing, richer voices and generated chord/bass harmony are done) |
 | Planned | Music generation | Capability-specific adapters for externally hosted or self-hosted audio models |
 | Planned | Conversational speech | Spoken chat and audio intent alongside text |
 | Planned | Privacy/storage/auth | Accounts, durable projects/recordings, rate limiting and safe spending controls |
@@ -102,8 +102,9 @@ This is the working task list, in strategic order: protect the deployment, prove
 - [x] **ARR.1b** Richer instrument voices (layered oscillators, filters and envelopes) and more instruments, in playback and WAV export
   - **Depends:** ARR.1a
   - Done: `voices.js` gives each instrument layered oscillators, an ADSR envelope, an optional swept low-pass filter and vibrato, used by both playback and WAV export; adds organ, guitar and flute. The instrument list is shared by the UI, project open, `/api/chat` validation, the AI action filter and the prompt. Covered by Node unit tests (envelope, Nyquist, graph wiring, list sync) and a browser test that exports every instrument and checks each WAV is distinct and unclipped. Not yet judged by ear on real devices.
-- [ ] **ARR.1c** Harmony: generate an editable chord or bass accompaniment from the melody's key
+- [x] **ARR.1c** Harmony: generate an editable chord or bass accompaniment from the melody's key
   - **Depends:** ARR.1a
+  - Done: `harmony.js` detects the melody's key (or takes a chosen one) and generates one diatonic chord per 4/4 bar, as voiced triads or a root-and-fifth bass line. The part is stored as the project's optional `harmony` notes with its own instrument; Generate, Clear, instrument changes and note taps are undoable, and playback, WAV/MIDI export (channel 2), project files, versions and the draft include it. Covered by Node unit tests and a browser test. Not yet judged by ear on real devices.
 - [ ] **ARR.1d** Phrase-aware editing: detect phrases and move, copy or transpose a whole phrase
   - **Depends:** ARR.1a
 - [ ] **STORE.1** *(HUMAN)* Decide the account model and cloud storage for projects and recordings

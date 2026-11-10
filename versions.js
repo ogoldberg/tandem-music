@@ -16,6 +16,9 @@ export function projectFromState(state) {
     melody_locked: state.melody_locked !== false,
     notes: state.notes,
     drums: state.drums,
+    // ARR.1c: the optional accompaniment part; a project from before it has none.
+    harmony: Array.isArray(state.harmony) ? state.harmony : [],
+    harmony_instrument: state.harmony_instrument || "piano",
   };
 }
 

@@ -213,6 +213,24 @@ def test_voices_module_is_served_and_precached(client):
     sw=run(client("GET","/sw.js"))
     assert "./voices.js" in sw.text
 
+def test_harmony_module_is_served_and_precached(client):
+    # ARR.1c: index.html imports harmony.js (Generate harmony) at startup, so it is precached.
+    js=run(client("GET","/harmony.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function generateHarmony" in js.text
+    page=run(client("GET","/"))
+    assert "from './harmony.js'" in page.text
+    sw=run(client("GET","/sw.js"))
+    assert "./harmony.js" in sw.text
+
+def test_chat_project_accepts_an_optional_harmony_part():
+    # ARR.1c: the harmony part is optional, so projects saved before it still validate.
+    assert server.ChatProject().harmony==[] and server.ChatProject().harmony_instrument=="piano"
+    p=server.ChatProject(harmony=[{"m":48,"t":0,"d":1.9}],harmony_instrument="bass")
+    assert p.harmony[0].m==48 and p.harmony_instrument=="bass"
+    # The harmony fields come last, so the melody and drums are sent to the model before them.
+    assert list(p.model_dump())[-2:]==["harmony","harmony_instrument"]
+
 def test_new_instruments_are_accepted_everywhere():
     # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.
     for name in ("organ","guitar","flute"):
@@ -386,6 +404,11 @@ def test_analyze_rejects_unknown_mode(client):
     {"drums":[{"k":"cowbell","t":0}]},
     {"drums":[{"k":"kick","t":0}]*1025},
     {"melody_locked":"maybe"},
+    {"harmony":"C F G C"},
+    {"harmony":[{"m":48,"t":0,"d":0}]},
+    {"harmony":[{"m":48,"t":0,"d":1,"chord":"C"}]},
+    {"harmony":[{"m":48,"t":0,"d":0.5}]*1025},
+    {"harmony_instrument":"kazoo"},
     {"extra_field":{"deep":"x"*100}},
 ])
 def test_malformed_chat_project_gets_422(client,monkeypatch,project):
@@ -411,11 +434,13 @@ def test_valid_browser_project_reaches_model(client,monkeypatch):
         seen["content"]=messages[-1]["content"]; seen["prior"]=messages[:-1]
         return json.dumps({"reply":"ok","actions":[{"type":"set_tempo","bpm":120}]})
     monkeypatch.setattr(server,"invoke_llm",fake)
-    project={"bpm":100,"instrument":"marimba","notes":[{"m":60,"t":0,"d":0.36}],"drums":[{"k":"kick","t":0}],"melody_locked":True}
+    project={"bpm":100,"instrument":"marimba","notes":[{"m":60,"t":0,"d":0.36}],"drums":[{"k":"kick","t":0}],"melody_locked":True,
+        "harmony":[{"m":48,"t":0,"d":1.9}],"harmony_instrument":"organ"}
     r=run(client("POST","/api/chat",json={"message":"faster","project":project,
         "history":[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]}))
     assert r.status_code==200 and r.json()["actions"]==[{"type":"set_tempo","bpm":120}]
     assert '"instrument": "marimba"' in seen["content"]
+    assert '"harmony_instrument": "organ"' in seen["content"]
     assert seen["prior"]==[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]
 
 def test_long_message_can_be_sent_back_as_history(client,monkeypatch):

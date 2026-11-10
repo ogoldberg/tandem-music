@@ -13,6 +13,7 @@ flowchart TD
   UI --> Versions[versions.js: named versions in localStorage]
   UI --> Groove[groove.js: tempo detection and quantize with swing]
   UI --> Voices[voices.js: melody instrument voices]
+  UI --> Harmony[harmony.js: key detection and chord/bass accompaniment]
   UI -->|same-origin HTTPS| API[FastAPI / tandem_backend.py]
   API --> DSP[NumPy / SciPy: onset and melody fallback]
   API --> World[WORLD / PyWorld: vocal tuning]
@@ -41,10 +42,11 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
   "format": "tandem-project", "version": 1,
   "bpm": 100, "instrument": "marimba", "melody_locked": true,
   "notes": [{"m": 60, "t": 0.0, "d": 0.45}],
-  "drums": [{"k": "kick", "t": 0.0}]
+  "drums": [{"k": "kick", "t": 0.0}],
+  "harmony": [{"m": 52, "t": 0.0, "d": 2.26}], "harmony_instrument": "piano"
 }
 ```
-`m` is MIDI pitch, `t` and `d` are seconds, drum `k` is kick/snare/hat. Original vocal/audio is **not** embedded in project JSON. The browser can save/open JSON and export rendered WAV or MIDI.
+`m` is MIDI pitch, `t` and `d` are seconds, drum `k` is kick/snare/hat. `harmony` and `harmony_instrument` (ARR.1c) are optional and the format version stays 1: a project, version or draft without them has no harmony, on piano. Opening a project or restoring a version whose `harmony` is not a list, or whose `harmony_instrument` is not one of the instruments, is refused. Original vocal/audio is **not** embedded in project JSON. The browser can save/open JSON and export rendered WAV or MIDI.
 
 ## Transcription and tuning
 - `transcription.js` lazily imports Spotify Basic Pitch and its model. It resamples input AudioBuffer to **22,050 Hz** to avoid the previously reported 48-kHz error and returns `{m,t,d}`. Callers pass limits: `PROJECT_MELODY_LIMITS` (default, 60 s / 128 notes) for melody going into the project, `VOCAL_TARGET_LIMITS` (uncapped) for pitch-correction targets.
@@ -57,7 +59,7 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 ## Edit history (EDIT.1)
 `history.js` is a pure module the studio script imports at startup (the inline script is `type="module"`). Every edit in `index.html` goes through `edit(label, fn)`, which serializes a snapshot before and after `fn` and records the pair with its label:
 
-- What a snapshot holds: the project (`bpm`, `instrument`, `melody_locked`, `notes`, `drums`) and the vocal tuning targets (`vocalNotes` and the detected originals that Reset restores) and the tuning key/scale. Recorded edits: tapping a note or hit, + Note/+ Hit, Clear, tempo, instrument, melody lock, Load example, Open project, transcription results, AI chat actions (one entry per reply), Detect sung notes, the contour editor's target drags, resizes, arrow-key steps and deletes, key/scale changes, Snap notes to key, and Reset note edits.
+- What a snapshot holds: the project (`bpm`, `instrument`, `melody_locked`, `notes`, `drums`, `harmony`, `harmony_instrument`) and the vocal tuning targets (`vocalNotes` and the detected originals that Reset restores) and the tuning key/scale. Recorded edits: tapping a note or hit, + Note/+ Hit, Clear, tempo, instrument, melody lock, Load example, Open project, transcription results, AI chat actions (one entry per reply), Detect sung notes, the contour editor's target drags, resizes, arrow-key steps and deletes, key/scale changes, Snap notes to key, Reset note edits, and the harmony part's Generate, Clear, instrument change and note taps.
 - Undo/Redo buttons (disabled when empty; the title names the edit), Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl+Y. Shortcuts are ignored in text fields so they keep native text undo.
 - A new edit clears redo; an edit that changed nothing (for example clearing an empty track, or a tempo clamped back to its value) is not recorded. The undo stack is capped at 100 edits.
 - Vocal targets belong to the recording they were detected from. Loading or recording new audio removes targets from every stored snapshot (`rewrite`) and discards edits that become no-ops, so undo never applies old targets to a new recording.
@@ -82,6 +84,14 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - `INSTRUMENTS` in `voices.js` is the instrument list. The Instrument menu is built from it, opening a project file or restoring a version with any other instrument is rejected (a browser draft with one keeps its notes and says to choose an instrument), and `tandem_backend.py` keeps the same tuple for `ChatProject`, `normalize_actions` and the system prompt. A Node test fails if the two lists differ.
 - The voices are synthesised, not sampled. Whether they sound good is a listening judgement that has not been made on real devices (see TESTING.md).
 
+## Harmony (ARR.1c)
+`harmony.js` is pure (imported by `index.html` and the Node tests). Generate in the Harmony track builds an accompaniment from the melody and stores it as the project's `harmony` notes, the same `{m,t,d}` shape as the melody, so it is edited, undone, saved, versioned and exported like any other part.
+- **Key.** By default the key is detected from the melody: the duration-weighted pitch-class histogram is correlated with the Krumhansl-Kessler major and minor profiles for all 12 tonics and the best match wins. It needs at least three notes with two different pitch classes; otherwise Generate asks for a key. The key menu can instead name any of the 24 major and minor keys.
+- **Chords.** One chord per 4/4 bar at the project tempo, with bars starting at the first melody note (a pickup shifts the bar lines; quantize first and start on a downbeat for the best fit). Each bar takes the diatonic triad (major keys: I ii iii IV V vi; minor keys: i III iv V VI VII, with the harmonic-minor V; no diminished triads) that best fits the melody notes it overlaps: chord tones count for, other notes of the key count half against and notes outside the key count fully against, weighted by overlap in beats, a note sounding on the downbeat counting double, plus a small preference for I, V and IV. A bar with no melody keeps the previous chord.
+- **Styles.** Chords: a close-position triad in C3-G4 per bar, each voicing chosen to move the voices least from the previous one. Bass line: the root (C2-B2) on beat 1 and the fifth above it on beat 3. Notes end at 94% of their slot so repeated pitches re-strike.
+- **Part.** Generating replaces the whole part as one undoable edit labelled with the style and key; the status line lists the chords. Tapping a harmony note removes it. The part has its own instrument from `INSTRUMENTS` (generating a bass line into an empty part on the default piano switches it to bass). Playback and WAV export play it through a 0.6 gain bus so a triad sits under the melody without clipping; MIDI export writes it on channel 2 (melody on 1, drums on 10).
+- The AI sees the harmony part in the project it is sent but has no action that edits it, so melody lock does not apply to it; an AI transpose or note replacement does not regenerate it. Whether the generated parts sound musical is a listening judgement not yet made on real devices.
+
 ## LLM orchestration
 `invoke_llm` supports `openai-compatible` (including gateways and local OpenAI-style endpoints), `anthropic`, and `gemini`, selected through environment variables. Models return JSON; `normalize_actions` allowlists edit types and clamps values. Melody lock rejects AI modifications to melody note events by default. The client applies the validated actions as one undoable edit (see Edit history).
 
@@ -102,6 +112,7 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | versions.js | Named project versions in localStorage (pure; imported by index.html and Node tests) |
 | groove.js | Tempo detection and quantize with swing (pure; imported by index.html and Node tests) |
 | voices.js | Melody instrument voices for playback and WAV export (pure; imported by index.html and Node tests) |
+| harmony.js | Key detection and chord/bass accompaniment generation (pure; imported by index.html and Node tests) |
 | tandem_backend.py | FastAPI, DSP, LLM adapters, validation |
 | world_tuning.py | WORLD tuning |
 | request_guards.py | Rate limits (Upstash Redis), body-size caps |

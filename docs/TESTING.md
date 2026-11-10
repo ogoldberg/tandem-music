@@ -6,7 +6,7 @@ Last reviewed: 2026-11-10. **Test files exist; passing CI status and real-device
 ```bash
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
-node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs
+node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs tests/harmony.test.mjs
 
 # Browser end-to-end (needs a Playwright Chromium)
 python -m pip install -r requirements-e2e.txt
@@ -21,6 +21,8 @@ Browser end-to-end tests (`e2e/`, CI.2) start the real app with uvicorn and driv
 
 An ARR.1b browser test plays and exports the example with each of the eight melody instruments and checks that every WAV is audible, below clipping and different from the others, that the chosen instrument survives a reload, and that opening a project with an unknown instrument is refused.
 
+An ARR.1c browser test checks the message when there is no melody, generates chords for the example (C major, C C, triads E3-G3-C4), plays it, checks the exported MIDI has the triads on channel 2 at ticks 0 and 3840 with the melody untouched on channel 1 and that the WAV changes but does not clip, removes a harmony note and undoes it, generates a bass line in a chosen A minor while keeping a chosen organ, saves and restores a version, saves a project file, reloads, opens a pre-harmony project (no harmony, piano) and refuses an unknown harmony instrument. Node tests (`tests/harmony.test.mjs`) cover key detection on major and minor melodies, the diatonic chord lists, I-IV-V-I chosen under a melody that outlines it, voicing range and voice leading, the bass pattern, bar timing at other tempos and start offsets, a chosen key, empty bars and input validation.
+
 ## Manual acceptance matrix
 | Journey | macOS Chrome | macOS Safari | Android Chrome |
 |---|---|---|---|
@@ -32,6 +34,7 @@ An ARR.1b browser test plays and exports the example with each of the eight melo
 | AI edit chat with configured provider and melody lock | Unverified | Unverified | Unverified |
 | Save/load JSON and export WAV/MIDI | Unverified | Unverified | Unverified |
 | Each melody instrument sounds right and distinct by ear (ARR.1b) | Unverified | Unverified | Unverified |
+| Generated chords and bass line sound musical under real melodies (ARR.1c) | Unverified | Unverified | Unverified |
 | Offline/reconnection and malformed input handling | Unverified | Unverified | Unverified |
 
 ## Audio test requirements
