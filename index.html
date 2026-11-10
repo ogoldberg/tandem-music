@@ -5,7 +5,7 @@
 <div class="grid"><section class="card"><h2>Capture your idea</h2><p class="muted">Hum, beatbox or sing. Audio stays on this device unless you choose server analysis or pitch correction.</p><div class="bar"><select id="mode"><option value="melody">Humming → melody</option><option value="rhythm">Beatbox → drums</option><option value="vocal">Singing → vocal</option></select><button id="record" class="primary">● Record</button><button id="finish" disabled>Stop recording</button><button id="import">Import audio</button><input id="audiofile" type="file" accept="audio/*" class="hide"></div><div id="status" class="status">Ready</div><canvas id="wave" width="640" height="80"></canvas><div class="bar"><button id="original" disabled>▶ Original</button><label for="polishstyle">Vocal preset</label><select id="polishstyle"><option value="studio">Studio (stronger)</option><option value="natural">Natural (subtle)</option></select><button id="polish" disabled>Polish vocal</button><button id="polished" disabled>▶ Polished</button><button id="analyze" disabled>Transcribe recording</button><label for="transcriber">Engine</label><select id="transcriber"><option value="basic-pitch">Basic Pitch (on device)</option><option value="heuristic">Server (fallback)</option></select></div><div class="bar"><label for="tunestrength">Pitch correction</label><input id="tunestrength" type="range" min="0" max="100" value="85" step="5"><span id="tunelevel">85%</span><button id="tune" disabled>Correct singing pitch</button><button id="playtuned" disabled>▶ Tuned</button><button id="downloadtuned" disabled>Download tuned voice</button></div>
 <div id="tuneinfo" class="muted">Open-source WORLD tuning preserves the vocal spectral envelope while correcting pitch. Best with isolated solo singing.</div>
 <div class="bar"><button id="detectvocal" disabled>Detect sung notes</button><button id="resetvocal" disabled>Reset note edits</button><label for="tunekey">Key</label><select id="tunekey"></select><select id="tunescale" aria-label="Scale"></select><button id="snapvocal" disabled>Snap notes to key</button></div>
-<div class="bar"><label for="vibrato">Keep vibrato</label><input id="vibrato" type="range" min="0" max="100" value="100" step="5"><span id="vibratolevel">100%</span><small><span class="legend" style="background:#7d93ad"></span>sung<span class="legend" style="background:#92e9ce"></span>after correction (preview)</small></div>
+<div class="bar"><label for="vibrato">Keep vibrato</label><input id="vibrato" type="range" min="0" max="100" value="100" step="5"><span id="vibratolevel">100%</span><small><span class="legend" style="background:#7d93ad"></span>sung<span class="legend" style="background:#92e9ce"></span>after correction (approximate preview)</small></div>
 <div id="vocalnoteeditor" class="track contour" aria-label="Vocal pitch contour editor">Record a solo vocal to detect and edit notes.</div>
 <div id="vocalnoteinfo" class="muted" aria-live="polite">Drag a note up or down to change its target pitch and drag its edges to change where it applies. With a note selected, the arrow keys step through the key and Delete removes the target.</div>
 <div class="bar"><button id="downloadvocal" disabled>Download polished vocal</button></div><div id="polishinfo" class="muted" aria-live="polite">Vocal polish changes tone and dynamics, not singing pitch.</div>
@@ -106,12 +106,17 @@ function describeTarget(i){
 }
 function select(i){selectedTarget=i;for(const el of document.querySelectorAll('#vocalnoteeditor .target'))el.classList.toggle('selected',Number(el.dataset.i)===i);$('vocalnoteinfo').textContent=describeTarget(i)}
 function placeTarget(el,n,g){el.style.left=(n.t*g.pps)+'px';el.style.width=Math.max(8,n.d*g.pps)+'px';el.style.top=((g.hi-n.m)*ROW+1)+'px';el.style.height=(ROW-2)+'px';el.setAttribute('aria-valuenow',n.m);el.setAttribute('aria-valuetext',noteName(n.m));el.lastChild.textContent=n.d*g.pps>34?noteName(n.m):''}
+// Every detected target deleted by hand: tuning would get no targets and snap the whole take, so Tune waits for Undo or Reset (issue #23).
+const TARGET_HELP=$('vocalnoteinfo').textContent;
+const allTargetsRemoved=()=>Array.isArray(vocalNotes)&&!vocalNotes.length&&originalVocalNotes?.length>0;
 function renderVocalNotes(){
-  const root=$('vocalnoteeditor');$('resetvocal').disabled=!originalVocalNotes;$('snapvocal').disabled=!vocalNotes?.length||tuningKey.scale==='chromatic';
+  const root=$('vocalnoteeditor');if(audio)$('tune').disabled=allTargetsRemoved();$('resetvocal').disabled=!originalVocalNotes;$('snapvocal').disabled=!vocalNotes?.length||tuningKey.scale==='chromatic';
   $('tunekey').value=tuningKey.tonic;$('tunescale').value=tuningKey.scale;$('tunekey').disabled=tuningKey.scale==='chromatic';
   const hadFocus=root.contains(document.activeElement),oldScroll=root.querySelector('.cscroll'),scrollLeft=oldScroll?.scrollLeft||0,scrollTop=oldScroll?.scrollTop||0;
   drag=null;editorGeom=null;root.replaceChildren();
   if(!vocalNotes){root.textContent=audio?'Press Detect sung notes to edit the pitch targets.':'Record a solo vocal to detect and edit notes.';return}
+  if(!vocalNotes.length){selectedTarget=null;$('vocalnoteinfo').textContent=TARGET_HELP}
+  if(allTargetsRemoved()){root.textContent='Every vocal target was removed. Press Undo or Reset note edits to bring them back; Tune stays off until there is at least one target.';return}
   if(!vocalNotes.length){root.textContent='No stable sung notes detected. Try a clean solo vocal with held notes.';return}
   if(selectedTarget!=null&&selectedTarget>=vocalNotes.length)selectedTarget=vocalNotes.length?vocalNotes.length-1:null;
   const duration=Math.max(audioDuration,...vocalNotes.map(n=>n.t+n.d)),{lo,hi}=contourRange(vocalNotes,vocalContour);
@@ -185,7 +190,7 @@ $('detectvocal').onclick=async()=>{
 };
 $('resetvocal').onclick=()=>edit('Reset vocal targets',()=>{vocalNotes=originalVocalNotes?.map(n=>({...n}))??null});
 $('tunestrength').oninput=()=>{$('tunelevel').textContent=$('tunestrength').value+'%';drawContour()};
-$('tune').onclick=async()=>{try{
+$('tune').onclick=async()=>{if(allTargetsRemoved()){status('Every vocal target was removed. Undo or Reset note edits before tuning.');return}try{
  status('Correcting singing pitch…');
  const strength=Number($('tunestrength').value)/100;
  const {tuneInChunks}=await import('./tuning.js');

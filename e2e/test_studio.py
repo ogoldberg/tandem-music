@@ -373,6 +373,24 @@ def test_pitch_contour_editor_edits_drive_tuning_through_history(studio, tmp_pat
     page.click("#undo")  # F5 step
     assert pitch(2) == "E5"
 
+    # Deleting every target does not fall back to snapping the whole take: Tune is off
+    # and the editor points to Undo / Reset until a target is back (issue #23).
+    for _ in range(3):
+        targets.nth(0).focus()
+        page.keyboard.press("Delete")
+    expect(targets).to_have_count(0)
+    expect(page.locator("#vocalnoteeditor")).to_have_text(re.compile(r"^Every vocal target was removed\..*Undo.*Reset note edits"))
+    expect(page.locator("#tune")).to_be_disabled()
+    expect(page.locator("#vocalnoteinfo")).to_have_text(re.compile(r"^Drag a note up or down"))
+    page.click("#undo")
+    expect(targets).to_have_count(1)
+    expect(page.locator("#tune")).to_be_enabled()
+    page.click("#redo")
+    expect(page.locator("#tune")).to_be_disabled()
+    page.click("#resetvocal")
+    expect(targets).to_have_count(3)
+    expect(page.locator("#tune")).to_be_enabled()
+
 
 def version_names(page):
     return [t.split(" · ")[0] for t in page.locator("#versionlist .version span").all_text_contents()]
