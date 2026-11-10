@@ -14,6 +14,7 @@ flowchart TD
   UI --> Groove[groove.js: tempo detection and quantize with swing]
   UI --> Voices[voices.js: melody instrument voices]
   UI --> Harmony[harmony.js: key detection and chord/bass accompaniment]
+  UI --> Phrases[phrases.js: phrase detection and phrase edits]
   UI -->|same-origin HTTPS| API[FastAPI / tandem_backend.py]
   API --> DSP[NumPy / SciPy: onset and melody fallback]
   API --> World[WORLD / PyWorld: vocal tuning]
@@ -92,6 +93,14 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - **Part.** Generating replaces the whole part as one undoable edit labelled with the style and key; the status line lists the chords. Tapping a harmony note removes it. The part has its own instrument from `INSTRUMENTS` (generating a bass line into an empty part on the default piano switches it to bass). Playback and WAV export play it through a 0.6 gain bus so a triad sits under the melody without clipping; MIDI export writes it on channel 2 (melody on 1, drums on 10).
 - The AI sees the harmony part in the project it is sent but has no action that edits it, so melody lock does not apply to it; an AI transpose or note replacement does not regenerate it. Whether the generated parts sound musical is a listening judgement not yet made on real devices.
 
+
+## Phrases (ARR.1d)
+`phrases.js` is pure (imported by `index.html` and the Node tests). The Melody track lists the melody's phrases under its roll; choosing one marks its notes and switches on the phrase tools.
+- **Detection.** Notes are taken in time order; a note that starts a beat or more (at the project tempo, with 1 ms tolerance) after the latest end so far starts a new phrase, so a long note bridges the notes under it. Changing the tempo can split or join phrases. Legato singing with no rests is one phrase.
+- **Edits.** Move a beat earlier or later, transpose by a semitone or an octave, and Copy to end, which appends the phrase a whole number of 4/4 bars after the original and after the melody's last note, so the copy keeps its place in the bar. Each is one undoable edit through `edit()`. A move before 0 s or past 600 s, a transpose outside MIDI 0..127 (refused rather than clamped, so the phrase keeps its shape) and a copy past 1024 melody notes or 600 s are refused with a message. Phrase notes keep their positions in the `notes` array, and copies are appended.
+- **Choice.** The chosen phrase is remembered by one of its notes across phrase edits, so it stays chosen after it moves or is copied (the copy becomes the choice). Any other edit, undo or redo clears it.
+- **Harmony.** Phrase edits change only the melody. The harmony part is left as it is and the status line suggests generating it again (ADR-010: harmony does not follow melody edits).
+
 ## LLM orchestration
 `invoke_llm` supports `openai-compatible` (including gateways and local OpenAI-style endpoints), `anthropic`, and `gemini`, selected through environment variables. Models return JSON; `normalize_actions` allowlists edit types and clamps values. Melody lock rejects AI modifications to melody note events by default. The client applies the validated actions as one undoable edit (see Edit history).
 
@@ -113,6 +122,7 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | groove.js | Tempo detection and quantize with swing (pure; imported by index.html and Node tests) |
 | voices.js | Melody instrument voices for playback and WAV export (pure; imported by index.html and Node tests) |
 | harmony.js | Key detection and chord/bass accompaniment generation (pure; imported by index.html and Node tests) |
+| phrases.js | Melody phrase detection and phrase move/copy/transpose (pure; imported by index.html and Node tests) |
 | tandem_backend.py | FastAPI, DSP, LLM adapters, validation |
 | world_tuning.py | WORLD tuning |
 | request_guards.py | Rate limits (Upstash Redis), body-size caps |
