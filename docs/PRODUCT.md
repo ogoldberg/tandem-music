@@ -30,7 +30,7 @@ Tandem is a conversational musical collaborator. Hum a melody, sing imperfectly,
 - Save/open/export portable projects and WAV/MIDI files.
 
 ## What currently exists
-Browser recording/import, Basic Pitch on-device transcription and server fallback, heuristic beatbox analysis, elementary two-track synthesis, simple note/drum event editing, MIDI/WAV export, local JSON projects and undo, text AI edit-plan endpoint (requires configured model), basic EQ/dynamics vocal polish, and experimental WORLD pitch correction with +/- semitone vocal note targets.
+Browser recording/import, Basic Pitch on-device transcription and server fallback, heuristic beatbox analysis, elementary two-track synthesis, simple note/drum event editing, MIDI/WAV export, local JSON projects, undo/redo across all edits, text AI edit-plan endpoint (requires configured model), basic EQ/dynamics vocal polish, and experimental WORLD pitch correction with +/- semitone vocal note targets.
 
 ## What is NOT finished
 Production AI credentials, provider-integrated music generation, robust beatbox classification, studio-grade vocal correction, accurate continuous pitch-contour editor, real-time spoken assistant, high-quality instrument sounds, cloud project persistence, proper user accounts and production abuse controls, full Android/Mac end-to-end testing.

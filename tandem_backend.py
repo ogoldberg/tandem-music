@@ -30,6 +30,10 @@ def homepage():
 def service_worker():
     return FileResponse(Path(__file__).resolve().parent / "sw.js", media_type="text/javascript")
 
+@app.get("/history.js", include_in_schema=False)
+def history_js():
+    return FileResponse(Path(__file__).resolve().parent / "history.js", media_type="text/javascript")
+
 @app.get("/polish.js", include_in_schema=False)
 def polish_js():
     return FileResponse(Path(__file__).resolve().parent / "polish.js", media_type="text/javascript")
