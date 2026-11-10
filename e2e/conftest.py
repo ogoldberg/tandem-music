@@ -22,7 +22,12 @@ def _free_port():
 def server_url(tmp_path_factory):
     port = _free_port()
     # Server output goes to a file: an unread pipe would block uvicorn once it filled.
-    log_path = tmp_path_factory.mktemp("server") / "uvicorn.log"
+    # E2E_SERVER_LOG puts it at a known path (CI uploads it when the job fails).
+    if os.environ.get("E2E_SERVER_LOG"):
+        log_path = Path(os.environ["E2E_SERVER_LOG"]).resolve()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        log_path = tmp_path_factory.mktemp("server") / "uvicorn.log"
     log = open(log_path, "wb")
     # Run the app the way local dev does, without provider or Vercel settings leaking in.
     env = {k: v for k, v in os.environ.items() if not k.startswith(("TANDEM_", "VERCEL", "UPSTASH_"))}
