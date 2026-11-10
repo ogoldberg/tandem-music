@@ -24,12 +24,24 @@ If a PyWorld wheel is unsupported on your workstation's OS/architecture, investi
 
 ```bash
 python -m pytest -q
-node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs tests/harmony.test.mjs tests/phrases.test.mjs tests/storage.test.mjs tests/recordings.test.mjs
+node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs tests/harmony.test.mjs tests/phrases.test.mjs tests/storage.test.mjs tests/recordings.test.mjs tests/samples.test.mjs
 # Browser end-to-end, once: pip install -r requirements-e2e.txt && python -m playwright install chromium
 python -m pytest e2e -q
 ```
 
 The GitHub Actions test workflow is `.github/workflows/tests.yml`. See [TESTING.md](TESTING.md) for the test matrix, real-device requirements, and release gates. Do not infer passing tests merely from a successful Vercel build.
+
+## Rebuilding the instrument samples
+
+The recorded instrument samples (SND.1) in `vendor/gm-samples-1/` are generated, not edited by hand. You only need to rebuild them to change the sample set.
+
+```bash
+brew install fluid-synth lame
+python tools/gm-samples/build.py          # renders the samples into vendor/gm-samples-1/
+python tools/gm-samples/build.py --check  # rebuilds in a temp directory and diffs against the committed files
+```
+
+The script downloads the SoundFont package and checks its SHA-256 before use. The files are served as immutable, so a changed sample set must move to a new versioned directory such as `gm-samples-2` (the build `dest`, the vendor route, `samples.js` and the tests), or browsers will mix old and new files. Bump the `CACHE` name in `sw.js` too. See [SECURITY.md](SECURITY.md) for the license and hashes.
 
 ## Production deployment
 
@@ -68,7 +80,7 @@ Do not treat an HTTP 200 response from the root or READY build as validation of 
 
 ## Persistence and media
 
-Projects are local JSON exports, and the draft and named versions are kept in the browser's IndexedDB (`storage.js`, STORE.2a), not cloud-saved (ADR-011). `/api/tune` and other audio routes accept in-memory uploads; Vercel functions have ephemeral filesystems. Roaming between devices is planned through a folder or bucket the user brings (STORE.2b/c), not a Tandem server.
+Projects are local JSON exports, and the draft and named versions are kept in the browser's IndexedDB (`storage.js`, STORE.2a), not cloud-saved (ADR-011). `/api/tune` and other audio routes accept in-memory uploads; Vercel functions have ephemeral filesystems. Roaming between devices through a folder or bucket the user brings (STORE.2b/c) is parked by ADR-012; the Mac app saves projects as files in a folder the user picks, which can be synced (DESK.3). There is no Tandem server for it.
 
 ## Cost and security
 

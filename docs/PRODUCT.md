@@ -11,7 +11,7 @@ Tandem is a conversational musical collaborator. Hum a melody, sing imperfectly,
 - Structured, portable notes and rhythms, not only opaque rendered audio.
 - Reversible edits, A/B comparisons, versioning and clear descriptions of changes.
 - A Mac app first (ADR-012), with the web app kept for zero-install use and Android; affordable, with no accounts.
-- Models selected separately by capability; no provider lock-in. The operator's keys never reach the browser; a user's own key stays in their browser and goes only to the provider they chose.
+- Models selected separately by capability; no provider lock-in. The operator's keys never reach the browser. In the Mac app a user's own key is kept in the macOS Keychain and used by the local backend, and goes only to the provider they chose (AI.4); a key held in the browser is only the later optional web-app path.
 - Local-first (ADR-011): processing on the device where practical, the user's work stored on their device or in storage they bring, and no accounts. Model costs are paid with the user's own keys; the hosted AI path is optional.
 
 ## Primary experiences

@@ -15,6 +15,8 @@ flowchart TD
   UI --> Recordings[recordings.js: recordings in OPFS]
   UI --> Groove[groove.js: tempo detection and quantize with swing]
   UI --> Voices[voices.js: melody instrument voices]
+  UI --> Samples[samples.js: recorded instrument samples]
+  Samples -->|/vendor/gm-samples-1/| API
   UI --> Harmony[harmony.js: key detection and chord/bass accompaniment]
   UI --> Phrases[phrases.js: phrase detection and phrase edits]
   UI -->|same-origin HTTPS| API[FastAPI / tandem_backend.py]
@@ -104,7 +106,10 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - A note shorter than the attack or decay releases from the level it had reached. Voices that decay to silence (marimba, guitar) end shortly after they fade instead of holding a silent release.
 - Partials at or above 95% of Nyquist are dropped and filter cutoffs are clamped below it, so high notes do not alias in the lower-rate export. Notes from MIDI 124 up (above about 10.5 kHz) have no layer left at 22,050 Hz, so they play live but are silent in the WAV; the note editor and AI edits stay within 36-96.
 - `INSTRUMENTS` in `voices.js` is the instrument list. The Instrument menu is built from it, opening a project file or restoring a version with any other instrument is rejected (a browser draft with one keeps its notes and says to choose an instrument), and `tandem_backend.py` keeps the same tuple for `ChatProject`, `normalize_actions` and the system prompt. A Node test fails if the two lists differ.
-- The voices are synthesised, not sampled. Whether they sound good is a listening judgement that has not been made on real devices (see TESTING.md).
+- The oscillator voices are now the fallback. When the samples for a part are available, `samples.js` plays recorded General MIDI samples instead (SND.1; see AUDIO.md). Whether either sounds good is a listening judgement that has not been made on real devices (see TESTING.md).
+
+## Sampled instruments (SND.1)
+`samples.js` is imported statically by `index.html` and by the Node tests. It loads `/vendor/gm-samples-1/manifest.json` and the MP3 samples for the parts a project uses, decodes them, and schedules them with `playSample` (melody and harmony notes) and `playDrumSample`, for both live playback and the offline WAV export. The samples are built by `tools/gm-samples/build.py` and served by an allowlisted route in `tandem_backend.py` that serves only files listed in `vendor/gm-samples-1/SHA256SUMS`. `sw.js` precaches `samples.js`. A part without loaded samples falls back to `voices.js`.
 
 ## Harmony (ARR.1c)
 `harmony.js` is pure (imported by `index.html` and the Node tests). Generate in the Harmony track builds an accompaniment from the melody and stores it as the project's `harmony` notes, the same `{m,t,d}` shape as the melody, so it is edited, undone, saved, versioned and exported like any other part.
@@ -143,6 +148,8 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | storage.js | IndexedDB key-value store, migration from localStorage, persistent-storage status (STORE.2a) |
 | recordings.js | Recordings in OPFS named by SHA-256, links, garbage collection under Web Locks (STORE.2a) |
 | groove.js | Tempo detection and quantize with swing (pure; imported by index.html and Node tests) |
+| samples.js | Recorded instrument samples for playback and WAV export, with fallback to voices.js (pure; imported by index.html and Node tests) |
+| vendor/gm-samples-1/ | Self-hosted General MIDI samples, manifest, licenses and SHA256SUMS, served by an allowlisted route (SND.1) |
 | voices.js | Melody instrument voices for playback and WAV export (pure; imported by index.html and Node tests) |
 | harmony.js | Key detection and chord/bass accompaniment generation (pure; imported by index.html and Node tests) |
 | phrases.js | Melody phrase detection and phrase move/copy/transpose (pure; imported by index.html and Node tests) |

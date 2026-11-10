@@ -1,0 +1,985 @@
+{
+ "drums": {
+  "hat": {
+   "file": "drums/hat.mp3",
+   "key": 42
+  },
+  "kick": {
+   "file": "drums/kick.mp3",
+   "key": 36
+  },
+  "snare": {
+   "file": "drums/snare.mp3",
+   "key": 38
+  }
+ },
+ "format": "tandem-gm-samples",
+ "instruments": {
+  "bass": {
+   "name": "Electric Bass (finger)",
+   "program": 33,
+   "samples": {
+    "24": {
+     "file": "bass/24.mp3"
+    },
+    "27": {
+     "file": "bass/27.mp3"
+    },
+    "30": {
+     "file": "bass/30.mp3"
+    },
+    "33": {
+     "file": "bass/33.mp3"
+    },
+    "36": {
+     "file": "bass/36.mp3"
+    },
+    "39": {
+     "file": "bass/39.mp3"
+    },
+    "42": {
+     "file": "bass/42.mp3"
+    },
+    "45": {
+     "file": "bass/45.mp3"
+    },
+    "48": {
+     "file": "bass/48.mp3"
+    },
+    "51": {
+     "file": "bass/51.mp3"
+    },
+    "54": {
+     "file": "bass/54.mp3"
+    },
+    "57": {
+     "file": "bass/57.mp3"
+    },
+    "60": {
+     "file": "bass/60.mp3"
+    },
+    "63": {
+     "file": "bass/63.mp3"
+    },
+    "66": {
+     "file": "bass/66.mp3"
+    },
+    "69": {
+     "file": "bass/69.mp3"
+    },
+    "72": {
+     "file": "bass/72.mp3"
+    }
+   },
+   "sustains": false
+  },
+  "chip": {
+   "name": "Lead 1 (square)",
+   "program": 80,
+   "samples": {
+    "24": {
+     "file": "chip/24.mp3",
+     "loop": [
+      33552,
+      42997
+     ]
+    },
+    "27": {
+     "file": "chip/27.mp3",
+     "loop": [
+      33921,
+      42997
+     ]
+    },
+    "30": {
+     "file": "chip/30.mp3",
+     "loop": [
+      33705,
+      42997
+     ]
+    },
+    "33": {
+     "file": "chip/33.mp3",
+     "loop": [
+      26797,
+      42997
+     ]
+    },
+    "36": {
+     "file": "chip/36.mp3",
+     "loop": [
+      15920,
+      42997
+     ]
+    },
+    "39": {
+     "file": "chip/39.mp3",
+     "loop": [
+      11189,
+      42997
+     ]
+    },
+    "42": {
+     "file": "chip/42.mp3",
+     "loop": [
+      33943,
+      42997
+     ]
+    },
+    "45": {
+     "file": "chip/45.mp3",
+     "loop": [
+      26997,
+      42997
+     ]
+    },
+    "48": {
+     "file": "chip/48.mp3",
+     "loop": [
+      13818,
+      42997
+     ]
+    },
+    "51": {
+     "file": "chip/51.mp3",
+     "loop": [
+      18602,
+      42997
+     ]
+    },
+    "54": {
+     "file": "chip/54.mp3",
+     "loop": [
+      22483,
+      42997
+     ]
+    },
+    "57": {
+     "file": "chip/57.mp3",
+     "loop": [
+      25647,
+      42997
+     ]
+    },
+    "60": {
+     "file": "chip/60.mp3",
+     "loop": [
+      13902,
+      42997
+     ]
+    },
+    "63": {
+     "file": "chip/63.mp3",
+     "loop": [
+      30729,
+      42997
+     ]
+    },
+    "66": {
+     "file": "chip/66.mp3",
+     "loop": [
+      32740,
+      42997
+     ]
+    },
+    "69": {
+     "file": "chip/69.mp3",
+     "loop": [
+      25697,
+      42997
+     ]
+    },
+    "72": {
+     "file": "chip/72.mp3",
+     "loop": [
+      13860,
+      42997
+     ]
+    },
+    "75": {
+     "file": "chip/75.mp3",
+     "loop": [
+      24630,
+      42997
+     ]
+    },
+    "78": {
+     "file": "chip/78.mp3",
+     "loop": [
+      27582,
+      42997
+     ]
+    },
+    "81": {
+     "file": "chip/81.mp3",
+     "loop": [
+      25697,
+      42997
+     ]
+    },
+    "84": {
+     "file": "chip/84.mp3",
+     "loop": [
+      13881,
+      42997
+     ]
+    },
+    "87": {
+     "file": "chip/87.mp3",
+     "loop": [
+      24630,
+      42997
+     ]
+    },
+    "90": {
+     "file": "chip/90.mp3",
+     "loop": [
+      24988,
+      42997
+     ]
+    },
+    "93": {
+     "file": "chip/93.mp3",
+     "loop": [
+      30022,
+      42997
+     ]
+    },
+    "96": {
+     "file": "chip/96.mp3",
+     "loop": [
+      22989,
+      42997
+     ]
+    }
+   },
+   "sustains": true
+  },
+  "flute": {
+   "name": "Flute",
+   "program": 73,
+   "samples": {
+    "48": {
+     "file": "flute/48.mp3",
+     "loop": [
+      41510,
+      65047
+     ]
+    },
+    "51": {
+     "file": "flute/51.mp3",
+     "loop": [
+      55151,
+      65047
+     ]
+    },
+    "54": {
+     "file": "flute/54.mp3",
+     "loop": [
+      23439,
+      65047
+     ]
+    },
+    "57": {
+     "file": "flute/57.mp3",
+     "loop": [
+      30059,
+      65047
+     ]
+    },
+    "60": {
+     "file": "flute/60.mp3",
+     "loop": [
+      41510,
+      65047
+     ]
+    },
+    "63": {
+     "file": "flute/63.mp3",
+     "loop": [
+      24457,
+      65047
+     ]
+    },
+    "66": {
+     "file": "flute/66.mp3",
+     "loop": [
+      54463,
+      65047
+     ]
+    },
+    "69": {
+     "file": "flute/69.mp3",
+     "loop": [
+      47646,
+      65047
+     ]
+    },
+    "72": {
+     "file": "flute/72.mp3",
+     "loop": [
+      47276,
+      65047
+     ]
+    },
+    "75": {
+     "file": "flute/75.mp3",
+     "loop": [
+      40141,
+      65047
+     ]
+    },
+    "78": {
+     "file": "flute/78.mp3",
+     "loop": [
+      54463,
+      65047
+     ]
+    },
+    "81": {
+     "file": "flute/81.mp3",
+     "loop": [
+      29324,
+      65047
+     ]
+    },
+    "84": {
+     "file": "flute/84.mp3",
+     "loop": [
+      14560,
+      65047
+     ]
+    },
+    "87": {
+     "file": "flute/87.mp3",
+     "loop": [
+      17624,
+      65047
+     ]
+    },
+    "90": {
+     "file": "flute/90.mp3",
+     "loop": [
+      30866,
+      65047
+     ]
+    },
+    "93": {
+     "file": "flute/93.mp3",
+     "loop": [
+      21933,
+      65047
+     ]
+    },
+    "96": {
+     "file": "flute/96.mp3",
+     "loop": [
+      12690,
+      65047
+     ]
+    },
+    "99": {
+     "file": "flute/99.mp3",
+     "loop": [
+      17624,
+      65047
+     ]
+    }
+   },
+   "sustains": true
+  },
+  "guitar": {
+   "name": "Acoustic Guitar (nylon)",
+   "program": 24,
+   "samples": {
+    "36": {
+     "file": "guitar/36.mp3"
+    },
+    "39": {
+     "file": "guitar/39.mp3"
+    },
+    "42": {
+     "file": "guitar/42.mp3"
+    },
+    "45": {
+     "file": "guitar/45.mp3"
+    },
+    "48": {
+     "file": "guitar/48.mp3"
+    },
+    "51": {
+     "file": "guitar/51.mp3"
+    },
+    "54": {
+     "file": "guitar/54.mp3"
+    },
+    "57": {
+     "file": "guitar/57.mp3"
+    },
+    "60": {
+     "file": "guitar/60.mp3"
+    },
+    "63": {
+     "file": "guitar/63.mp3"
+    },
+    "66": {
+     "file": "guitar/66.mp3"
+    },
+    "69": {
+     "file": "guitar/69.mp3"
+    },
+    "72": {
+     "file": "guitar/72.mp3"
+    },
+    "75": {
+     "file": "guitar/75.mp3"
+    },
+    "78": {
+     "file": "guitar/78.mp3"
+    },
+    "81": {
+     "file": "guitar/81.mp3"
+    },
+    "84": {
+     "file": "guitar/84.mp3"
+    },
+    "87": {
+     "file": "guitar/87.mp3"
+    }
+   },
+   "sustains": false
+  },
+  "marimba": {
+   "name": "Marimba",
+   "program": 12,
+   "samples": {
+    "36": {
+     "file": "marimba/36.mp3"
+    },
+    "39": {
+     "file": "marimba/39.mp3"
+    },
+    "42": {
+     "file": "marimba/42.mp3"
+    },
+    "45": {
+     "file": "marimba/45.mp3"
+    },
+    "48": {
+     "file": "marimba/48.mp3"
+    },
+    "51": {
+     "file": "marimba/51.mp3"
+    },
+    "54": {
+     "file": "marimba/54.mp3"
+    },
+    "57": {
+     "file": "marimba/57.mp3"
+    },
+    "60": {
+     "file": "marimba/60.mp3"
+    },
+    "63": {
+     "file": "marimba/63.mp3"
+    },
+    "66": {
+     "file": "marimba/66.mp3"
+    },
+    "69": {
+     "file": "marimba/69.mp3"
+    },
+    "72": {
+     "file": "marimba/72.mp3"
+    },
+    "75": {
+     "file": "marimba/75.mp3"
+    },
+    "78": {
+     "file": "marimba/78.mp3"
+    },
+    "81": {
+     "file": "marimba/81.mp3"
+    },
+    "84": {
+     "file": "marimba/84.mp3"
+    },
+    "87": {
+     "file": "marimba/87.mp3"
+    },
+    "90": {
+     "file": "marimba/90.mp3"
+    },
+    "93": {
+     "file": "marimba/93.mp3"
+    },
+    "96": {
+     "file": "marimba/96.mp3"
+    }
+   },
+   "sustains": false
+  },
+  "organ": {
+   "name": "Drawbar Organ",
+   "program": 16,
+   "samples": {
+    "24": {
+     "file": "organ/24.mp3",
+     "loop": [
+      26826,
+      42997
+     ]
+    },
+    "27": {
+     "file": "organ/27.mp3",
+     "loop": [
+      33932,
+      42997
+     ]
+    },
+    "30": {
+     "file": "organ/30.mp3",
+     "loop": [
+      33469,
+      42997
+     ]
+    },
+    "33": {
+     "file": "organ/33.mp3",
+     "loop": [
+      30175,
+      42997
+     ]
+    },
+    "36": {
+     "file": "organ/36.mp3",
+     "loop": [
+      33563,
+      42997
+     ]
+    },
+    "39": {
+     "file": "organ/39.mp3",
+     "loop": [
+      33927,
+      42997
+     ]
+    },
+    "42": {
+     "file": "organ/42.mp3",
+     "loop": [
+      33470,
+      42997
+     ]
+    },
+    "45": {
+     "file": "organ/45.mp3",
+     "loop": [
+      33387,
+      42997
+     ]
+    },
+    "48": {
+     "file": "organ/48.mp3",
+     "loop": [
+      33569,
+      42997
+     ]
+    },
+    "51": {
+     "file": "organ/51.mp3",
+     "loop": [
+      33936,
+      42997
+     ]
+    },
+    "54": {
+     "file": "organ/54.mp3",
+     "loop": [
+      33952,
+      42997
+     ]
+    },
+    "57": {
+     "file": "organ/57.mp3",
+     "loop": [
+      33786,
+      42997
+     ]
+    },
+    "60": {
+     "file": "organ/60.mp3",
+     "loop": [
+      33902,
+      42997
+     ]
+    },
+    "63": {
+     "file": "organ/63.mp3",
+     "loop": [
+      33927,
+      42997
+     ]
+    },
+    "66": {
+     "file": "organ/66.mp3",
+     "loop": [
+      32499,
+      42997
+     ]
+    },
+    "69": {
+     "file": "organ/69.mp3",
+     "loop": [
+      33989,
+      42997
+     ]
+    },
+    "72": {
+     "file": "organ/72.mp3",
+     "loop": [
+      21593,
+      42997
+     ]
+    },
+    "75": {
+     "file": "organ/75.mp3",
+     "loop": [
+      23024,
+      42997
+     ]
+    },
+    "78": {
+     "file": "organ/78.mp3",
+     "loop": [
+      27491,
+      42997
+     ]
+    },
+    "81": {
+     "file": "organ/81.mp3",
+     "loop": [
+      34089,
+      42997
+     ]
+    },
+    "84": {
+     "file": "organ/84.mp3",
+     "loop": [
+      31921,
+      42997
+     ]
+    },
+    "87": {
+     "file": "organ/87.mp3",
+     "loop": [
+      25893,
+      42997
+     ]
+    },
+    "90": {
+     "file": "organ/90.mp3",
+     "loop": [
+      15869,
+      42997
+     ]
+    },
+    "93": {
+     "file": "organ/93.mp3",
+     "loop": [
+      12075,
+      42997
+     ]
+    },
+    "96": {
+     "file": "organ/96.mp3",
+     "loop": [
+      16700,
+      42997
+     ]
+    }
+   },
+   "sustains": true
+  },
+  "piano": {
+   "name": "Acoustic Grand Piano",
+   "program": 0,
+   "samples": {
+    "102": {
+     "file": "piano/102.mp3"
+    },
+    "105": {
+     "file": "piano/105.mp3"
+    },
+    "24": {
+     "file": "piano/24.mp3"
+    },
+    "27": {
+     "file": "piano/27.mp3"
+    },
+    "30": {
+     "file": "piano/30.mp3"
+    },
+    "33": {
+     "file": "piano/33.mp3"
+    },
+    "36": {
+     "file": "piano/36.mp3"
+    },
+    "39": {
+     "file": "piano/39.mp3"
+    },
+    "42": {
+     "file": "piano/42.mp3"
+    },
+    "45": {
+     "file": "piano/45.mp3"
+    },
+    "48": {
+     "file": "piano/48.mp3"
+    },
+    "51": {
+     "file": "piano/51.mp3"
+    },
+    "54": {
+     "file": "piano/54.mp3"
+    },
+    "57": {
+     "file": "piano/57.mp3"
+    },
+    "60": {
+     "file": "piano/60.mp3"
+    },
+    "63": {
+     "file": "piano/63.mp3"
+    },
+    "66": {
+     "file": "piano/66.mp3"
+    },
+    "69": {
+     "file": "piano/69.mp3"
+    },
+    "72": {
+     "file": "piano/72.mp3"
+    },
+    "75": {
+     "file": "piano/75.mp3"
+    },
+    "78": {
+     "file": "piano/78.mp3"
+    },
+    "81": {
+     "file": "piano/81.mp3"
+    },
+    "84": {
+     "file": "piano/84.mp3"
+    },
+    "87": {
+     "file": "piano/87.mp3"
+    },
+    "90": {
+     "file": "piano/90.mp3"
+    },
+    "93": {
+     "file": "piano/93.mp3"
+    },
+    "96": {
+     "file": "piano/96.mp3"
+    },
+    "99": {
+     "file": "piano/99.mp3"
+    }
+   },
+   "sustains": false
+  },
+  "strings": {
+   "name": "String Ensemble 1",
+   "program": 48,
+   "samples": {
+    "27": {
+     "file": "strings/27.mp3",
+     "loop": [
+      40606,
+      65047
+     ]
+    },
+    "30": {
+     "file": "strings/30.mp3",
+     "loop": [
+      33952,
+      65047
+     ]
+    },
+    "33": {
+     "file": "strings/33.mp3",
+     "loop": [
+      25624,
+      65047
+     ]
+    },
+    "36": {
+     "file": "strings/36.mp3",
+     "loop": [
+      36265,
+      65047
+     ]
+    },
+    "39": {
+     "file": "strings/39.mp3",
+     "loop": [
+      18160,
+      65047
+     ]
+    },
+    "42": {
+     "file": "strings/42.mp3",
+     "loop": [
+      21006,
+      65047
+     ]
+    },
+    "45": {
+     "file": "strings/45.mp3",
+     "loop": [
+      24461,
+      65047
+     ]
+    },
+    "48": {
+     "file": "strings/48.mp3",
+     "loop": [
+      48833,
+      65047
+     ]
+    },
+    "51": {
+     "file": "strings/51.mp3",
+     "loop": [
+      11145,
+      65047
+     ]
+    },
+    "54": {
+     "file": "strings/54.mp3",
+     "loop": [
+      32345,
+      65047
+     ]
+    },
+    "57": {
+     "file": "strings/57.mp3",
+     "loop": [
+      49943,
+      65047
+     ]
+    },
+    "60": {
+     "file": "strings/60.mp3",
+     "loop": [
+      17568,
+      65047
+     ]
+    },
+    "63": {
+     "file": "strings/63.mp3",
+     "loop": [
+      47330,
+      65047
+     ]
+    },
+    "66": {
+     "file": "strings/66.mp3",
+     "loop": [
+      47170,
+      65047
+     ]
+    },
+    "69": {
+     "file": "strings/69.mp3",
+     "loop": [
+      19544,
+      65047
+     ]
+    },
+    "72": {
+     "file": "strings/72.mp3",
+     "loop": [
+      40582,
+      65047
+     ]
+    },
+    "75": {
+     "file": "strings/75.mp3",
+     "loop": [
+      32627,
+      65047
+     ]
+    },
+    "78": {
+     "file": "strings/78.mp3",
+     "loop": [
+      14402,
+      65047
+     ]
+    },
+    "81": {
+     "file": "strings/81.mp3",
+     "loop": [
+      26392,
+      65047
+     ]
+    },
+    "84": {
+     "file": "strings/84.mp3",
+     "loop": [
+      33786,
+      65047
+     ]
+    },
+    "87": {
+     "file": "strings/87.mp3",
+     "loop": [
+      24872,
+      65047
+     ]
+    },
+    "90": {
+     "file": "strings/90.mp3",
+     "loop": [
+      11776,
+      65047
+     ]
+    },
+    "93": {
+     "file": "strings/93.mp3",
+     "loop": [
+      53848,
+      65047
+     ]
+    },
+    "96": {
+     "file": "strings/96.mp3",
+     "loop": [
+      16212,
+      65047
+     ]
+    }
+   },
+   "sustains": true
+  }
+ },
+ "renderer": {
+  "fluidsynth": "FluidSynth runtime version 2.6.2",
+  "lame": "LAME 64bits version 4.0 (https://lame.sourceforge.io)"
+ },
+ "sample_rate": 22050,
+ "source": {
+  "license": "MIT",
+  "package": "https://deb.debian.org/debian/pool/main/f/fluid-soundfont/fluid-soundfont-gm_3.1-6_all.deb",
+  "package_sha256": "9965fbcc6acee17d6f72b685d28c7f968ec64eba14645445b476d5c6cc2eee4c",
+  "sha256": "74594e8f4250680adf590507a306655a299935343583256f3b722c48a1bc1cb0",
+  "soundfont": "FluidR3_GM.sf2"
+ },
+ "velocity": 100,
+ "version": 1
+}
