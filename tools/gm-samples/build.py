@@ -8,8 +8,8 @@
 Needs FluidSynth (`fluidsynth`) and LAME (`lame`) on PATH, plus numpy. The SoundFont comes
 from Debian's fluid-soundfont-gm package; the .deb and the .sf2 inside it are checked against
 the SHA-256 hashes below before anything is rendered. Each instrument is rendered dry (no
-reverb or chorus) at one root note every 3 semitones, so no note is pitch-shifted by more than
-a semitone and a half, at velocity 100, mono, 22,050 Hz (the WAV export's rate), then encoded
+reverb or chorus) at one root note every 3 semitones, so no note inside the range is
+pitch-shifted by more than 1 semitone, at velocity 100, mono, 22,050 Hz (the WAV export's rate), then encoded
 as MP3. The kick, snare and closed hi-hat come from the SoundFont's standard drum kit.
 
 Output: one MP3 per root (`<instrument>/<midi>.mp3`), `manifest.json` (programs, roots, levels

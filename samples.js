@@ -49,7 +49,9 @@ export function nearestRoot(roots, m) {
 // Everything playSample needs for one note, as plain numbers. `sample` is {duration, loop} for
 // the chosen root: the buffer length in seconds and, for sustained instruments, the loop points
 // in seconds (or null). The note sounds from t at `level`, and from the key release at t + d it
-// fades over the voice's release time, unless the recording has already died away by then.
+// fades over the voice's release time. A recording that ends before the key release (a decaying
+// instrument rendered for a few seconds, which may still be audible when it was cut) fades over
+// the release time up to its end instead, so a long held note never stops abruptly.
 export function planSample(instrument, root, sample, m, t, d) {
   if (!(instrument in LEVELS)) throw new Error(`Unknown instrument: ${instrument}`);
   if (!(d > 0)) throw new Error("Note duration must be positive.");
@@ -59,6 +61,7 @@ export function planSample(instrument, root, sample, m, t, d) {
   const gain = [{ kind: "set", time: t, value: level }];
   let stop;
   if (natural <= off) {
+    gain.push({ kind: "set", time: Math.max(t, natural - release), value: level }, { kind: "exp", time: natural, value: FLOOR });
     stop = natural;
   } else {
     gain.push({ kind: "set", time: off, value: level }, { kind: "exp", time: off + release, value: FLOOR });
@@ -119,6 +122,16 @@ export function createSampleBank({ fetchBytes, decode, base = SAMPLE_BASE }) {
     error: name => errors.get(name) || null,
     get: name => loaded.get(name) || null,
   };
+}
+
+// Load the named parts, but wait at most `ms` milliseconds. Resolves true if all of them are
+// loaded by then; a part still loading keeps loading in the background for the next use.
+export function loadWithin(bank, names, ms) {
+  let timer;
+  const limit = new Promise(resolve => { timer = setTimeout(resolve, ms); });
+  return Promise.race([bank.load(names), limit])
+    .then(() => names.every(name => bank.ready(name)))
+    .finally(() => clearTimeout(timer));
 }
 
 // Schedule one sampled note. Returns the plan, or null if the instrument is not loaded.
