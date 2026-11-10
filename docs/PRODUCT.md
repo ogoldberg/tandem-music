@@ -1,6 +1,6 @@
 # Tandem — Product vision
 
-Last reviewed: 2026-11-09. Status: living specification.
+Last reviewed: 2026-11-10. Status: living specification.
 
 ## Vision
 Tandem is a conversational musical collaborator. Hum a melody, sing imperfectly, beatbox a rhythm, or describe an idea; Tandem helps turn it into editable, playable music. Unlike one-shot prompt-to-song generation, **the person's original musical idea stays central**.
@@ -11,8 +11,8 @@ Tandem is a conversational musical collaborator. Hum a melody, sing imperfectly,
 - Structured, portable notes and rhythms, not only opaque rendered audio.
 - Reversible edits, A/B comparisons, versioning and clear descriptions of changes.
 - Mac and Android web access, ideally installable and affordable.
-- Models selected separately by capability; no provider lock-in or exposed API keys.
-- Local processing where practical; only specialized generation incurs model costs.
+- Models selected separately by capability; no provider lock-in. The operator's keys never reach the browser; a user's own key stays in their browser and goes only to the provider they chose.
+- Local-first (ADR-011): processing on the device where practical, the user's work stored on their device or in storage they bring, and no accounts. Model costs are paid with the user's own keys; the hosted AI path is optional.
 
 ## Primary experiences
 1. **Hum → transcribe → arrange.** The user records humming, corrects detected notes/timing, chooses instruments, asks the assistant for accompaniment, auditions changes, and exports.
@@ -33,7 +33,7 @@ Tandem is a conversational musical collaborator. Hum a melody, sing imperfectly,
 Browser recording/import, Basic Pitch on-device transcription and server fallback, heuristic beatbox analysis, elementary two-track synthesis, simple note/drum event editing, MIDI/WAV export, local JSON projects, undo/redo across all edits, text AI edit-plan endpoint (requires configured model), basic EQ/dynamics vocal polish, and experimental WORLD pitch correction with +/- semitone vocal note targets.
 
 ## What is NOT finished
-Production AI credentials, provider-integrated music generation, robust beatbox classification, studio-grade vocal correction, accurate continuous pitch-contour editor, real-time spoken assistant, high-quality instrument sounds, cloud project persistence, proper user accounts and production abuse controls, full Android/Mac end-to-end testing.
+Bring-your-own AI keys and storage (planned, ADR-011), on-device tuning, provider-integrated music generation, robust beatbox classification, studio-grade vocal correction, accurate continuous pitch-contour editor, real-time spoken assistant, high-quality instrument sounds, durable on-device storage of projects and recordings (IndexedDB/OPFS) and a synced-folder option (there will be no Tandem accounts or cloud project storage for now), full Android/Mac end-to-end testing.
 
 ## Acceptance criteria
 A feature is “working” only after an end-to-end test, not just a successful deployment. For the key journey: record → transcribe → correct → arrange → audition → undo → export, test real microphones, silence, pitch bends, clipping, browser reloads and provider failures. See TESTING.md and ROADMAP.md.

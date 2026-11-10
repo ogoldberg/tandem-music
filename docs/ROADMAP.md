@@ -10,7 +10,7 @@ Last reviewed: 2026-11-10. This is a prioritized working plan, not a delivery pr
 | Implemented, experimental | Beatbox-to-drum events | Onset and centroid heuristics |
 | Implemented, limited | Two-track arrangement | Eight synthesized melody voices (layered oscillators, envelopes, filters), basic drums and simple editing |
 | Implemented, limited | WAV/MIDI/JSON export | No embedded recorded audio in JSON |
-| Backend implemented, not live-configured | Model-agnostic text conversation | OpenAI-compatible, Anthropic, Gemini; production AI credentials absent on last inspection |
+| Backend implemented, not live-configured | Model-agnostic text conversation | OpenAI-compatible, Anthropic, Gemini; production AI credentials absent on last inspection. Planned: the user's own key, called from the browser (ADR-011) |
 | Implemented, experimental | EQ/dynamics vocal polish | Not tuning |
 | Implemented, experimental | Vocal pitch correction | WORLD/PyWorld; semi-automatic note targets; not Melodyne-level |
 | Planned | Reliable vocal contour editor | Drag notes, retain vibrato, key/scale UI, confidence |
@@ -18,12 +18,12 @@ Last reviewed: 2026-11-10. This is a prioritized working plan, not a delivery pr
 | Planned | Better arrangement | Phrase-aware editing (swing, richer voices and generated chord/bass harmony are done) |
 | Planned | Music generation | Capability-specific adapters for externally hosted or self-hosted audio models |
 | Planned | Conversational speech | Spoken chat and audio intent alongside text |
-| Planned | Privacy/storage/auth | Accounts, durable projects/recordings, rate limiting and safe spending controls |
+| Planned | Local-first storage | No accounts (ADR-011): IndexedDB/OPFS on the device, then a synced folder or the user's own bucket; rate limiting is done, spend guards only matter for the hosted mode |
 | Planned | Production QA | Android/Mac e2e recording and audio quality evaluations |
 
 ## Task backlog
 
-This is the working task list, in strategic order: protect the deployment, prove the core loop works on real devices, turn on the AI half of the product, then build a safety net before the larger editor work. Loopkit's `/next-task` reads it (see `.agent-workflow.yml`). Format: `- [ ]` pending, `- [~]` in progress, `- [x]` done; the bold token is the task ID. `*(HUMAN)*` marks work that needs the owner: real devices, listening judgement, credentials, account settings or product decisions. Mark a task `[x]` only with evidence (CI run, recorded device result, merged PR). Real-device results (QA.1) may reorder the vocal and arrangement work.
+This is the working task list, in strategic order: protect the deployment, prove the core loop works on real devices, turn on the AI half of the product, then build a safety net before the larger editor work. Since ADR-011 the product is local-first with the user's own storage and AI keys (section 6); the hosted AI path in section 3 is optional. Loopkit's `/next-task` reads it (see `.agent-workflow.yml`). Format: `- [ ]` pending, `- [~]` in progress, `- [x]` done; the bold token is the task ID. `*(HUMAN)*` marks work that needs the owner: real devices, listening judgement, credentials, account settings or product decisions. Mark a task `[x]` only with evidence (CI run, recorded device result, merged PR). Real-device results (QA.1) may reorder the vocal and arrangement work.
 
 ### 1. Protect the deployment
 - [x] **CI.1** Confirm the GitHub Actions Python and Node suites pass on `main`
@@ -53,12 +53,13 @@ This is the working task list, in strategic order: protect the deployment, prove
   - **Acceptance:** remaining tests pass (and `tests/test_api.py` no longer patches `server.DB`); `README.md`, `CLAUDE.md`, `docs/ARCHITECTURE.md` and `docs/AUDIO.md` no longer describe them as present.
 
 ### 3. Turn on AI collaboration
-- [ ] **AI.1** *(HUMAN)* Choose the text provider and model; set `TANDEM_PROVIDER`, `TANDEM_MODEL`, `TANDEM_API_KEY` and `TANDEM_ACCESS_TOKEN` in Vercel with provider budget caps and alerts
-  - **Depends:** SEC.1
+- [ ] **AI.1** *(HUMAN)* Optional hosted AI: choose the text provider and model; set `TANDEM_PROVIDER`, `TANDEM_MODEL`, `TANDEM_API_KEY` and `TANDEM_ACCESS_TOKEN` in Vercel with provider budget caps and alerts
+  - **Depends:** SEC.1, AI.5 (for the model choice)
+  - Since ADR-011 this is only for a hosted mode with the operator's key; local use works with the user's own key (AI.4) and does not need it.
   - Follow "Before enabling paid AI" in `docs/SECURITY.md`.
-- [ ] **AI.2** Verify structured AI edits end to end on production
-  - **Depends:** AI.1
-  - **Acceptance:** a small authenticated edit succeeds on the deployed app; melody lock still blocks melody changes; result recorded in `docs/TESTING.md`.
+- [ ] **AI.2** Verify structured AI edits end to end with a real model
+  - **Depends:** AI.4 (or AI.1 for the hosted mode)
+  - **Acceptance:** a small edit succeeds on the deployed app with a real key (the user's own from the browser; the hosted `/api/chat` too if AI.1 is done); melody lock still blocks melody changes; result recorded in `docs/TESTING.md`.
 - [x] **AI.3** Replace the localStorage access token with a safer session model
   - **Acceptance:** the shared token is no longer stored in `localStorage`; `docs/SECURITY.md` updated.
 
@@ -92,7 +93,35 @@ This is the working task list, in strategic order: protect the deployment, prove
   - **Depends:** VOX.1, EDIT.1
   - **Acceptance:** edited targets drive `/api/tune` and go through the EDIT.1 history; covered by unit tests and the CI.2 browser tests.
 
-### 6. Later
+### 6. Local-first: your device, your storage, your keys (ADR-011)
+- [x] **STORE.1** *(HUMAN)* Decide the account model and cloud storage for projects and recordings
+  - Decided 2026-11-10 (ADR-011): no accounts for now; local-first, with the user's own storage and AI keys.
+- [ ] **STORE.2** Local storage plus bring-your-own storage
+  - Split into the parts below; STORE.2 is done when all three are. No Tandem server storage and no per-user quotas (there are no users to give them to).
+- [ ] **STORE.2a** Keep projects, versions and recordings on the device in IndexedDB and OPFS
+  - Projects, the draft and named versions move from `localStorage` to IndexedDB, with existing `localStorage` data migrated once and left readable if the migration fails. Recordings (original and processed audio) are saved in OPFS and linked from the project, so reopening a project brings its audio back. Request persistent storage and show whether it was granted; report a full quota instead of losing data.
+  - **Acceptance:** a project with a recording, its versions and the draft survive a reload and a browser restart in a real browser; old `localStorage` versions and draft appear after the upgrade; covered by Node unit tests (with an in-memory IndexedDB) and a browser test.
+- [ ] **STORE.2b** Save to folder: read and write projects in a folder the user picks
+  - **Depends:** STORE.2a
+  - File System Access API (Chromium desktop only; hidden elsewhere, where export/import stays). A folder synced by Dropbox, iCloud Drive or Google Drive syncs projects between devices with no Tandem server. The folder handle is kept in IndexedDB and permission is asked for again when the browser requires it.
+  - **Acceptance:** a project with its recording saved to a folder opens in a fresh browser profile pointed at the same folder; browsers without the API show export/import only; browser test with a mocked directory handle.
+- [ ] **STORE.2c** Optional: the user's own S3-compatible bucket (R2, B2) with their own keys
+  - **Depends:** STORE.2a, AI.4 (shares the key storage and CSP work)
+  - **Acceptance:** save and open through a real bucket the operator provides; keys never reach the Tandem server; CORS setup documented for users.
+- [ ] **AI.4** Bring your own AI key, called from the browser
+  - **Depends:** SEC.1
+  - Providers: OpenAI, Anthropic (with the `anthropic-dangerous-direct-browser-access` header), Gemini, OpenRouter, and a local Ollama that allows the app's origin. Port the `/api/chat` prompt, `extract_json`, `normalize_actions` and melody lock to a pure JS module, checked against the Python version on shared fixtures so the two cannot drift. Add a strict Content Security Policy (no inline script that is not hashed; `connect-src` limited to the app and the chosen provider) before any key is stored. The hosted `/api/chat` stays as an optional path.
+  - **Acceptance:** with a real key for at least one provider, an edit applies in a real browser and melody lock blocks a melody change; the key is never sent to the Tandem server (checked in a browser test); the JS validation passes the same fixtures as `normalize_actions`; `docs/SECURITY.md` records where the key is kept and the CSP.
+- [ ] **AI.5** Compare small models on the real chat prompt and choose the default
+  - **Depends:** AI.4
+  - Run the real `/api/chat` prompt over a fixed set of test projects and requests on 3-4 small models (Claude Haiku 5.5, a Gemini Flash, a GPT mini or nano, and a local Qwen through Ollama), scoring valid JSON, valid actions, melody-lock respect and whether the edit did what was asked, plus latency and cost. Running it spends money on real keys: ask the operator before each run.
+  - **Acceptance:** results table and the chosen default recorded in `docs/DECISIONS.md` or `docs/TESTING.md`; the harness is in the repo and rerunnable.
+- [ ] **VOX.4** On-device pitch correction: WORLD compiled to WebAssembly
+  - **Depends:** VOX.1
+  - Compile WORLD (C++) with Emscripten, self-hosted with hashes like Basic Pitch (SEC.3), and port `world_tuning.py` to a JS module so `tuning.js` can tune without `/api/tune`. With it the app can run as a static offline PWA; the server path stays for the hosted mode until this is proven.
+  - **Acceptance:** the VOX.1 benchmark fixtures give results within documented tolerances of the server version; a long recording tunes in a real browser offline with no API call.
+
+### 7. Later
 - [x] **ARR.1** Better arrangement: richer instruments, harmony, swing and phrase-aware editing
   - **Depends:** CI.2
   - Split into the parts below; ARR.1 is done when all four are.
@@ -108,13 +137,12 @@ This is the working task list, in strategic order: protect the deployment, prove
 - [x] **ARR.1d** Phrase-aware editing: detect phrases and move, copy or transpose a whole phrase
   - **Depends:** ARR.1a
   - Done: `phrases.js` splits the melody into phrases at rests of a beat or more at the project tempo. In the Melody track a chosen phrase moves a beat earlier or later, transposes by a semitone or an octave, or is copied to the end a whole number of bars later; each is one undoable edit, and out-of-range edits are refused. The harmony is left alone (generate it again). Covered by Node unit tests and a browser test. Not yet tried by users on real devices.
-- [ ] **STORE.1** *(HUMAN)* Decide the account model and cloud storage for projects and recordings
-- [ ] **STORE.2** Accounts, durable project/recording storage and per-user quotas
-  - **Depends:** STORE.1, SEC.1
 - [ ] **GEN.1** Optional generative music provider adapter, with explicit provenance
-  - **Depends:** SEC.1, AI.2
+  - **Depends:** AI.4, AI.2
+  - Uses the user's own key for the provider (candidates: Lyria, ElevenLabs Music, Stable Audio), called from the browser where the provider allows it; check each provider's output licensing before adding it.
 - [ ] **SPEECH.1** Conversational speech: spoken chat and audio intent alongside text
   - **Depends:** AI.2
+  - Speech-to-text on the device (Whisper in the browser) or with the user's own key for a hosted Whisper.
 
 ## History of decisions and fixes (2026-11-08 to 2026-11-09)
 - Initial idea came from Akai MPC openness, but **no MPC hardware is needed** for Tandem.
@@ -131,4 +159,4 @@ This is the working task list, in strategic order: protect the deployment, prove
 - Added simple detected vocal target note +/- controls; VOX.3 replaced them with a visual pitch-contour editor.
 
 ## Decisions still open
-Provider choice for conversation and generation; user-account model; cloud storage; license audits for distribution; offline mode strategy; audio quality targets and sample library; monetization/hosting tier; whether to add a native Mac companion/plugin host.
+Default model for conversation (AI.5) and provider choice for generation; license audits for distribution; audio quality targets and sample library; monetization/hosting tier; whether to add a native Mac companion/plugin host. The account model, cloud storage and offline strategy were decided in ADR-011 (local-first, no accounts, the user's own storage and keys).
