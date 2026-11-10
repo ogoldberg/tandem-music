@@ -28,22 +28,29 @@ function onsetTimes(times) {
   return out;
 }
 
-// How well onsets fit an eighth-note grid of the given tempo, above what random onsets would score.
-function tempoFit(onsets, bpm) {
-  const half = 30 / bpm;
-  const chance = (FIT_SIGMA_SECONDS * Math.sqrt(2 * Math.PI)) / half;
+// How well onsets fit a grid with the given spacing, above what random onsets would score.
+// The grid is anchored at each of the first few onsets and the best anchor counts.
+function gridFit(onsets, spacing) {
+  const chance = (FIT_SIGMA_SECONDS * Math.sqrt(2 * Math.PI)) / spacing;
   let best = -Infinity;
   for (let a = 0; a < Math.min(ANCHORS, onsets.length); a++) {
     const anchor = onsets[a];
     let score = 0;
     for (const t of onsets) {
-      const x = (t - anchor) / half;
-      const d = Math.abs(x - Math.round(x)) * half;
+      const x = (t - anchor) / spacing;
+      const d = Math.abs(x - Math.round(x)) * spacing;
       score += Math.exp(-(d * d) / (2 * FIT_SIGMA_SECONDS * FIT_SIGMA_SECONDS));
     }
     best = Math.max(best, score - onsets.length * chance);
   }
   return best;
+}
+
+// A tempo is scored on both its beat grid and its eighth-note grid. The chance term stops a
+// finer grid (double tempo) from winning on sloppy timing; the beat term stops half tempo
+// from winning when every onset is on the beat (its eighth grid would fit just as well).
+function tempoFit(onsets, bpm) {
+  return 0.5 * gridFit(onsets, 60 / bpm) + gridFit(onsets, 30 / bpm);
 }
 
 // Estimate the tempo (integer bpm) from onset times in seconds, or null when there are
@@ -59,8 +66,33 @@ export function estimateTempo(times) {
   return Math.round(bestBpm);
 }
 
+// Where the beat grid sits: the onset phase (within one beat) that the most onsets agree with,
+// so a pickup note before the downbeat does not shift the grid. Ties go to the earliest onset.
+// Returned as a time at or before the earliest onset.
+function beatOrigin(times, beat) {
+  const sorted = times.slice().sort((a, b) => a - b);
+  let bestPhase = sorted[0], bestScore = -Infinity;
+  for (const candidate of sorted) {
+    let score = 0;
+    for (const t of sorted) {
+      const x = (t - candidate) / beat;
+      const d = Math.abs(x - Math.round(x)) * beat;
+      score += Math.exp(-(d * d) / (2 * FIT_SIGMA_SECONDS * FIT_SIGMA_SECONDS));
+    }
+    if (score > bestScore + 1e-9) { bestScore = score; bestPhase = candidate; }
+  }
+  // Anchor on the earliest onset in that phase, so the first downbeat stays where it was played.
+  const onPhase = t => {
+    const x = (t - bestPhase) / beat;
+    return Math.abs(x - Math.round(x)) * beat <= 2 * FIT_SIGMA_SECONDS;
+  };
+  const anchor = sorted.find(onPhase);
+  return anchor - Math.ceil((anchor - sorted[0]) / beat - 1e-9) * beat;
+}
+
 // Snap note and drum start times to a (possibly swung) grid at the project tempo.
-// The grid starts at the earliest event, so leading silence in a recording is kept.
+// The grid follows the beat the onsets agree on (see beatOrigin), so leading silence and
+// pickup notes are kept in place relative to the beat.
 // Durations are kept. Events that land on the same grid point merge (same pitch: the
 // longer note wins; same drum: one hit). Returns new {notes, drums}; the input is unchanged.
 export function quantizeProject(project, { division, swing = 0, strength = 1 }) {
@@ -71,8 +103,9 @@ export function quantizeProject(project, { division, swing = 0, strength = 1 }) 
   const notes = project.notes || [], drums = project.drums || [];
   const all = [...notes, ...drums].map(e => e.t);
   if (!all.length) return { notes: [], drums: [] };
-  const origin = Math.min(...all);
-  const step = 60 / bpm / division;
+  const beat = 60 / bpm;
+  const origin = beatOrigin(all, beat);
+  const step = beat / division;
   const pair = 2 * step, off = pair * swungOffbeat(swing);
   const nearest = x => {
     if (division === 1) return Math.round(x / step) * step;
@@ -82,7 +115,7 @@ export function quantizeProject(project, { division, swing = 0, strength = 1 }) 
   };
   const snap = t => {
     const x = t - origin, q = nearest(x);
-    return round6(origin + (strength === 1 ? q : x + strength * (q - x)));
+    return Math.max(0, round6(origin + (strength === 1 ? q : x + strength * (q - x))));
   };
   const merged = (events, key, keep) => {
     const byKey = new Map();

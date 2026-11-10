@@ -51,6 +51,18 @@ for (const bpm of [70, 85, 100]) {
   });
 }
 
+for (const bpm of [120, 140, 165]) {
+  for (const j of [0, 0.03]) {
+    test(`estimateTempo does not halve on-beat onsets at ${bpm} bpm (jitter ${j * 1000} ms)`, () => {
+      // Review of #28: with only quarter notes, the half-tempo eighth grid fits as well; the beat grid must decide.
+      const r = jitter(bpm + 1), beat = 60 / bpm, times = [];
+      for (let i = 0; i < 16; i++) times.push(0.5 + i * beat + r() * j);
+      const est = estimateTempo(times);
+      assert.ok(Math.abs(est - bpm) <= 2, `estimated ${est} for ${bpm}`);
+    });
+  }
+}
+
 test("estimateTempo finds the example project's 133 bpm pulse", () => {
   const notes = [60, 64, 67, 69, 67, 64, 62, 60].map((m, i) => i * 0.45);
   const drums = Array.from({ length: 16 }, (_, i) => i * 0.225);
@@ -64,7 +76,7 @@ test("estimateTempo stays inside the tempo range", () => {
   assert.ok(est >= TEMPO_RANGE[0] && est <= TEMPO_RANGE[1], `estimated ${est}`);
 });
 
-test("quantizeProject snaps starts to the grid anchored at the first onset", () => {
+test("quantizeProject snaps starts to the beat grid of the onsets", () => {
   const project = {
     bpm: 120,
     notes: [{ m: 60, t: 1.0, d: 0.4 }, { m: 62, t: 1.27, d: 0.2 }, { m: 64, t: 1.98, d: 0.5 }],
@@ -76,6 +88,31 @@ test("quantizeProject snaps starts to the grid anchored at the first onset", () 
   assert.deepEqual(out.notes.map(n => n.d), [0.4, 0.2, 0.5], "durations are kept");
   assert.deepEqual(out.drums.map(h => h.t), [1.0, 1.5]);
   assert.deepEqual(out.notes.map(n => n.m), [60, 62, 64]);
+});
+
+test("the grid follows the beat, not a zero-based grid", () => {
+  // Events sit on an eighth grid offset by 0.37 s; a grid anchored at 0 would pull them 0.12 s early.
+  const project = { bpm: 120, notes: [], drums: [0.37, 0.62, 0.88, 1.11, 1.37].map(t => ({ k: "hat", t })) };
+  const out = quantizeProject(project, { division: 2, swing: 0, strength: 1 });
+  out.drums.forEach((h, i) => assert.ok(close(h.t, 0.37 + i * 0.25, 1e-6), `${h.t}`));
+});
+
+test("a pickup note before the downbeat does not flip the swing", () => {
+  // Review of #28: 120 bpm, downbeats at 1.0 .. 3.0 with offbeats at 1.25, 1.75, 2.25 and a pickup at 0.75.
+  // The downbeats outnumber the offbeats, which is how the grid tells them apart.
+  const t = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 3.0];
+  const project = { bpm: 120, notes: [], drums: t.map((x, i) => ({ k: i % 2 ? "kick" : "hat", t: x })) };
+  const out = quantizeProject(project, { division: 2, swing: 1, strength: 1 });
+  const want = [0.5 + 1 / 3, 1.0, 1 + 1 / 3, 1.5, 1.5 + 1 / 3, 2.0, 2 + 1 / 3, 2.5, 3.0];
+  out.drums.forEach((h, i) => assert.ok(close(h.t, want[i], 1e-6), `${i}: ${h.t} vs ${want[i]}`));
+});
+
+test("quantized times never go below zero", () => {
+  // The beat sits at 0.3 + n * 0.5, so the note at 0.03 is nearest the grid point at -0.2: it is clamped to 0.
+  const project = { bpm: 120, notes: [{ m: 60, t: 0.03, d: 0.2 }], drums: [0.3, 0.8, 1.3, 1.8].map(t => ({ k: "kick", t })) };
+  const out = quantizeProject(project, { division: 1, swing: 0, strength: 1 });
+  assert.equal(out.notes[0].t, 0);
+  assert.deepEqual(out.drums.map(h => h.t), [0.3, 0.8, 1.3, 1.8]);
 });
 
 test("quantizeProject leaves the input untouched", () => {
