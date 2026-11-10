@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { INSTRUMENTS, VOICES, FLOOR } from "../voices.js";
 import {
   SAMPLE_BASE, LEVELS, DRUM_LEVELS, DRUM_KINDS, checkManifest, nearestRoot, planSample,
-  createSampleBank, playSample, playDrumSample,
+  createSampleBank, playSample, playDrumSample, loadWithin,
 } from "../samples.js";
 
 const manifest = JSON.parse(readFileSync(new URL("../vendor/gm-samples-1/manifest.json", import.meta.url), "utf8"));
@@ -104,11 +104,24 @@ test("planSample pitches by playback rate and fades over the voice's release at 
   assert.ok(Math.abs(p.stop - (1.5 + VOICES.piano.env.release + 0.02)) < 1e-12);
 });
 
-test("planSample lets a recording that dies away before the key release end by itself", () => {
-  // A 1 s marimba sample played an octave up lasts 0.5 s; the key is held for 2 s.
+test("planSample fades a recording that ends before the key release over the voice's release", () => {
+  // A 1 s marimba sample played an octave up lasts 0.5 s; the key is held for 2 s. The recording
+  // may be cut while still audible (a 3 s bass note ends about 13 dB below its peak), so it
+  // fades out over the release time and ends with the recording instead of stopping abruptly.
   const p = planSample("marimba", 48, { duration: 1, loop: null }, 60, 0, 2);
-  assert.deepEqual(p.gain, [{ kind: "set", time: 0, value: LEVELS.marimba }]);
+  const r = VOICES.marimba.env.release;
+  assert.deepEqual(p.gain, [
+    { kind: "set", time: 0, value: LEVELS.marimba },
+    { kind: "set", time: 0.5 - r, value: LEVELS.marimba },
+    { kind: "exp", time: 0.5, value: FLOOR },
+  ]);
   assert.ok(Math.abs(p.stop - 0.5) < 1e-12);
+  // A recording shorter than the release fades from the note start.
+  const short = planSample("piano", 60, { duration: 0.1, loop: null }, 60, 2, 1);
+  assert.deepEqual(short.gain.slice(1), [
+    { kind: "set", time: 2, value: LEVELS.piano },
+    { kind: "exp", time: 2.1, value: FLOOR },
+  ]);
 });
 
 test("planSample keeps a looped (sustained) note sounding for as long as the key is held", () => {
@@ -203,4 +216,26 @@ test("parts loading together share one manifest request, and a failed manifest i
   await bank.load(["piano"]);
   assert.equal(fetched.filter(u => u.endsWith("manifest.json")).length, 2);
   assert.ok(bank.ready("piano"));
+});
+
+test("loadWithin reports whether the samples loaded before the time limit", async () => {
+  const { bank } = fakeBank();
+  assert.equal(await loadWithin(bank, ["flute"], 1000), true);
+  // A request that never answers: give up after the limit instead of waiting forever.
+  const stalled = createSampleBank({ fetchBytes: () => new Promise(() => {}), decode: async b => b });
+  const started = Date.now();
+  assert.equal(await loadWithin(stalled, ["piano"], 30), false);
+  assert.ok(Date.now() - started < 1000);
+  assert.equal(stalled.ready("piano"), false);
+  // A failed load settles at once and reports false too.
+  const { bank: broken } = fakeBank({ fail: () => true });
+  assert.equal(await loadWithin(broken, ["organ"], 1000), false);
+  assert.equal(await loadWithin(bank, [], 10), true);
+});
+
+test("Play and Export WAV wait for the samples for a limited time only", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.match(html, /await loadWithin\(samples,parts,3000\)/);
+  assert.match(html, /async function renderAudio\(\)\{const parts=sampleParts\(\);status\('Loading instruments'\);await loadWithin\(samples,parts,EXPORT_WAIT_MS\)/);
+  assert.doesNotMatch(html, /await samples\.load\(/);
 });

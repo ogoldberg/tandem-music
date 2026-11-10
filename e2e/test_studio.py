@@ -2,6 +2,7 @@
 import io
 import json
 import re
+import time
 import wave
 
 import numpy as np
@@ -706,6 +707,32 @@ def test_instruments_play_from_samples_and_fall_back_to_oscillators(browser, ser
         n = min(len(samples), len(osc))
         diff = np.abs(samples[:n] - osc[:n]).mean()
         assert diff > 200, f"{name}: samples sound like the oscillator voice (mean diff {diff:.1f})"
+
+
+def test_export_wav_does_not_hang_when_sample_requests_stall(browser, server_url, tmp_path):
+    """Issue #44: Export WAV waits for the samples for a limited time, then exports with the
+    oscillator voices and says so, instead of waiting for a request that never answers."""
+    context = browser.new_context(service_workers="block")
+    page = context.new_page()
+    problems = []
+    page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
+    page.on("console", lambda msg: problems.append(f"console.{msg.type}: {msg.text}") if msg.type == "error" else None)
+    # Never answer a sample request: the handler neither fulfills nor continues it.
+    page.route("**/vendor/gm-samples-1/**", lambda route: None)
+    page.goto(server_url + "/")
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    page.click("#demo")
+    started = time.monotonic()
+    with page.expect_download(timeout=40_000) as info:
+        page.click("#exportwav")
+    elapsed = time.monotonic() - started
+    assert 14 < elapsed < 35, elapsed
+    with wave.open(str(info.value.path())) as w:
+        samples = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float)
+    assert 1000 < np.abs(samples).max() < 32000
+    expect(page.locator("#status")).to_have_text("Exported the WAV with synthesized Marimba, drums (samples still loading)")
+    assert not problems, problems
+    context.close()
 
 
 def test_opening_a_project_with_an_unknown_instrument_is_rejected(studio, tmp_path):
