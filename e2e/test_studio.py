@@ -207,7 +207,7 @@ def test_undo_redo_across_manual_ai_load_and_vocal_target_edits(studio, tmp_path
     page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones-48k.wav")))
     expect(page.locator("#detectvocal")).to_be_enabled()
     page.click("#detectvocal")
-    expect(page.locator("#status")).to_have_text("Vocal notes ready to edit.", timeout=60_000)
+    expect(page.locator("#status")).to_have_text(re.compile(r"^\d+ vocal notes ready to edit\.$"), timeout=60_000)
     assert history_state(page)["undo"] == (True, "Undo: Detect sung notes")
     first = page.locator("#vocalnoteeditor .row").first.locator("span")
     detected = first.text_content()
@@ -232,3 +232,41 @@ def test_undo_redo_across_manual_ai_load_and_vocal_target_edits(studio, tmp_path
     page.click("#undo")
     expect(page.locator("#status")).to_have_text("Undid: Add note")
     expect(page.locator("#vocalnoteeditor")).to_have_text("Press Detect sung notes to edit the pitch targets.")
+
+
+def long_vocal_wav(path, seconds=180, rate=22050):
+    """A 3-minute mono WAV of held sung-range tones (0.8 s each, 0.2 s apart) cycling through a scale."""
+    scale = [60, 62, 64, 65, 67, 69, 71, 72]
+    note_len, gap = 0.8, 0.2
+    t = np.arange(int(rate * note_len)) / rate
+    env = np.minimum(1, np.minimum(t, note_len - t) / 0.02)
+    parts = []
+    for i in range(int(seconds)):
+        hz = 440.0 * 2 ** ((scale[i % len(scale)] - 69) / 12)
+        parts += [0.4 * env * np.sin(2 * np.pi * hz * t), np.zeros(int(rate * gap))]
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes((np.concatenate(parts) * 32767).astype("<i2").tobytes())
+    path.write_bytes(out.getvalue())
+    return path
+
+
+def test_vocal_note_targets_cover_a_three_minute_recording(studio, tmp_path):
+    """PERF.3: on-device Basic Pitch detects vocal note targets across the whole take, not just the first 60 s."""
+    page = studio
+    page.select_option("#mode", "vocal")
+    page.set_input_files("#audiofile", str(long_vocal_wav(tmp_path / "vocal-3min.wav")))
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Recorded 180\.0s\."))
+    expect(page.locator("#detectvocal")).to_be_enabled()
+
+    page.click("#detectvocal")
+    expect(page.locator("#status")).to_have_text(re.compile(r"^\d+ vocal notes ready to edit\.$"), timeout=240_000)
+
+    labels = page.locator("#vocalnoteeditor .row span").all_text_contents()
+    starts = [float(re.match(r"\d+\. ([\d.]+)s", s).group(1)) for s in labels]
+    assert len(starts) > 128, f"only {len(starts)} targets: still capped at 128"
+    assert max(starts) > 170, f"last target at {max(starts)} s: detection stops before the end"
+    assert sum(1 for s in starts if s >= 60) > 100, "few targets after 60 s"

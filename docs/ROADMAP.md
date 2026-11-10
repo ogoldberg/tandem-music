@@ -44,7 +44,7 @@ This is the working task list, in strategic order: protect the deployment, prove
 - [x] **PERF.2** Remove the length cap on pitch correction by tuning long recordings in chunks
   - The browser splits the recording into overlapping chunks of about 15 s, each under Vercel's 4.5 MB body limit, sends them to `/api/tune` and stitches the results with short crossfades. The server stays stateless.
   - **Acceptance:** a recording longer than 90 s tunes end to end; tests show chunk boundaries add no clicks or gaps (crossfade continuity) and that each chunk's detected/edited note targets are offset to the chunk's start time.
-- [ ] **PERF.3** Detect vocal note targets on recordings of any length
+- [x] **PERF.3** Detect vocal note targets on recordings of any length
   - Vocal note detection (Basic Pitch in `transcription.js`) refuses recordings over 60 s and keeps only the first 128 notes, so on long takes the note editor covers only the start. Since PERF.2 the server limit of 128 targets applies per chunk, not per recording.
   - **Acceptance:** a 3-minute vocal yields note targets across its whole length in a real browser; melody transcription into the project keeps whatever cap the project schema and `/api/chat` need.
 - [ ] **QA.1** *(HUMAN)* Run the manual acceptance matrix in `docs/TESTING.md` on macOS Chrome, macOS Safari and Android Chrome

@@ -87,10 +87,10 @@ function renderVocalNotes(){
 $('detectvocal').onclick=async()=>{
   try{
     status('Detecting vocal notes…');
-    const {transcribeWithBasicPitch}=await import('./transcription.js');
-    const notes=await transcribeWithBasicPitch(await decoded(audio),p=>status('Detecting vocal notes: '+p+'%'));
+    const {transcribeWithBasicPitch,VOCAL_TARGET_LIMITS}=await import('./transcription.js');
+    const notes=await transcribeWithBasicPitch(await decoded(audio),p=>status('Detecting vocal notes: '+p+'%'),VOCAL_TARGET_LIMITS);
     edit('Detect sung notes',()=>{vocalNotes=notes.map(n=>({...n}));originalVocalNotes=notes.map(n=>({...n}))});
-    status('Vocal notes ready to edit.');
+    status(notes.length+' vocal notes ready to edit.');
   }catch(e){status('Vocal note detection failed: '+e.message)}
 };
 $('resetvocal').onclick=()=>edit('Reset vocal targets',()=>{vocalNotes=originalVocalNotes?.map(n=>({...n}))??null});

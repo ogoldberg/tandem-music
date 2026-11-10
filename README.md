@@ -34,7 +34,7 @@ A checked box means the feature is **implemented in code**, not that it has been
 - [x] Save/load portable project JSON and local browser draft (recording not embedded).
 - [x] Optional text LLM collaboration with validated structured edits and melody protection; **production model credentials not configured as of last inspection**.
 - [x] EQ/gate/compression vocal polish with Natural/Studio presets, separate from tuning; runs on the device, with no length cap.
-- [x] Experimental monophonic vocal pitch correction using the open-source **WORLD** vocoder via `pyworld-prebuilt`, adjustable strength and +/- note targets; long recordings are tuned in 16 s chunks, so there is no length cap (note-target detection is still limited to 60 s, PERF.3).
+- [x] Experimental monophonic vocal pitch correction using the open-source **WORLD** vocoder via `pyworld-prebuilt`, adjustable strength and +/- note targets; long recordings are tuned in 16 s chunks, so there is no length cap; on-device note-target detection also covers the whole recording (PERF.3).
 - [x] Python API and browser UI hosted together on Vercel.
 - [x] Automated Python and Node test suites passing in GitHub Actions (verified 2026-11-09).
 
