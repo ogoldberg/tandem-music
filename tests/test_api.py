@@ -213,6 +213,16 @@ def test_voices_module_is_served_and_precached(client):
     sw=run(client("GET","/sw.js"))
     assert "./voices.js" in sw.text
 
+def test_samples_module_is_served_and_precached(client):
+    # SND.1: index.html imports samples.js (sampled instruments) at startup, so it is precached.
+    js=run(client("GET","/samples.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function playSample" in js.text
+    page=run(client("GET","/"))
+    assert "from './samples.js'" in page.text
+    sw=run(client("GET","/sw.js"))
+    assert "./samples.js" in sw.text
+
 def test_harmony_module_is_served_and_precached(client):
     # ARR.1c: index.html imports harmony.js (Generate harmony) at startup, so it is precached.
     js=run(client("GET","/harmony.js"))
@@ -549,6 +559,50 @@ def test_basic_pitch_licenses_cover_every_mit_package():
     for name in mit:
         assert f"\n==== {name} " in text, name
     assert text.count("Permission is hereby granted") >= len(mit)
+
+GM_SAMPLES_DIR = server.Path(server.__file__).resolve().parent / "vendor" / "gm-samples-1"
+
+def recorded_gm_sample_hashes():
+    lines = (GM_SAMPLES_DIR / "SHA256SUMS").read_text().splitlines()
+    return {name: digest for digest, name in (line.split("  ", 1) for line in lines if line.strip())}
+
+def test_gm_samples_are_served_from_this_app_with_recorded_hashes(client):
+    # SND.1: every sample, the manifest and the license file are served with the recorded hash.
+    import hashlib
+    hashes = recorded_gm_sample_hashes()
+    on_disk = {p.relative_to(GM_SAMPLES_DIR).as_posix() for p in GM_SAMPLES_DIR.rglob("*") if p.is_file()} - {"SHA256SUMS"}
+    assert set(hashes) == on_disk
+    types = {".mp3": "audio/mpeg", ".json": "application/json", ".txt": "text/plain"}
+    for name, digest in hashes.items():
+        r = run(client("GET", f"/vendor/gm-samples-1/{name}"))
+        assert r.status_code == 200, name
+        assert hashlib.sha256(r.content).hexdigest() == digest, name
+        assert r.headers["content-type"].split(";")[0] == types[server.Path(name).suffix], name
+        assert "immutable" in r.headers["cache-control"]
+
+def test_gm_samples_route_serves_only_the_hashed_files(client):
+    for path in ("/vendor/gm-samples-1/SHA256SUMS", "/vendor/gm-samples-1/piano/..%2f..%2f..%2ftandem_backend.py",
+                 "/vendor/gm-samples-1/%2e%2e/%2e%2e/tandem_backend.py", "/vendor/gm-samples-1/piano",
+                 "/vendor/gm-samples-1/", "/vendor/gm-samples-1/piano/61.mp3", "/vendor/gm-samples-2/manifest.json"):
+        assert run(client("GET", path)).status_code == 404, path
+
+def test_gm_samples_cover_every_instrument_and_are_mit_licensed():
+    import json
+    manifest = json.loads((GM_SAMPLES_DIR / "manifest.json").read_text())
+    assert sorted(manifest["instruments"]) == sorted(server.INSTRUMENTS)
+    assert sorted(manifest["drums"]) == ["hat", "kick", "snare"]
+    hashes = recorded_gm_sample_hashes()
+    for inst in manifest["instruments"].values():
+        for sample in inst["samples"].values():
+            assert sample["file"] in hashes
+    assert manifest["source"]["license"] == "MIT"
+    text = (GM_SAMPLES_DIR / "LICENSES.txt").read_text()
+    assert "FluidR3_GM" in text and "License: MIT" in text and "Permission is hereby granted" in text
+
+def test_samples_load_only_from_this_app():
+    source = (server.Path(server.__file__).resolve().parent / "samples.js").read_text()
+    assert "https://" not in source and "http://" not in source
+    assert 'SAMPLE_BASE = "/vendor/gm-samples-1/"' in source
 
 def test_transcription_loads_basic_pitch_only_from_this_app():
     source = (server.Path(server.__file__).resolve().parent / "transcription.js").read_text()

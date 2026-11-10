@@ -40,6 +40,10 @@ def groove_js():
 @app.get("/storage.js", include_in_schema=False)
 def storage_js():
     return FileResponse(Path(__file__).resolve().parent / "storage.js", media_type="text/javascript")
+@app.get("/samples.js", include_in_schema=False)
+def samples_js():
+    return FileResponse(Path(__file__).resolve().parent / "samples.js", media_type="text/javascript")
+
 @app.get("/recordings.js", include_in_schema=False)
 def recordings_js():
     return FileResponse(Path(__file__).resolve().parent / "recordings.js", media_type="text/javascript")
@@ -91,6 +95,24 @@ def basic_pitch_asset(name: str):
     if media_type is None:
         return Response(status_code=404)
     return FileResponse(BASIC_PITCH_DIR / name, media_type=media_type,
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+# Self-hosted General MIDI instrument samples (SND.1), rendered from the MIT-licensed FluidR3_GM
+# SoundFont by tools/gm-samples/build.py. Only the files listed in SHA256SUMS are served (the
+# list itself is not); like Basic Pitch, the versioned path never changes content.
+GM_SAMPLES_DIR = Path(__file__).resolve().parent / "vendor" / "gm-samples-1"
+GM_SAMPLE_TYPES = {".mp3": "audio/mpeg", ".json": "application/json", ".txt": "text/plain; charset=utf-8"}
+GM_SAMPLE_FILES = {
+    name: GM_SAMPLE_TYPES[Path(name).suffix]
+    for name in (line.split("  ", 1)[1] for line in (GM_SAMPLES_DIR / "SHA256SUMS").read_text().splitlines() if line)
+}
+
+@app.get("/vendor/gm-samples-1/{name:path}", include_in_schema=False)
+def gm_sample(name: str):
+    media_type = GM_SAMPLE_FILES.get(name)
+    if media_type is None:
+        return Response(status_code=404)
+    return FileResponse(GM_SAMPLES_DIR / name, media_type=media_type,
                         headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 @app.get("/manifest.webmanifest", include_in_schema=False)

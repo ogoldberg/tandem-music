@@ -650,6 +650,64 @@ def test_every_instrument_plays_and_exports_its_own_sound(studio, tmp_path):
     expect(page.locator("#instrument")).to_have_value("flute")
 
 
+def export_every_instrument(page, tmp_path):
+    """Load the example, export it once per melody instrument and return {instrument: samples}."""
+    page.click("#demo")
+    rendered = {}
+    for value in page.locator("#instrument option").evaluate_all("els => els.map(e => e.value)"):
+        page.select_option("#instrument", value)
+        wav = download(page, "#exportwav", tmp_path).read_bytes()
+        with wave.open(io.BytesIO(wav)) as w:
+            rendered[value] = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float)
+    return rendered
+
+
+def test_instruments_play_from_samples_and_fall_back_to_oscillators(browser, server_url, tmp_path):
+    """SND.1: every instrument exports from its recorded samples, which sound different from its
+    oscillator voice; when the samples cannot be loaded the studio says so and uses the oscillators."""
+    def studio_page(block_samples):
+        # Service workers are blocked so page.route sees every sample request.
+        context = browser.new_context(service_workers="block")
+        page = context.new_page()
+        problems = []
+        page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
+        # A blocked sample's 404 is reported by Chromium as a failed resource load; nothing else may error.
+        page.on("console", lambda msg: problems.append(f"console.{msg.type}: {msg.text}")
+                if msg.type == "error" and not (block_samples and "404" in msg.text) else None)
+        requested = []
+        page.on("request", lambda r: requested.append(r.url) if "/vendor/gm-samples-1/" in r.url else None)
+        if block_samples:
+            page.route("**/vendor/gm-samples-1/**", lambda route: route.fulfill(status=404, body=""))
+        page.goto(server_url + "/")
+        page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+        return context, page, problems, requested
+
+    context, page, problems, requested = studio_page(False)
+    sampled = export_every_instrument(page, tmp_path)
+    page.click("#play")
+    expect(page.locator("#status")).to_have_text("Playing composition")
+    assert all(u.startswith(server_url + "/vendor/gm-samples-1/") for u in requested) and requested
+    assert any(u.endswith("/drums/kick.mp3") for u in requested)
+    assert not problems, problems
+    context.close()
+
+    context, page, problems, _ = studio_page(True)
+    synthesized = export_every_instrument(page, tmp_path)
+    expect(page.locator("#status")).to_contain_text("synthesized Flute, drums (samples failed to load: HTTP 404")
+    page.click("#play")
+    expect(page.locator("#status")).to_contain_text("Playing composition with synthesized Flute, drums")
+    assert not problems, problems
+    context.close()
+
+    for name, samples in sampled.items():
+        peak = np.abs(samples).max()
+        assert 1000 < peak < 32000, f"{name}: sampled peak {peak}"
+        osc = synthesized[name]
+        n = min(len(samples), len(osc))
+        diff = np.abs(samples[:n] - osc[:n]).mean()
+        assert diff > 200, f"{name}: samples sound like the oscillator voice (mean diff {diff:.1f})"
+
+
 def test_opening_a_project_with_an_unknown_instrument_is_rejected(studio, tmp_path):
     page = studio
     bad = tmp_path / "bad.json"

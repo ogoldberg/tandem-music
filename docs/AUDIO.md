@@ -7,6 +7,13 @@ Browser MediaRecorder may record at 44,100 or 48,000 Hz. Tandem decodes audio, u
 
 For beatboxing, server analysis uses approximate energy peaks and spectral centroid to classify kicks/snares/hats. This is **not** an accurate trained classifier yet. Note confidence and correction UI require improvement.
 
+## Playback and export: sampled instruments
+The melody, harmony and drums play recorded General MIDI samples (`samples.js`, SND.1) rendered from the FluidR3_GM SoundFont (MIT license) and self-hosted in `vendor/gm-samples-1/`: mono 22,050 Hz MP3s, one root note every 3 semitones per instrument, dry (no reverb or chorus), velocity 100. The programs are piano 0 (Acoustic Grand Piano), marimba 12, strings 48 (String Ensemble 1), bass 33 (Electric Bass, finger), chip 80 (Lead 1, square), organ 16 (Drawbar Organ), guitar 24 (Acoustic Guitar, nylon) and flute 73; kick, snare and hat come from the SoundFont's standard drum kit. Sustained instruments (strings, chip, organ, flute) carry crossfaded loop points in `manifest.json` so a held note can last any length.
+- A note plays its nearest root sample, pitched by playback rate (at most 1 semitone from the root inside the range), at a per-instrument level (`LEVELS`), and fades over the voice's release time when the key is released.
+- The same `playSample` and `playDrumSample` functions schedule live playback and the offline WAV export, so both sound alike. Samples for the parts a project uses are preloaded when it changes; Play waits up to 3 s for them and the WAV export waits for them.
+- If a part's samples are missing or still loading, it plays its oscillator voice from `voices.js` and the status line says so, for example "Playing composition with synthesized Flute, drums (samples failed to load: HTTP 404 ...)".
+- Not yet judged by ear on real speakers (see TESTING.md).
+
 ## Vocal polish vs vocal tuning
 Polish (`polish.js`, on device since PERF.1): band-pass EQ, soft gating, compression and makeup gain (Natural/Studio), run in the browser on the decoded recording, so audio is not uploaded and there is no length cap beyond the device's memory. It is a sample-exact port of the former `/api/polish` SciPy DSP (`tests/fixtures/make_polish_fixture.py` keeps that reference). It can affect tone/level but does not fix singing pitch.
 

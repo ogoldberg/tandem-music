@@ -51,7 +51,7 @@ A checked box means the feature is **implemented in code**, not that it has been
 - [ ] AI edits with your own key, kept in the macOS Keychain by the Mac app (AI.4), verified with a real model (AI.2); the hosted model on Vercel (AI.1) is optional.
 - [x] Richer instrument voices, generated chord/bass harmony and phrase move/copy/transpose (ARR.1; not yet judged by ear on real devices).
 - [x] Local-first storage with no accounts (ADR-011): the draft, versions and recordings are kept on the device (STORE.2a; not yet tried in Safari or on real devices).
-- [ ] Sampled instruments instead of synthesized tones (SND.1).
+- [~] Sampled instruments: recorded General MIDI samples for melody, harmony and drums, with the synthesized voices as a fallback (SND.1; not yet judged by ear on real speakers).
 - [ ] A Mac app running the same studio with its own local backend: no hosted limits, projects as files (DESK.1-DESK.4, ADR-012).
 - [ ] Stems and multi-track MIDI for GarageBand and Logic (EXP.1).
 - [ ] Local AI audio models in the Mac app: voice separation (SEP.1), a backing band from your hum (GEN.2), voice to instrument (TIMBRE.1).
