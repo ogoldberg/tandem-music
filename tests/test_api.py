@@ -233,6 +233,18 @@ def test_phrases_module_is_served_and_precached(client):
     sw=run(client("GET","/sw.js"))
     assert "./phrases.js" in sw.text
 
+def test_storage_module_is_served_and_precached(client):
+    # STORE.2a: index.html imports storage.js (IndexedDB draft and versions) at startup, and versions.js imports it too.
+    js=run(client("GET","/storage.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export async function openKV" in js.text
+    page=run(client("GET","/"))
+    assert "from './storage.js'" in page.text
+    assert "localStorage.setItem('tandem-draft'" not in page.text
+    assert 'from "./storage.js"' in run(client("GET","/versions.js")).text
+    sw=run(client("GET","/sw.js"))
+    assert "./storage.js" in sw.text
+
 def test_chat_project_accepts_an_optional_harmony_part():
     # ARR.1c: the harmony part is optional, so projects saved before it still validate.
     assert server.ChatProject().harmony==[] and server.ChatProject().harmony_instrument=="piano"

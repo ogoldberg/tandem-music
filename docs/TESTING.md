@@ -6,7 +6,7 @@ Last reviewed: 2026-11-10. **Test files exist; passing CI status and real-device
 ```bash
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
-node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs tests/harmony.test.mjs tests/phrases.test.mjs
+node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs tests/harmony.test.mjs tests/phrases.test.mjs tests/storage.test.mjs
 
 # Browser end-to-end (needs a Playwright Chromium)
 python -m pip install -r requirements-e2e.txt
@@ -24,6 +24,8 @@ An ARR.1b browser test plays and exports the example with each of the eight melo
 An ARR.1c browser test checks the message when there is no melody, generates chords for the example (C major, C C, triads E3-G3-C4), plays it, checks the exported MIDI has the triads on channel 2 at ticks 0 and 3840 with the melody untouched on channel 1 and that the WAV changes but does not clip, removes a harmony note and undoes it, generates a bass line in a chosen A minor while keeping a chosen organ, saves and restores a version, saves a project file, reloads, opens a pre-harmony project (no harmony, piano) and refuses an unknown harmony instrument. Node tests (`tests/harmony.test.mjs`) cover key detection on major and minor melodies, the diatonic chord lists, I-IV-V-I chosen under a melody that outlines it, voicing range and the exact voice-led triads, the bass pattern, bar timing at other tempos and start offsets, a chosen key, empty bars, the doubled downbeat weight, the 1024-note cap and input validation.
 
 An ARR.1d browser test checks the empty phrase list, finds one phrase in the example, generates chords, chooses the phrase (its eight notes are marked), checks that moving it before the start is refused without an edit, copies it to the end (two bars later, a second phrase that becomes the choice), transposes the copy up an octave, moves it a beat later and down a semitone with phrase 1 and the harmony unchanged, undoes and redoes through them (undo clears the choice), and checks that raising the tempo splits a melody with a 0.5 s rest into two phrases. Node tests (`tests/phrases.test.mjs`) cover the rest threshold and its millisecond tolerance, tempo scaling, notes bridged by a long note, invalid notes, move/transpose/copy results and array order, the 0 s, 600 s, MIDI-range and 1024-note limits, bar-aligned copies that keep a pickup's place in the bar, and stale phrases.
+
+STORE.2a browser tests check that a draft and versions left in `localStorage` move into IndexedDB (and leave `localStorage`), that later edits and versions survive a reload and a full browser restart (a persistent Chromium profile closed and reopened), that unparseable old versions are reported and kept, that the studio still works and says nothing is saved when IndexedDB is missing, and that the key-value store's updates are atomic in Chromium's IndexedDB. The draft helper reads IndexedDB directly.
 
 ## Manual acceptance matrix
 | Journey | macOS Chrome | macOS Safari | Android Chrome |

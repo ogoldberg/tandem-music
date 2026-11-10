@@ -105,7 +105,7 @@ def test_import_transcribe_edit_play_export_save_reload(studio, tmp_path):
     assert note_pitches(page) == [69, 72, 76, 60]
     assert count(page, "hitcount") == 1
 
-    # The localStorage draft survives a reload.
+    # The draft (in IndexedDB) survives a reload.
     page.reload()
     page.wait_for_function("document.getElementById('notecount').textContent !== ''")
     assert note_pitches(page) == [69, 72, 76, 60]
@@ -392,8 +392,13 @@ def test_pitch_contour_editor_edits_drive_tuning_through_history(studio, tmp_pat
     expect(page.locator("#tune")).to_be_enabled()
 
 
-def version_names(page):
-    return [t.split(" · ")[0] for t in page.locator("#versionlist .version span").all_text_contents()]
+def expect_versions(page, names):
+    """The version list shows exactly these names, newest first (it renders after an IndexedDB read)."""
+    rows = page.locator("#versionlist .version span")
+    if names:
+        expect(rows).to_have_text([re.compile("^" + re.escape(n) + " · ") for n in names])
+    else:
+        expect(page.locator("#versionlist")).to_have_text("No saved versions yet.")
 
 
 def test_named_versions_save_list_restore_survive_reload_and_delete(studio):
@@ -415,12 +420,12 @@ def test_named_versions_save_list_restore_survive_reload_and_delete(studio):
     page.fill("#versionname", "Sparse")
     page.press("#versionname", "Enter")
     expect(page.locator("#status")).to_have_text("Saved version: Sparse")
-    assert version_names(page) == ["Sparse", "Example groove"]
+    expect_versions(page, ["Sparse", "Example groove"])
 
     # A blank name is refused and saves nothing.
     page.click("#saveversion")
     expect(page.locator("#status")).to_have_text("Give the version a name.")
-    assert version_names(page) == ["Sparse", "Example groove"]
+    expect_versions(page, ["Sparse", "Example groove"])
 
     # Restoring brings back that version's notes, drums and tempo, and is one undoable edit.
     page.click("#versionlist .version:has-text('Example groove') >> text=Restore")
@@ -436,16 +441,17 @@ def test_named_versions_save_list_restore_survive_reload_and_delete(studio):
     # Versions survive a reload.
     page.reload()
     page.wait_for_function("document.getElementById('notecount').textContent !== ''")
-    assert version_names(page) == ["Sparse", "Example groove"]
+    expect_versions(page, ["Sparse", "Example groove"])
     page.click("#versionlist .version:has-text('Example groove') >> text=Restore")
+    expect(page.locator("#status")).to_have_text("Restored version: Example groove")
     assert len(note_pitches(page)) == 8
 
     page.click("#versionlist .version:has-text('Sparse') >> text=Delete")
     expect(page.locator("#status")).to_have_text("Deleted version: Sparse")
-    assert version_names(page) == ["Example groove"]
+    expect_versions(page, ["Example groove"])
     page.reload()
     page.wait_for_function("document.getElementById('notecount').textContent !== ''")
-    assert version_names(page) == ["Example groove"]
+    expect_versions(page, ["Example groove"])
 
 
 def test_access_token_kept_for_this_tab_only(studio):
@@ -523,8 +529,21 @@ def test_unknown_instrument_in_a_version_or_draft_is_reported(studio):
     expect(page.locator("#status")).to_have_text("Playing composition")
 
 
+IDB_DRAFT = """() => new Promise((resolve, reject) => {
+  const open = indexedDB.open('tandem');
+  open.onerror = () => reject(open.error);
+  open.onsuccess = () => {
+    const db = open.result, get = db.transaction('kv').objectStore('kv').get('draft');
+    get.onsuccess = () => { db.close(); resolve(get.result ?? null); };
+    get.onerror = () => reject(get.error);
+  };
+})"""
+
+
 def draft(page):
-    return page.evaluate("JSON.parse(localStorage.getItem('tandem-draft'))")
+    """The draft as stored in IndexedDB (STORE.2a). The page starts each draft write synchronously, so this
+    read, opened afterwards, waits for the latest write."""
+    return page.evaluate(IDB_DRAFT)
 
 
 def midi_drum_ticks(data):
@@ -817,3 +836,120 @@ def test_phrases_are_detected_and_moved_copied_and_transposed_with_undo(studio, 
     page.fill("#bpm", "140")
     page.press("#bpm", "Enter")
     assert phrase_labels(page) == ["1 · 0.0–0.4 s", "2 · 0.9–1.3 s"]
+
+
+def test_draft_and_versions_move_from_local_storage_to_indexeddb(studio):
+    """STORE.2a: what an older Tandem left in localStorage is brought into IndexedDB once, then kept there."""
+    page = studio
+    old_draft = {"bpm": 132, "instrument": "flute", "melody_locked": True, "notes": [{"m": 65, "t": 0, "d": 0.5}], "drums": []}
+    old_version = {"id": "old", "name": "From localStorage", "savedAt": 1, "project": {"bpm": 90, "notes": [{"m": 70, "t": 0, "d": 0.5}], "drums": []}}
+    page.evaluate("""([d, v]) => { localStorage.setItem('tandem-draft', JSON.stringify(d));
+                                    localStorage.setItem('tandem-versions', JSON.stringify([v])); }""", [old_draft, old_version])
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    assert note_pitches(page) == [65]
+    assert page.input_value("#bpm") == "132" and page.input_value("#instrument") == "flute"
+    expect_versions(page, ["From localStorage"])
+    assert page.evaluate("[localStorage.getItem('tandem-draft'), localStorage.getItem('tandem-versions')]") == [None, None]
+    assert draft(page)["notes"] == [{"m": 65, "t": 0, "d": 0.5}]
+    expect(page.locator("#storageinfo")).not_to_have_text("")
+
+    # From now on the draft and versions live in IndexedDB only.
+    page.click("#addnote")
+    page.fill("#versionname", "After the move")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: After the move")
+    assert page.evaluate("[localStorage.getItem('tandem-draft'), localStorage.getItem('tandem-versions')]") == [None, None]
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    assert len(note_pitches(page)) == 2
+    expect_versions(page, ["After the move", "From localStorage"])
+    page.click("#versionlist .version:has-text('From localStorage') >> text=Restore")
+    expect(page.locator("#status")).to_have_text("Restored version: From localStorage")
+    assert note_pitches(page) == [70]
+
+
+def test_unreadable_old_versions_are_reported_and_kept(studio):
+    """STORE.2a: versions in localStorage that cannot be parsed are left there and reported, never deleted."""
+    page = studio
+    page.evaluate("localStorage.setItem('tandem-versions', '{broken')")
+    page.reload()
+    expect(page.locator("#status")).to_contain_text("could not be read")
+    assert page.evaluate("localStorage.getItem('tandem-versions')") == "{broken"
+    expect_versions(page, [])
+
+
+def test_work_survives_a_browser_restart(browser_type, browser_type_launch_args, server_url, tmp_path):
+    """STORE.2a: the draft and versions are on disk in the browser profile, not only in the open page."""
+    profile = tmp_path / "profile"
+    problems = []
+
+    def open_studio():
+        context = browser_type.launch_persistent_context(str(profile), **browser_type_launch_args)
+        page = context.pages[0] if context.pages else context.new_page()
+        page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
+        page.on("console", lambda msg: problems.append(f"console.error: {msg.text}") if msg.type == "error" else None)
+        page.goto(server_url + "/")
+        page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+        return context, page
+
+    context, page = open_studio()
+    page.click("#demo")
+    page.fill("#versionname", "Before restart")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: Before restart")
+    page.click("#clearhits")
+    page.fill("#bpm", "141")
+    page.dispatch_event("#bpm", "change")
+    assert draft(page)["bpm"] == 141
+    context.close()
+
+    context, page = open_studio()
+    try:
+        assert page.input_value("#bpm") == "141"
+        assert len(note_pitches(page)) == 8 and count(page, "hitcount") == 0
+        expect_versions(page, ["Before restart"])
+        page.click("#versionlist .version:has-text('Before restart') >> text=Restore")
+        expect(page.locator("#status")).to_have_text("Restored version: Before restart")
+        assert count(page, "hitcount") == 16
+    finally:
+        context.close()
+    assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+
+
+def test_without_indexeddb_the_studio_works_and_says_nothing_is_saved(page, server_url):
+    """STORE.2a: a browser with no IndexedDB still edits and plays, and says work is not being saved."""
+    errors = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    page.add_init_script("Object.defineProperty(window, 'indexedDB', {value: undefined})")
+    page.goto(server_url + "/")
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    message = "Saving on this device is unavailable: This browser has no IndexedDB, so work cannot be saved on this device."
+    expect(page.locator("#status")).to_have_text(message)
+    expect(page.locator("#versionlist")).to_have_text(message)
+    page.click("#demo")
+    assert len(note_pitches(page)) == 8
+    page.fill("#versionname", "Nowhere to go")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text(message)
+    assert not errors
+
+
+def test_indexeddb_store_updates_are_atomic_in_a_real_browser(studio):
+    """STORE.2a: openKV against Chromium's IndexedDB: a failed update writes nothing; parallel updates all land."""
+    page = studio
+    result = page.evaluate("""async () => {
+      const { openKV } = await import('/storage.js');
+      const kv = await openKV(indexedDB, { name: 'tandem-kv-test' });
+      await kv.set('list', [1]);
+      let refused = null;
+      try { await kv.update('list', v => { v.push(2); throw new Error('no thanks'); }); } catch (e) { refused = e.message; }
+      const afterRefusal = await kv.get('list');
+      await Promise.all([3, 4, 5].map(n => kv.update('list', v => [[...v, n], v.length])));
+      await kv.setMany([['a', {x: 1}], ['b', 'two']]);
+      const out = { refused, afterRefusal, list: await kv.get('list'), a: await kv.get('a'), b: await kv.get('b'), missing: (await kv.get('nope')) === undefined };
+      kv.close();
+      await new Promise(r => { const d = indexedDB.deleteDatabase('tandem-kv-test'); d.onsuccess = d.onerror = r; });
+      return out;
+    }""")
+    assert result == {"refused": "no thanks", "afterRefusal": [1], "list": [1, 3, 4, 5], "a": {"x": 1}, "b": "two", "missing": True}

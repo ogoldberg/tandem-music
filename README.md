@@ -31,7 +31,7 @@ A checked box means the feature is **implemented in code**, not that it has been
 - [x] Spotify Basic Pitch **on-device** humming transcription (audio resampled to 22,050 Hz); heuristic server fallback.
 - [x] Basic beatbox onset-to-kick/snare/hat detection.
 - [x] Two simple instrument tracks, rudimentary timeline editing, play/stop, undo, WAV/MIDI export.
-- [x] Save/load portable project JSON and local browser draft (recording not embedded).
+- [x] Save/load portable project JSON; the draft and named versions are kept on the device in IndexedDB (STORE.2a; recordings are not saved yet).
 - [x] Optional text LLM collaboration with validated structured edits and melody protection; **production model credentials not configured as of last inspection**.
 - [x] EQ/gate/compression vocal polish with Natural/Studio presets, separate from tuning; runs on the device, with no length cap.
 - [x] Experimental monophonic vocal pitch correction using the open-source **WORLD** vocoder via `pyworld-prebuilt`, adjustable strength and +/- note targets; long recordings are tuned in 16 s chunks, so there is no length cap; on-device note-target detection also covers the whole recording (PERF.3).
@@ -46,7 +46,7 @@ A checked box means the feature is **implemented in code**, not that it has been
 - [ ] Proven natural vocal quality (VOX.1, VOX.2).
 - [x] Undo/redo history across manual, AI, project-load and vocal-target edits (EDIT.1; per session).
 - [x] Named project versions saved in this browser: save, list, restore (undoable) and delete (EDIT.2).
-- [x] Detect tempo from the notes and drums, and quantize to a 1/4, 1/8 or 1/16 grid with swing and strength (ARR.1, first part).
+- [x] Detect tempo from the notes and drums, and quantize to a 1/4, 1/8 or 1/16 grid with swing and strength (ARR.1a).
 - [x] Pitch-contour editor: drag, resize and step note targets over the sung pitch line, key/scale snapping, keep vibrato (VOX.3; not yet judged by ear, VOX.2).
 - [ ] AI edits with your own key, called from the browser (AI.4), verified with a real model (AI.2); the hosted model on Vercel (AI.1) is optional.
 - [x] Richer instrument voices, generated chord/bass harmony and phrase move/copy/transpose (ARR.1; not yet judged by ear on real devices).

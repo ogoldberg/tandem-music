@@ -37,6 +37,11 @@ def history_js():
 @app.get("/groove.js", include_in_schema=False)
 def groove_js():
     return FileResponse(Path(__file__).resolve().parent / "groove.js", media_type="text/javascript")
+@app.get("/storage.js", include_in_schema=False)
+def storage_js():
+    return FileResponse(Path(__file__).resolve().parent / "storage.js", media_type="text/javascript")
+
+
 @app.get("/phrases.js", include_in_schema=False)
 def phrases_js():
     return FileResponse(Path(__file__).resolve().parent / "phrases.js", media_type="text/javascript")
