@@ -16,15 +16,18 @@ Last reviewed: 2026-11-10. This is a prioritized working plan, not a delivery pr
 | Implemented, experimental | Vocal contour editor | Drag notes, retain vibrato, key/scale UI, confidence (VOX.3); not yet judged by ear |
 | Planned | Better vocal quality | Quality benchmark, artifact handling, phoneme preservation |
 | Implemented, needs device QA | Better arrangement | Swing, richer voices, generated chord/bass harmony and phrase editing (ARR.1) |
+| Planned | Mac app | The same studio in a native window with its own local backend: no hosted limits, files on disk, keys in the Keychain (DESK.1-DESK.3, ADR-012) |
+| Planned | Sampled instruments | Recorded General MIDI instruments instead of synthesized tones, in the web app and the Mac app (SND.1) |
+| Planned | Local AI audio models | Voice separation (Demucs), a backing band generated from the hum (MusicGen-Melody), voice-to-instrument (RAVE), run on the Mac (MODEL.1, SEP.1, GEN.2, TIMBRE.1) |
 | Planned | Music generation | Capability-specific adapters for externally hosted or self-hosted audio models |
 | Planned | Conversational speech | Spoken chat and audio intent alongside text |
-| Planned | Local-first storage | No accounts (ADR-011): IndexedDB/OPFS on the device, then a synced folder or the user's own bucket; rate limiting is done, spend guards only matter for the hosted mode |
+| Implemented, needs device QA | Local-first storage | No accounts (ADR-011): the draft, versions and recordings in IndexedDB/OPFS (STORE.2a); in the Mac app projects are plain files (DESK.3); the browser folder and bucket options are parked |
 | Planned | Hand-off to other music tools | Stems and multi-track MIDI, MusicXML, DAWproject, Web MIDI (EXP.1-EXP.4) |
 | Planned | Production QA | Android/Mac e2e recording and audio quality evaluations |
 
 ## Task backlog
 
-This is the working task list, in strategic order: protect the deployment, prove the core loop works on real devices, turn on the AI half of the product, then build a safety net before the larger editor work. Since ADR-011 the product is local-first with the user's own storage and AI keys (section 6); the hosted AI path in section 3 is optional. Loopkit's `/next-task` reads it (see `.agent-workflow.yml`). Format: `- [ ]` pending, `- [~]` in progress, `- [x]` done; the bold token is the task ID. `*(HUMAN)*` marks work that needs the owner: real devices, listening judgement, credentials, account settings or product decisions. Mark a task `[x]` only with evidence (CI run, recorded device result, merged PR). Real-device results (QA.1) may reorder the vocal and arrangement work.
+This is the working task list, in strategic order: protect the deployment, prove the core loop works on real devices, turn on the AI half of the product, then build a safety net before the larger editor work. Sections 1-5 are mostly done. Since ADR-012 (2026-11-10) the open work is ordered for the biggest gain per unit of effort: first the quick audible win (sampled instruments), then the Mac app, which removes the hosted limits and is what lets Tandem run large audio models; then the AI half through the Mac app's own backend, hand-off to GarageBand and Logic, and the local audio models (sections 6 and 7). Since ADR-011 the product is local-first with the user's own storage and AI keys (section 8); the hosted AI path in section 3 is optional, and the web app stays as the zero-install and Android path. Loopkit's `/next-task` reads it (see `.agent-workflow.yml`). Format: `- [ ]` pending, `- [~]` in progress, `- [x]` done; the bold token is the task ID. `*(HUMAN)*` marks work that needs the owner: real devices, listening judgement, credentials, account settings or product decisions. Mark a task `[x]` only with evidence (CI run, recorded device result, merged PR). Real-device results (QA.1) may reorder the vocal and arrangement work.
 
 ### 1. Protect the deployment
 - [x] **CI.1** Confirm the GitHub Actions Python and Node suites pass on `main`
@@ -94,41 +97,89 @@ This is the working task list, in strategic order: protect the deployment, prove
   - **Depends:** VOX.1, EDIT.1
   - **Acceptance:** edited targets drive `/api/tune` and go through the EDIT.1 history; covered by unit tests and the CI.2 browser tests.
 
-### 6. Local-first: your device, your storage, your keys (ADR-011)
+### 6. Biggest boost for least effort: sampled instruments and the Mac app (ADR-012)
+Ordered by gain per unit of effort. SND.1 helps the web app and the Mac app alike and depends on nothing. DESK.1 reuses `index.html` and `tandem_backend.py` unchanged. Every later item builds on it.
+- [ ] **SND.1** Sampled instruments: play melody, harmony and drums with recorded General MIDI instruments instead of synthesized tones
+  - Effort: about a day or two. Load a General MIDI sample set (for example through the `smplr` library, or a SoundFont such as GeneralUser GS played by a SoundFont synth) for live playback and the offline WAV export, so both sound alike, as `voices.js` does now. The current oscillator voices stay as a fallback for an instrument whose samples are missing or still loading, and the project's `instrument` names map onto General MIDI programs. Self-host the samples with hashes like Basic Pitch (SEC.3), so nothing loads from a third-party CDN at play time. Check the sample set's license before adding it (GeneralUser GS's terms allow use in your own music, private or commercial; confirm the exact set used) and record it in `docs/SECURITY.md`.
+  - **Acceptance:** every instrument in `INSTRUMENTS` plays from samples in playback and in the WAV export; a browser test exports each instrument and checks the WAV is distinct, unclipped and different from the oscillator voice; the samples load from this app only, with hashes checked; a first listen on real speakers is recorded as manual QA.
+- [ ] **DESK.1** Mac app: run the studio in a native window with its own local backend
+  - Effort: a few days. A small launcher (pywebview first; Tauri or Electron if pywebview cannot do what is needed) starts `tandem_backend:app` on `127.0.0.1` at a random free port and opens the studio in a native window. The UI and the backend are the same code as the web app; `/api/config` reports that it is running locally. Risk first: before anything else, prove that microphone recording (`getUserMedia`), Web Audio playback, IndexedDB/OPFS storage and file downloads work in the chosen web view on macOS (WKWebView needs a microphone usage description and permission handling). If they do not, switch shells before building more.
+  - Runs from source first (`python -m tandem_desktop`); a signed, notarized `.app` is DESK.4.
+  - **Acceptance:** on the operator's Mac, the app opens, records from the microphone, transcribes, plays, tunes and exports, and keeps the draft across a quit and relaunch, recorded as manual QA; an automated test starts the launcher's server and loads the page; the web app keeps working unchanged.
+- [ ] **DESK.2** Lift the hosted limits when running locally, safely
+  - **Depends:** DESK.1
+  - In local mode: no per-IP rate limits, and recordings longer than the hosted 90 s / 25 s per-request caps are tuned and analysed in one request (chunking stays for the hosted mode). The local server must not be a door for other software: it binds to `127.0.0.1` only and requires a per-launch secret that the launcher injects into its window (so a web page in the user's browser cannot call it, including through DNS rebinding), and it checks the `Host` header.
+  - **Acceptance:** tests show a request without the per-launch secret or with a foreign `Host` is refused in local mode, and the hosted mode's limits and tests are unchanged; a 3-minute vocal tunes in one request in the Mac app (manual QA).
+- [ ] **DESK.3** Projects as files on disk in the Mac app
+  - **Depends:** DESK.1
+  - Save and Open use native file dialogs and write a project folder (`project.json` plus its recordings as WAV files) wherever the user picks, including a folder synced by iCloud Drive, Dropbox or Google Drive. This replaces STORE.2b in the Mac app. The web app keeps export/import and its on-device storage (STORE.2a).
+  - **Acceptance:** a project with its original, polished and tuned recordings saved to a folder opens again with its audio after a relaunch, and the same folder opens on a second Mac through a synced folder (manual QA); unit tests for the folder format.
+- [ ] **AI.4** Bring your own AI key
+  - **Depends:** SEC.1, DESK.2
+  - Mac app first: the user's key is kept in the macOS Keychain and used by the local backend's existing `invoke_llm`, `normalize_actions` and melody lock, so no validation is ported to JS and no key sits in the page. Providers: OpenAI, Anthropic, Gemini, OpenRouter, and a local Ollama (no key). A settings screen sets the provider, model and key.
+  - Web app (later, optional): the browser path described in ADR-011 (the key kept in the browser, a JS port of the validation checked against the Python version on shared fixtures, and a strict Content Security Policy before any key is stored).
+  - **Acceptance:** with a real key for at least one provider, an edit applies in the Mac app and melody lock blocks a melody change; the key is read from the Keychain and never written to project files, logs or the page; `docs/SECURITY.md` records where the key is kept.
+- [ ] **EXP.1** Export stems and multi-track MIDI for any DAW
+  - **Depends:** STORE.2a (the recorded and tuned vocal must be kept to export it)
+  - One WAV per part (melody, harmony, drums, and the original, polished and tuned vocal when present), all the same length and starting at zero so they line up when dropped into a DAW, offered as one zip. A type-1 MIDI file with one named track per part (melody, harmony, drums on channel 10) plus tempo and key signature, alongside the existing single-track export or replacing it. Later parts made by section 7's models (separated stems, the generated band) are added as stems when they exist.
+  - **Acceptance:** the melody, harmony and drum stems line up sample-exactly with the mixed WAV (their sum matches it within rounding; vocal stems are not part of the mix); the MIDI parses with a standard parser into named tracks with the right tempo, key and notes; checked by importing into a real DAW, GarageBand first and then Logic (others such as Ableton Live, Reaper or BandLab later), and recorded as manual QA; Node unit tests and a browser test.
+- [ ] **DESK.4** *(HUMAN)* Package the Mac app: a signed, notarized `.app` with auto-update
+  - **Depends:** DESK.1
+  - Needs an Apple Developer account (paid) and the operator's signing identity. Until then the app runs from source.
+  - **Acceptance:** the `.app` opens on a Mac that has never run Tandem, without Gatekeeper warnings; the build steps are in `docs/DEVELOPMENT.md`.
+
+### 7. Local AI audio models on the Mac (ADR-012)
+These models are too large and slow for Vercel's serverless functions, which is why they wait for the Mac app. They run in the Mac app's backend on Apple silicon (PyTorch with the MPS backend, or an MLX/Core ML port where one exists) and never in the hosted mode. Each one adds to the user's idea and never replaces it (ADR-004): its output is a new part the user can mute, delete or undo.
+- [ ] **LIC.1** *(HUMAN)* Decide whether Tandem will be sold or distributed to others, and so which model weights it may use and ship
+  - MusicGen's weights (GEN.2) are licensed CC-BY-NC 4.0: non-commercial use only. The Demucs v4 (HTDemucs) weights are tagged MIT on Hugging Face, but other sources describe them as non-commercial; check the official repository. RAVE's and the sample sets' licenses still need checking. For the operator's own use, none of this blocks building; for any distribution, it decides which models ship and which are a download the user opts into.
+  - **Acceptance:** decision and each model's license recorded in `docs/DECISIONS.md` and `docs/SECURITY.md`.
+- [ ] **MODEL.1** Local model runtime: download, verify and run large audio models in the Mac app
+  - **Depends:** DESK.2
+  - Optional Python dependencies (PyTorch and friends) installed only for the Mac app, never in `requirements.txt` for Vercel. Weights download on first use into the app's data folder, pinned by URL and SHA-256 and verified before loading, with the size shown before the download starts. A small background-job API runs a model with progress and cancel, so a minute-long generation does not block the UI. `/api/config` reports which models are installed.
+  - **Acceptance:** tests with a tiny stand-in model cover download, a bad hash being refused, progress, cancel and a job error being reported; the hosted mode does not import any of it (checked by a test).
+- [ ] **SEP.1** Separate the voice from background music (Demucs)
+  - **Depends:** MODEL.1
+  - Effort: a couple of days. A Separate button splits a recording into vocals and accompaniment (HTDemucs). The vocal becomes the recording that Transcribe, Polish and Tune work on, so a user can sing along to a song playing in the room, or start from an existing track; the original stays available (ADR-004). The stems are kept like any other recording and exported by EXP.1.
+  - **Acceptance:** on a fixture mixing a known sung melody with an accompaniment, transcription after separation finds the melody's notes within a documented tolerance, and finds clearly fewer of them without separation; a 3-minute song separates on the operator's Mac within a documented time (manual QA).
+- [ ] **GEN.2** A backing band from the hum (MusicGen-Melody)
+  - **Depends:** MODEL.1, LIC.1 (only before any distribution)
+  - Effort: about a week. Generate full-band audio that follows the user's own melody: MusicGen-Melody takes a melody (the original or tuned vocal, or the transcribed melody rendered as audio) and a text style ("lo-fi band with brushed drums"), plus the project tempo and key in the prompt. The result is a new optional audio part of the project, stored as a recording link and kept like the harmony part (ADR-010: older projects stay valid, no AI action changes it). It plays in time with the project, can be regenerated, muted or removed (undoable), and is labelled as generated (provenance). Generation runs as a MODEL.1 job with progress.
+  - **Acceptance:** a test with a stand-in model checks the part is added, aligned to zero, saved, undone and exported as a stem; on the operator's Mac a 30-second band is generated from a real hum and judged by ear (manual QA, recorded in `docs/AUDIO.md` with the time it took).
+- [ ] **TIMBRE.1** Turn the voice into an instrument (RAVE timbre transfer)
+  - **Depends:** MODEL.1
+  - Effort: about a week; results vary by model. A sung or hummed line is resynthesized through a pretrained RAVE model (for example a violin or saxophone model), so the user hears their own phrasing played by an instrument. The result is a new recording; the original stays. Check RAVE's and each model's license before adding it (LIC.1).
+  - **Acceptance:** a test with a stand-in model covers the job, the new recording and undo; at least two instrument models are judged by ear on real singing (manual QA in `docs/AUDIO.md`).
+
+### 8. Local-first: your device, your storage, your keys (ADR-011)
 - [x] **STORE.1** *(HUMAN)* Decide the account model and cloud storage for projects and recordings
   - Decided 2026-11-10 (ADR-011): no accounts for now; local-first, with the user's own storage and AI keys.
 - [ ] **STORE.2** Local storage plus bring-your-own storage
-  - Split into the parts below; STORE.2 is done when STORE.2a and STORE.2b are (STORE.2c is optional and can stay open). No Tandem server storage and no per-user quotas (there are no users to give them to).
+  - Split into the parts below; STORE.2 is done when STORE.2a and DESK.3 are (STORE.2b and STORE.2c are parked and can stay open). No Tandem server storage and no per-user quotas (there are no users to give them to).
 - [x] **STORE.2a** Keep projects, versions and recordings on the device in IndexedDB and OPFS
   - Projects, the draft and named versions move from `localStorage` to IndexedDB, with existing `localStorage` data migrated once and left readable if the migration fails. Recordings (original and processed audio) are saved in OPFS and linked from the project, so reopening a project brings its audio back. Request persistent storage and show whether it was granted; report a full quota instead of losing data.
   - Done: the draft and named versions are in IndexedDB (`storage.js`), migrated from `localStorage` on start, with persistent storage requested on Save version and its state shown in the Versions panel. Recordings (original, polished, tuned) are kept in OPFS by `recordings.js` and linked from the draft and each version; they come back after a reload, unlinked files are collected, and a full quota is reported. Evidence: Node tests (`tests/storage.test.mjs`, `tests/versions.test.mjs`, `tests/recordings.test.mjs`) and Chromium browser tests in `e2e/test_studio.py`, including a full browser restart. Not verified: Safari's OPFS `createWritable` and any real-device QA.
   - **Acceptance:** a project with a recording, its versions and the draft survive a reload and a browser restart in a real browser; old `localStorage` versions and draft appear after the upgrade; covered by Node unit tests (with an in-memory stand-in for the IndexedDB store) and browser tests against Chromium's IndexedDB.
 - [ ] **STORE.2b** Save to folder: read and write projects in a folder the user picks
+  - **Parked by ADR-012 (2026-11-10):** the Mac app saves projects as files directly (DESK.3). Take this up only if the web app becomes a main way to use Tandem again.
   - **Depends:** STORE.2a
   - File System Access API (Chromium desktop only; hidden elsewhere, where export/import stays). A folder synced by Dropbox, iCloud Drive or Google Drive syncs projects between devices with no Tandem server. The folder handle is kept in IndexedDB and permission is asked for again when the browser requires it.
   - **Acceptance:** a project with its recording saved to a folder opens in a fresh browser profile pointed at the same folder; browsers without the API show export/import only; browser test with a mocked directory handle.
 - [ ] **STORE.2c** Optional: the user's own S3-compatible bucket (R2, B2) with their own keys
+  - **Parked by ADR-012:** in the Mac app a synced folder does this job (DESK.3).
   - **Depends:** STORE.2a, AI.4 (shares the key storage and CSP work)
   - **Acceptance:** save and open through a real bucket the operator provides; keys never reach the Tandem server; CORS setup documented for users.
-- [ ] **AI.4** Bring your own AI key, called from the browser
-  - **Depends:** SEC.1
-  - Providers: OpenAI, Anthropic (with the `anthropic-dangerous-direct-browser-access` header), Gemini, OpenRouter, and a local Ollama that allows the app's origin (check whether the browser asks the user's permission for an HTTPS page to reach a local address, and document it). Port the `/api/chat` prompt, `extract_json`, `normalize_actions` and melody lock to a pure JS module, checked against the Python version on shared fixtures so the two cannot drift. Add a strict Content Security Policy (no inline script that is not hashed; `connect-src` limited to the app, the chosen provider and any backend URL or local Ollama address the user entered; check that inline styles and the `wasm-unsafe-eval` that VOX.4 needs are allowed) before any key is stored. The hosted `/api/chat` stays as an optional path.
-  - **Acceptance:** with a real key for at least one provider, an edit applies in a real browser and melody lock blocks a melody change; the key is never sent to the Tandem server (checked in a browser test); the JS validation passes the same fixtures as `normalize_actions`; `docs/SECURITY.md` records where the key is kept and the CSP.
 - [ ] **AI.5** Compare small models on the real chat prompt and choose the default
   - **Depends:** AI.4
   - Run the real `/api/chat` prompt over a fixed set of test projects and requests on 3-4 small models (Claude Haiku 5.5, a Gemini Flash, a GPT mini or nano, and a local Qwen through Ollama), scoring valid JSON, valid actions, melody-lock respect and whether the edit did what was asked, plus latency and cost. Running it spends money on real keys: ask the operator before each run.
   - **Acceptance:** results table and the chosen default recorded in `docs/DECISIONS.md` or `docs/TESTING.md`; the harness is in the repo and rerunnable.
 - [ ] **VOX.4** On-device pitch correction: WORLD compiled to WebAssembly
   - **Depends:** VOX.1
+  - **Parked by ADR-012:** the Mac app runs WORLD natively in its local backend. Take this up only for an offline web app.
   - Compile WORLD (C++) with Emscripten, self-hosted with hashes like Basic Pitch (SEC.3), and port `world_tuning.py` to a JS module so `tuning.js` can tune without `/api/tune`. With it the app can run as a static offline PWA; the server path stays for the hosted mode until this is proven.
   - **Acceptance:** the VOX.1 benchmark fixtures give results within documented tolerances of the server version; a long recording tunes in a real browser offline with no API call.
 
-### 7. Hand work on to other music tools
-Tandem is where an idea starts; people finish it in their own DAW or notation app. Interchange is through standard files, not plugins or third-party cloud accounts (ADR-011). Each export carries the tempo, key and part names where the format allows (a WAV stem cannot).
-- [ ] **EXP.1** Export stems and multi-track MIDI for any DAW
-  - **Depends:** STORE.2a (the recorded and tuned vocal must be kept to export it)
-  - One WAV per part (melody, harmony, drums, and the original, polished and tuned vocal when present), all the same length and starting at zero so they line up when dropped into a DAW, offered as one zip. A type-1 MIDI file with one named track per part (melody, harmony, drums on channel 10) plus tempo and key signature, alongside the existing single-track export or replacing it.
-  - **Acceptance:** the melody, harmony and drum stems line up sample-exactly with the mixed WAV (their sum matches it within rounding; vocal stems are not part of the mix); the MIDI parses with a standard parser into named tracks with the right tempo, key and notes; checked by importing into a real DAW, GarageBand first and then Logic (others such as Ableton Live, Reaper or BandLab later), and recorded as manual QA; Node unit tests and a browser test.
+### 9. Hand work on to other music tools
+Tandem is where an idea starts; people finish it in their own DAW or notation app. Interchange is through standard files, not plugins or third-party cloud accounts (ADR-011). EXP.1 (stems and multi-track MIDI) moved up to section 6 because it is cheap and GarageBand and Logic are where the operator finishes work. Each export carries the tempo, key and part names where the format allows (a WAV stem cannot).
 - [ ] **EXP.2** Export the melody (and harmony) as MusicXML for notation apps
   - Quantized to the project grid with the detected or chosen key, time signature 4/4, tempo, and a chord-symbol or second staff for the harmony. Notes are split into tied, notatable durations.
   - **Acceptance:** the file validates against the MusicXML 4.0 schema; a fixture melody round-trips (pitches and durations) through a MusicXML parser; opened in MuseScore and recorded as manual QA.
@@ -140,7 +191,7 @@ Tandem is where an idea starts; people finish it in their own DAW or notation ap
   - Only where the browser has Web MIDI (Chromium and Firefox on desktop, not Safari); hidden elsewhere. Input records notes into the melody as one undoable edit at the project tempo; output plays melody, harmony and drums to a chosen device and channel.
   - **Acceptance:** browser test with a mocked `MIDIAccess`; recording with a real keyboard and playing to a real synth recorded as manual QA.
 
-### 8. Later
+### 10. Later
 - [x] **ARR.1** Better arrangement: richer instruments, harmony, swing and phrase-aware editing
   - **Depends:** CI.2
   - Split into the parts below; ARR.1 is done when all four are.
@@ -158,6 +209,7 @@ Tandem is where an idea starts; people finish it in their own DAW or notation ap
   - Done: `phrases.js` splits the melody into phrases at rests of a beat or more at the project tempo. In the Melody track a chosen phrase moves a beat earlier or later, transposes by a semitone or an octave, or is copied to the end a whole number of bars later; each is one undoable edit, and out-of-range edits are refused. The harmony is left alone (generate it again). Covered by Node unit tests and a browser test. Not yet tried by users on real devices.
 - [ ] **GEN.1** Optional generative music provider adapter, with explicit provenance
   - **Depends:** AI.4, AI.2
+  - Since ADR-012, the local MusicGen-Melody band (GEN.2) comes first; a hosted provider is for users without a capable Mac, or for higher quality than the local model gives.
   - Uses the user's own key for the provider (candidates: Lyria, ElevenLabs Music, Stable Audio), called from the browser where the provider allows it; check each provider's output licensing before adding it.
 - [ ] **SPEECH.1** Conversational speech: spoken chat and audio intent alongside text
   - **Depends:** AI.2
@@ -178,4 +230,4 @@ Tandem is where an idea starts; people finish it in their own DAW or notation ap
 - Added simple detected vocal target note +/- controls; VOX.3 replaced them with a visual pitch-contour editor.
 
 ## Decisions still open
-Default model for conversation (AI.5) and provider choice for generation; license audits for distribution; audio quality targets and sample library; monetization/hosting tier; whether to add a native Mac companion/plugin host. The account model, cloud storage and offline strategy were decided in ADR-011 (local-first, no accounts, the user's own storage and keys).
+Default model for conversation (AI.5) and provider choice for generation; license audits for distribution; audio quality targets and sample library; monetization/hosting tier; whether Tandem will be distributed commercially, which decides the model weights it may ship (LIC.1). Decided in ADR-012: a native Mac app with its own local backend comes next, and a DAW plugin or a C++ audio engine such as Tracktion Engine is not planned. The account model, cloud storage and offline strategy were decided in ADR-011 (local-first, no accounts, the user's own storage and keys).

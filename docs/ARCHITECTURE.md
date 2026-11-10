@@ -25,7 +25,7 @@ flowchart TD
   UI --> Export[WAV + MIDI export]
 ```
 
-**Planned direction (ADR-011, not implemented).** Tandem is becoming local-first: projects, versions and recordings in IndexedDB/OPFS, the user's own synced folder or bucket for roaming, AI called from the browser with the user's own key (validation ported to JS), and WORLD tuning compiled to WebAssembly. The backend described here then becomes an optional hosted mode. See ROADMAP.md section 6.
+**Direction (ADR-011, ADR-012).** Tandem is local-first: the draft, versions and recordings are already kept on the device in IndexedDB/OPFS (STORE.2a, implemented). Planned, not implemented: a Mac app that runs this same backend on `127.0.0.1` in a native window (no hosted limits, projects as files, AI keys in the Keychain), then local AI audio models in that backend (Demucs, MusicGen-Melody, RAVE). The Vercel deployment stays as the hosted web mode. See ROADMAP.md sections 6-8.
 
 Vercel runs `api/index.py` which imports `tandem_backend.app`. FastAPI serves the UI, manifest, service worker, the browser modules (transcription, polish, tuning, history), and endpoints. No independent database or music-generation worker is deployed. `vercel.json` configures function duration.
 
