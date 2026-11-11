@@ -213,6 +213,7 @@ def wait_for_service_worker(page):
 
 
 FETCH_SIZES = "async files => Promise.all(files.map(async f => (await (await fetch(f)).arrayBuffer()).byteLength))"
+FETCH_SIZES_NO_STORE = "async files => Promise.all(files.map(async f => (await (await fetch(f, {cache: 'no-store'})).arrayBuffer()).byteLength))"
 
 
 def assert_server_down(server):
@@ -307,4 +308,6 @@ def test_vendor_files_are_cached_on_first_use_and_served_offline(phone_on_own_se
     assert page.evaluate(VENDOR_CACHED, files)
     server.stop()
     assert_server_down(server)
-    assert page.evaluate(FETCH_SIZES, files) == sizes
+    # no-store skips the browser's HTTP cache (the files are sent as immutable), so this reads the
+    # service worker's vendor cache, the copy that lasts.
+    assert page.evaluate(FETCH_SIZES_NO_STORE, files) == sizes
