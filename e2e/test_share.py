@@ -1,6 +1,7 @@
 """MOB.3: an idea is shared from the phone as one .tandem.zip file (the project plus its recording as
 WAV) and opens in the studio of another browser profile with its audio."""
 import base64
+import hashlib
 import io
 import json
 import wave
@@ -109,8 +110,9 @@ def test_share_an_idea_and_open_it_in_a_fresh_profile_with_its_audio(browser, br
         assert page.evaluate(OPFS_FILES) == [links["original"]["id"]]
         # The kept recording is the shared WAV, byte for byte.
         stored = page.evaluate("""async id => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('recordings');
-            return [...new Uint8Array(await (await (await d.getFileHandle(id)).getFile()).arrayBuffer())].length }""", links["original"]["id"])
-        assert stored == len(original)
+            const digest = await crypto.subtle.digest('SHA-256', await (await (await d.getFileHandle(id)).getFile()).arrayBuffer());
+            return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('') }""", links["original"]["id"])
+        assert stored == hashlib.sha256(original).hexdigest() == links["original"]["id"]
         # Kept across a reload in this profile.
         page.reload()
         page.wait_for_function("!document.body.inert")
@@ -237,3 +239,31 @@ def test_a_cancelled_share_says_so_and_a_refused_one_is_offered_again(browser, b
         expect(phone.locator("#status")).to_contain_text("Shared Idea · ")
         expect(share).to_have_text("Share")
         assert len(shares(phone)) == 1
+
+
+def test_a_recording_that_cannot_be_decoded_changes_nothing(studio):
+    page = studio
+    page.wait_for_function("!document.body.inert")
+    page.click("#demo")
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        z.writestr("project.json", json.dumps({"format": "tandem-project", "version": 1, "notes": [], "drums": []}))
+        z.writestr("original.wav", b"RIFF\x04\x00\x00\x00WAVEjunk")
+    open_bundle(page, "broken.tandem.zip", out.getvalue())
+    expect(page.locator("#status")).to_contain_text("Could not decode the recording in the file:")
+    assert count(page, "notecount") == 8
+    expect(page.locator("#versionlist")).to_have_text("No saved versions yet.")
+    expect(page.locator("#original")).to_be_disabled()
+
+
+def test_without_device_storage_opening_a_file_says_the_draft_was_not_kept(page, server_url):
+    problems = []
+    page.on("pageerror", lambda exc: problems.append(str(exc)))
+    page.add_init_script("StorageManager.prototype.getDirectory = () => Promise.reject(new DOMException('no', 'UnknownError'));")
+    page.goto(server_url + "/")
+    page.wait_for_function("!document.body.inert")
+    page.click("#demo")
+    open_bundle(page, "Night drive.tandem.zip", finished_project_bundle())
+    expect(page.locator("#status")).to_contain_text("Opened Night drive with its recordings. Your previous draft could not be saved as a version")
+    assert count(page, "notecount") == 3
+    assert not problems, problems

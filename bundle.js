@@ -80,7 +80,7 @@ export function zipFiles(files, { date = new Date() } = {}) {
 }
 
 // Inflate raw deflate data, stopping as soon as it grows past `limit` bytes.
-async function inflate(data, limit) {
+export async function inflateWithin(data, limit) {
   if (typeof DecompressionStream !== "function") throw Error("This browser cannot open compressed zip files; share the file from Tandem instead.");
   const reader = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
   const parts = [];
@@ -127,7 +127,7 @@ export async function unzipFiles(bytes, { maxBytes = MAX_BUNDLE_BYTES } = {}) {
     const raw = bytes.subarray(start, start + packed);
     let data;
     if (method === 0) data = raw.slice();
-    else if (method === 8) data = await inflate(raw, size);
+    else if (method === 8) data = await inflateWithin(raw, size);
     else throw Error("The file uses a zip compression Tandem cannot read.");
     if (data.length !== size || crc32(data) !== crc) throw Error("The file is damaged.");
     files.set(name, data);

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
-  crc32, zipFiles, unzipFiles, encodeWav, isWav, toWav, writeBundle, readBundle, isBundle,
+  crc32, zipFiles, unzipFiles, inflateWithin, encodeWav, isWav, toWav, writeBundle, readBundle, isBundle,
   bundleFileName, ideaProject, BUNDLE_FILES, MAX_BUNDLE_BYTES,
 } from "../bundle.js";
 
@@ -44,6 +44,14 @@ test("an entry larger than the limit is refused before it is inflated", async ()
   const zip = zipFiles([{ name: "big", data: new Uint8Array(1000) }]);
   await assert.rejects(unzipFiles(zip, { maxBytes: 999 }), /too large/);
   assert.ok(MAX_BUNDLE_BYTES >= 100 * 1024 * 1024);
+});
+
+test("inflating stops as soon as the data grows past the declared size", async () => {
+  const { deflateRawSync } = await import("node:zlib");
+  const packed = new Uint8Array(deflateRawSync(Buffer.alloc(1_000_000)));
+  assert.equal((await inflateWithin(packed, 1_000_000)).length, 1_000_000);
+  // A zip bomb declares a small size: reading stops at the limit, long before the whole stream is inflated.
+  await assert.rejects(inflateWithin(packed, 10), /damaged/);
 });
 
 test("encodes 16-bit mono PCM WAV", () => {

@@ -345,7 +345,8 @@ if(recordings){try{const missing=await restoreAudio(cleanLinks(await kv.get(DRAF
 // version with its recordings, so opening an idea never loses work; the idea then becomes a new draft with its recording.
 // Before an idea or a Tandem file replaces the recording, a draft with anything in it is saved as a version with its recordings.
 async function keepDraft(title){
-  if(!(audio||state.notes.length||state.drums.length||state.harmony.length)||!versions||!recordings)return '';
+  if(!(audio||state.notes.length||state.drums.length||state.harmony.length))return '';
+  if(!versions||!recordings)return ' Your previous draft could not be saved as a version: '+(recordingProblem||storageProblem||'storage is unavailable')+' Undo brings back its notes but not its recording.';
   const name=('Before '+title).slice(0,60),project=projectFromState(state),blobs=currentAudio();
   await recordings.hold(async()=>versions.save(name,project,await putAudio(blobs)));renderVersions();return ' Your previous draft was saved as the version "'+name+'".';
 }
@@ -356,6 +357,8 @@ async function openBundle(b,fileName){
   const wav=s=>b.recordings[s]&&new Blob([b.recordings[s]],{type:'audio/wav'});
   if(!b.recordings.original){openProject(b.project);return}
   const title=b.name||(b.savedAt!=null?ideaTitle({name:'',savedAt:b.savedAt},shortTime):fileName.replace(/(\.tandem)?\.zip$/i,''));
+  // Decode the recording before anything changes, so a file whose audio cannot be read leaves the draft as it was.
+  try{await decoded(wav('original'))}catch(e){throw Error('Could not decode the recording in the file: '+e.message)}
   const kept=await keepDraft(title);
   edit('Open '+title,()=>Object.assign(state,projectFields(b.project)));
   await useAudio({original:wav('original'),polished:wav('polished'),tuned:wav('tuned')},'from the file');await saveDraftAudio();
