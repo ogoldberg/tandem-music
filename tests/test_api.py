@@ -667,6 +667,14 @@ def test_bundle_module_is_served_and_precached(client):
     assert "from './bundle.js'" in run(client("GET","/capture")).text
     assert "./bundle.js" in run(client("GET","/sw.js")).text
 
+def test_daw_module_is_served_and_precached(client):
+    # EXP.1: the studio imports daw.js (stems and multi-track MIDI) at start-up, so it is precached for offline use.
+    js=run(client("GET","/daw.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function midiFile" in js.text and "export function stemsZip" in js.text
+    assert "from './daw.js'" in run(client("GET","/")).text
+    assert "'./daw.js'" in run(client("GET","/sw.js")).text
+
 def test_capture_manifest_starts_at_the_capture_page(client):
     r=run(client("GET","/capture.webmanifest"))
     assert r.status_code==200 and "manifest+json" in r.headers["content-type"]

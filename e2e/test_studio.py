@@ -4,7 +4,9 @@ import json
 import re
 import time
 import wave
+import zipfile
 
+import mido
 import numpy as np
 from playwright.sync_api import expect
 
@@ -84,12 +86,12 @@ def test_import_transcribe_edit_play_export_save_reload(studio, tmp_path):
     wav = download(page, "#exportwav", tmp_path).read_bytes()
     assert wav[:4] == b"RIFF" and wav[8:12] == b"WAVE"
     with wave.open(io.BytesIO(wav)) as w:
-        assert w.getframerate() == 22050 and w.getnframes() > 22050
+        assert w.getframerate() == 44100 and w.getnframes() > 44100
         samples = np.frombuffer(w.readframes(w.getnframes()), "<i2")
     assert np.abs(samples).max() > 1000, "exported arrangement is silent"
 
-    mid = download(page, "#exportmidi", tmp_path).read_bytes()
-    assert mid[:4] == b"MThd" and b"MTrk" in mid
+    mid = mido.MidiFile(file=io.BytesIO(download(page, "#exportmidi", tmp_path).read_bytes()))
+    assert mid.type == 1 and [t.name for t in mid.tracks] == ["Tandem", "Melody", "Drums"]
 
     saved_path = download(page, "#save", tmp_path)
     saved = json.loads(saved_path.read_text())
@@ -547,26 +549,21 @@ def draft(page):
     return page.evaluate(IDB_DRAFT)
 
 
-def midi_drum_ticks(data):
-    """Absolute ticks of the drum-channel note-ons in Tandem's single-track MIDI export."""
-    assert data[:4] == b"MThd" and data[14:18] == b"MTrk"
-    i, end, tick, out = 22, 22 + int.from_bytes(data[18:22], "big"), 0, []
-    while i < end:
-        delta = 0
-        while True:
-            b = data[i]; i += 1
-            delta = (delta << 7) | (b & 127)
-            if b < 128:
-                break
-        tick += delta
-        status = data[i]
-        if status == 255:
-            i += 3 + data[i + 2]
-        else:
-            if status == 153:
-                out.append(tick)
-            i += 3
+def midi_note_ons(data, channel):
+    """(absolute tick, pitch) of every note-on on a channel (0-based) of the exported MIDI file, read with mido."""
+    out = []
+    for track in mido.MidiFile(file=io.BytesIO(data)).tracks:
+        tick = 0
+        for msg in track:
+            tick += msg.time
+            if msg.type == "note_on" and msg.velocity > 0 and msg.channel == channel:
+                out.append((tick, msg.note))
     return out
+
+
+def midi_drum_ticks(data):
+    """Absolute ticks of the drum-channel (channel 10) note-ons."""
+    return [t for t, _ in midi_note_ons(data, 9)]
 
 
 def test_detect_tempo_and_quantize_with_swing_are_undoable(studio, tmp_path):
@@ -744,28 +741,6 @@ def test_opening_a_project_with_an_unknown_instrument_is_rejected(studio, tmp_pa
     expect(page.locator("#instrument")).to_have_value("piano")
 
 
-def midi_note_ons(data, status):
-    """(tick, pitch) of every note-on with the given status byte in Tandem's single-track MIDI export."""
-    assert data[:4] == b"MThd" and data[14:18] == b"MTrk"
-    i, end, tick, out = 22, 22 + int.from_bytes(data[18:22], "big"), 0, []
-    while i < end:
-        delta = 0
-        while True:
-            b = data[i]; i += 1
-            delta = (delta << 7) | (b & 127)
-            if b < 128:
-                break
-        tick += delta
-        s = data[i]
-        if s == 255:
-            i += 3 + data[i + 2]
-        else:
-            if s == status:
-                out.append((tick, data[i + 1]))
-            i += 3
-    return out
-
-
 def wav_samples(path):
     with wave.open(io.BytesIO(path.read_bytes())) as w:
         return np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float)
@@ -796,8 +771,8 @@ def test_generated_harmony_is_editable_undoable_exported_and_saved(studio, tmp_p
 
     # MIDI: harmony on channel 2, one chord per 4/4 bar (3840 ticks); the melody stays on channel 1.
     data = download(page, "#exportmidi", tmp_path).read_bytes()
-    assert sorted(midi_note_ons(data, 145)) == [(0, 52), (0, 55), (0, 60), (3840, 52), (3840, 55), (3840, 60)]
-    assert [p for _, p in midi_note_ons(data, 144)] == [60, 64, 67, 69, 67, 64, 62, 60]
+    assert sorted(midi_note_ons(data, 1)) == [(0, 52), (0, 55), (0, 60), (3840, 52), (3840, 55), (3840, 60)]
+    assert [p for _, p in midi_note_ons(data, 0)] == [60, 64, 67, 69, 67, 64, 62, 60]
     # WAV: the harmony is audible in the mix and the mix does not clip.
     with_harmony = wav_samples(download(page, "#exportwav", tmp_path))
     assert np.abs(with_harmony).max() < 32000
@@ -1239,3 +1214,86 @@ def test_without_opfs_recordings_work_but_are_not_kept(studio, tmp_path):
     expect(page.locator("#status")).to_contain_text("Recorded")
     expect(page.locator("#status")).to_contain_text(message)
     expect(page.locator("#original")).to_be_enabled()
+
+
+STEMS = ["mix.wav", "melody.wav", "harmony.wav", "drums.wav", "vocal-original.wav", "vocal-polished.wav"]
+
+
+def test_stems_line_up_with_the_mix_and_the_midi_has_a_track_per_part(studio, tmp_path):
+    """EXP.1: Export stems gives one WAV per part and recorded vocal, all 44.1 kHz from zero and the same
+    length, whose parts sum to the mixed WAV; the MIDI file has a named track per part, tempo and key."""
+    page = studio
+    page.click("#exportstems")
+    expect(page.locator("#status")).to_have_text("Stem export failed: Nothing to export yet: add notes or drums, or record a take.")
+
+    page.click("#demo")
+    page.click("#genharmony")
+    expect(page.locator("#status")).to_have_text("Generate chords in C major (detected): C C")
+    take = tone_wav(tmp_path / "take.wav")
+    import_recording(page, take)
+    page.click("#polish")
+    expect(page.locator("#status")).to_have_text("Vocal polished. Compare Original and Polished.")
+
+    path = download(page, "#exportstems", tmp_path)
+    assert path.name == "tandem-stems.zip"
+    expect(page.locator("#status")).to_have_text(
+        "Exported 5 stems (melody, harmony, drums, original vocal, polished vocal) and the MIDI file")
+    stems = {}
+    with zipfile.ZipFile(path) as z:
+        assert z.namelist() == STEMS + ["tandem.mid"]
+        for name in STEMS:
+            with wave.open(io.BytesIO(z.read(name))) as w:
+                assert (w.getnchannels(), w.getsampwidth(), w.getframerate()) == (1, 2, 44100), name
+                stems[name] = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float)
+        midi_in_zip = z.read("tandem.mid")
+    frames = {len(v) for v in stems.values()}
+    assert len(frames) == 1, "every stem is the same length"
+    n = frames.pop()
+    parts = stems["melody.wav"] + stems["harmony.wav"] + stems["drums.wav"]
+    for name in ["melody.wav", "harmony.wav", "drums.wav"]:
+        assert 1000 < np.abs(stems[name]).max() < 32000, name
+    # The parts add up to the mix within 16-bit rounding (one step per stem); vocals are not in the mix.
+    assert np.abs(stems["mix.wav"] - parts).max() <= 2
+    # Export WAV is that same mix: as long, and equal to within one 16-bit step (two renders of the same
+    # graph in Chromium differ by float noise at a handful of samples).
+    mix = wav_samples(download(page, "#exportwav", tmp_path))
+    assert len(mix) == n
+    assert np.abs(mix - stems["mix.wav"]).max() <= 1
+
+    # Everything starts at zero: the first note, kick and chord sound within the first 10 ms.
+    for name in ["melody.wav", "harmony.wav", "drums.wav"]:
+        assert np.argmax(np.abs(stems[name]) > 100) < 441, name
+    # The vocal is the take resampled from 48 kHz, from zero: tone, silence from 0.6 s to 0.75 s, tone.
+    vocal = stems["vocal-original.wav"]
+    with wave.open(str(take)) as w:
+        source = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float)
+    assert np.abs(vocal[int(2.26 * 44100):]).max() == 0, "silence after the take, to the common length"
+    assert np.abs(vocal[:441]).max() > 1000
+    assert np.abs(vocal[int(0.61 * 44100):int(0.74 * 44100)]).max() < 200
+    expected = np.interp(np.arange(int(2.25 * 44100)) / 44100, np.arange(len(source)) / 48000, source)
+    got = vocal[:len(expected)]
+    assert np.corrcoef(expected, got)[0, 1] > 0.99
+    assert np.abs(stems["vocal-polished.wav"]).max() > 1000
+
+    # MIDI, read with a standard parser: type 1, 960 ticks per beat, tempo, 4/4, key and a named track per part.
+    data = download(page, "#exportmidi", tmp_path).read_bytes()
+    assert data == midi_in_zip
+    mid = mido.MidiFile(file=io.BytesIO(data))
+    assert mid.type == 1 and mid.ticks_per_beat == 960
+    assert [t.name for t in mid.tracks] == ["Tandem", "Melody", "Harmony", "Drums"]
+    meta = {m.type: m for m in mid.tracks[0] if m.is_meta}
+    assert meta["set_tempo"].tempo == mido.bpm2tempo(100)
+    assert (meta["time_signature"].numerator, meta["time_signature"].denominator) == (4, 4)
+    assert meta["key_signature"].key == "C"
+    # 100 bpm: a 0.45 s step is 720 ticks, a 0.225 s drum step 360 ticks.
+    assert midi_note_ons(data, 0) == [(i * 720, m) for i, m in enumerate([60, 64, 67, 69, 67, 64, 62, 60])]
+    assert sorted(midi_note_ons(data, 1)) == [(0, 52), (0, 55), (0, 60), (3840, 52), (3840, 55), (3840, 60)]
+    assert midi_drum_ticks(data) == [i * 360 for i in range(16)]
+    programs = [[(m.channel, m.program) for m in t if m.type == "program_change"] for t in mid.tracks]
+    assert programs == [[], [(0, 12)], [(1, 0)], []], "marimba melody, piano harmony, General MIDI drums"
+    assert {m.channel for m in mid.tracks[3] if m.type == "note_on"} == {9}
+
+    # A key chosen for the harmony is the key written into the file.
+    page.select_option("#harmonykey", "9:minor")
+    minor = mido.MidiFile(file=io.BytesIO(download(page, "#exportmidi", tmp_path).read_bytes()))
+    assert [m.key for m in minor.tracks[0] if m.type == "key_signature"] == ["Am"]

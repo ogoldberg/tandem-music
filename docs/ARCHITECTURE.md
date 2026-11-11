@@ -29,7 +29,7 @@ flowchart TD
   API --> World[WORLD / PyWorld: vocal tuning]
   API -->|when credentials configured| LLM[OpenAI-compatible / Anthropic / Gemini]
   UI --> Local[Local project JSON files]
-  UI --> Export[WAV + MIDI export]
+  UI --> Export[daw.js: WAV, stems zip, multi-track MIDI]
 ```
 
 **Direction (ADR-011, ADR-012).** Tandem is local-first: the draft, versions and recordings are already kept on the device in IndexedDB/OPFS (STORE.2a, implemented). Implemented from source, needs the operator's QA: a Mac app that runs this same backend on `127.0.0.1` in a native window (DESK.1, see below). Planned: no hosted limits, projects as files and AI keys in the Keychain in that app (DESK.2-DESK.3, AI.4), then local AI audio models in that backend (Demucs, MusicGen-Melody, RAVE). The Vercel deployment stays as the hosted web mode. See ROADMAP.md sections 6-8.
@@ -131,10 +131,10 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - Swing is baked into the note times, not stored as a playback setting, so exports and other apps hear the same feel. The settings (grid, swing, strength) are UI state, not part of the project or history. Quantize is a user edit, so melody lock (which guards AI edits) does not block it.
 
 ## Instrument voices (ARR.1b)
-`voices.js` is pure (imported by `index.html` and the Node tests) and holds the melody instruments: piano, marimba, strings, bass, 8-bit (`chip`), organ, guitar and flute. Each voice is a few oscillator layers (wave type, frequency ratio, detune and weight), an amplitude envelope (attack, decay, sustain, release), an optional low-pass filter whose cutoff sweeps with the note (a ratio of the note frequency) and optional delayed vibrato on the layers' detune. `planNote` turns a note into plain numbers and `playNote` builds the Web Audio graph from them, the same way for live playback and the 22,050 Hz WAV export, so both sound alike.
+`voices.js` is pure (imported by `index.html` and the Node tests) and holds the melody instruments: piano, marimba, strings, bass, 8-bit (`chip`), organ, guitar and flute. Each voice is a few oscillator layers (wave type, frequency ratio, detune and weight), an amplitude envelope (attack, decay, sustain, release), an optional low-pass filter whose cutoff sweeps with the note (a ratio of the note frequency) and optional delayed vibrato on the layers' detune. `planNote` turns a note into plain numbers and `playNote` builds the Web Audio graph from them, the same way for live playback and the 44.1 kHz WAV and stems export (22,050 Hz before EXP.1), so both sound alike.
 - Layer weights are normalised to the voice's peak gain (0.10-0.16, like the old single oscillators) so a voice change does not change loudness much and exports do not clip.
 - A note shorter than the attack or decay releases from the level it had reached. Voices that decay to silence (marimba, guitar) end shortly after they fade instead of holding a silent release.
-- Partials at or above 95% of Nyquist are dropped and filter cutoffs are clamped below it, so high notes do not alias in the lower-rate export. Notes from MIDI 124 up (above about 10.5 kHz) have no layer left at 22,050 Hz, so they play live but are silent in the WAV; the note editor and AI edits stay within 36-96.
+- Partials at or above 95% of Nyquist are dropped and filter cutoffs are clamped below it, so high notes do not alias in the export. At the 44.1 kHz export rate (EXP.1) every MIDI note keeps at least its fundamental; the note editor and AI edits stay within 36-96.
 - `INSTRUMENTS` in `voices.js` is the instrument list. The Instrument menu is built from it, opening a project file or restoring a version with any other instrument is rejected (a browser draft with one keeps its notes and says to choose an instrument), and `tandem_backend.py` keeps the same tuple for `ChatProject`, `normalize_actions` and the system prompt. A Node test fails if the two lists differ.
 - The oscillator voices are now the fallback. When the samples for a part are available, `samples.js` plays recorded General MIDI samples instead (SND.1; see AUDIO.md). Whether either sounds good is a listening judgement that has not been made on real devices (see TESTING.md).
 
@@ -185,6 +185,7 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | storage.js | IndexedDB key-value store, migration from localStorage, persistent-storage status (STORE.2a) |
 | recordings.js | Recordings in OPFS named by SHA-256, links, garbage collection under Web Locks (STORE.2a) |
 | ideas.js | Song ideas captured on the phone: list, rename, delete, recording links (MOB.1; pure over the storage.js key-value store) |
+| daw.js | Hand-off to any DAW (EXP.1; pure): the type-1 MIDI file (tempo, 4/4, key, a named track per part with its General MIDI program) and the stems zip (a WAV per part and recorded vocal, same length from zero, their mix, the MIDI) |
 | bundle.js | Tandem files: an idea or project as one `.tandem.zip` (project.json plus WAV recordings, the DESK.3 folder), zip writer and reader (MOB.3; pure) |
 | capture.html | Phone capture page at `/capture`, with its own `capture.webmanifest` (MOB.1, ADR-013) |
 | icons/ | App icons: SVG sources and the PNGs `tools/icons/build.py` renders from them, served by an allowlisted `/icons/` route (MOB.2) |
