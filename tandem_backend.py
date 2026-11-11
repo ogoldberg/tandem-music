@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response, FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from request_guards import RequestGuardMiddleware, AUDIO_BODY_MAX_BYTES
+from request_guards import RequestGuardMiddleware, AUDIO_BODY_MAX_BYTES, LOCAL_AUDIO_BODY_MAX_BYTES, is_local
 
 app = FastAPI(title="Tandem API", version="0.2.0")
 
@@ -159,11 +159,18 @@ async def authenticate(req: Request, call_next):
         if secret and req.headers.get("x-tandem-token") != secret:
             return Response('{"detail":"Invalid Tandem access token"}',status_code=401,media_type="application/json")
     return await call_next(req)
+# Per-request audio limits. The hosted limits keep each request inside Vercel's time and body
+# limits (the browser splits longer takes into chunks); requests from the Mac app's own window
+# (DESK.2, checked by tandem_desktop.guarded_app) tune and analyse up to 10 minutes at once.
+HOSTED_LIMITS={"analyze_seconds":90,"tune_seconds":25,"tune_notes":128,"audio_bytes":AUDIO_BODY_MAX_BYTES}
+LOCAL_LIMITS={"analyze_seconds":600,"tune_seconds":600,"tune_notes":4096,"audio_bytes":LOCAL_AUDIO_BODY_MAX_BYTES}
+def limits_for(request: Request):
+    return LOCAL_LIMITS if is_local(request.scope) else HOSTED_LIMITS
 @app.get("/api/health")
 def health(): return {"ok":True,"version":"0.2.0"}
 @app.get("/api/config")
-def config():
-    return {"runtime":"desktop" if os.getenv("TANDEM_RUNTIME")=="desktop" else "web","provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"ai_ready":bool(os.getenv("TANDEM_MODEL")),"requires_token":bool(os.getenv("TANDEM_ACCESS_TOKEN")),"capabilities":{"conversation":{"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"enabled":bool(os.getenv("TANDEM_MODEL"))},"melody_transcription":{"provider":"browser-basic-pitch","model":"spotify/basic-pitch-1.0.1","enabled":True},"rhythm_transcription":{"provider":"local-dsp","model":"onset-detector-v1","enabled":True},"vocal_polish":{"provider":"browser-dsp","model":"filter-gate-compressor-v1","enabled":True},"vocal_pitch_correction":{"provider":"open-source-world","model":"pyworld-prebuilt-0.3.6","enabled":True},"music_generation":{"provider":os.getenv("TANDEM_MUSIC_PROVIDER","none"),"model":os.getenv("TANDEM_MUSIC_MODEL",""),"enabled":False}}}
+def config(request: Request):
+    return {"runtime":"desktop" if os.getenv("TANDEM_RUNTIME")=="desktop" else "web","limits":{k:v for k,v in limits_for(request).items() if k!="audio_bytes"},"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"ai_ready":bool(os.getenv("TANDEM_MODEL")),"requires_token":bool(os.getenv("TANDEM_ACCESS_TOKEN")),"capabilities":{"conversation":{"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"enabled":bool(os.getenv("TANDEM_MODEL"))},"melody_transcription":{"provider":"browser-basic-pitch","model":"spotify/basic-pitch-1.0.1","enabled":True},"rhythm_transcription":{"provider":"local-dsp","model":"onset-detector-v1","enabled":True},"vocal_polish":{"provider":"browser-dsp","model":"filter-gate-compressor-v1","enabled":True},"vocal_pitch_correction":{"provider":"open-source-world","model":"pyworld-prebuilt-0.3.6","enabled":True},"music_generation":{"provider":os.getenv("TANDEM_MUSIC_PROVIDER","none"),"model":os.getenv("TANDEM_MUSIC_MODEL",""),"enabled":False}}}
 
 # Melody instruments the browser can play; must match INSTRUMENTS in voices.js (checked by tests/voices.test.mjs).
 INSTRUMENTS = ("piano", "marimba", "strings", "bass", "chip", "organ", "guitar", "flute")
@@ -274,17 +281,17 @@ async def chat(req: ChatRequest):
         actions=[a for a in actions if not (a["type"] in protected and (a["type"]!="remove_track" or a.get("track")=="melody"))]
     return {"reply":str(obj.get("reply","I updated your arrangement."))[:1200],"actions":actions}
 
-async def read_upload(file):
-    data=await file.read(AUDIO_BODY_MAX_BYTES)
-    if len(data)>=AUDIO_BODY_MAX_BYTES:raise HTTPException(413,"Audio too large")
+async def read_upload(file,max_bytes=AUDIO_BODY_MAX_BYTES):
+    data=await file.read(max_bytes)
+    if len(data)>=max_bytes:raise HTTPException(413,"Audio too large")
     if not data:raise HTTPException(400,"Empty audio upload")
     return data
-def decode_wav(data):
+def decode_wav(data,max_seconds=90):
     try:
         with wave.open(io.BytesIO(data),"rb") as w:
             rate=w.getframerate(); ch=w.getnchannels(); frames=w.getnframes(); width=w.getsampwidth()
-            if rate<8000 or rate>96000 or ch<1 or ch>2 or width!=2 or frames<=0 or frames/rate>90:
-                raise HTTPException(400,"Upload 16-bit PCM WAV, mono or stereo, 8-96 kHz, up to 90 seconds")
+            if rate<8000 or rate>96000 or ch<1 or ch>2 or width!=2 or frames<=0 or frames/rate>max_seconds:
+                raise HTTPException(400,f"Upload 16-bit PCM WAV, mono or stereo, 8-96 kHz, up to {max_seconds} seconds")
             raw=w.readframes(frames)
             raw=raw[:len(raw)-len(raw)%(width*ch)]  # drop a truncated trailing frame
             if not raw: raise HTTPException(400,"Invalid WAV: no audio frames")
@@ -343,13 +350,14 @@ def analyze_drums(x,sr):
         hits.append({"t":round(p*hop/sr,3),"k":"kick" if centroid<700 else "snare" if centroid<2300 else "hat"})
     return hits
 @app.post("/api/analyze")
-async def analyze(file:UploadFile=File(...),mode:str="melody"):
+async def analyze(request:Request,file:UploadFile=File(...),mode:str="melody"):
     if mode not in ("melody","rhythm"):
         raise HTTPException(400,"Choose analysis mode melody or rhythm")
-    x,sr=decode_wav(await read_upload(file))
+    limits=limits_for(request)
+    x,sr=decode_wav(await read_upload(file,limits["audio_bytes"]),limits["analyze_seconds"])
     return {"duration":round(len(x)/sr,2),"notes":analyze_melody(x,sr) if mode=="melody" else [],"drums":analyze_drums(x,sr) if mode=="rhythm" else []}
 @app.post("/api/tune")
-async def tune(file:UploadFile=File(...),strength:float=.85,engine:str="world",
+async def tune(request:Request,file:UploadFile=File(...),strength:float=.85,engine:str="world",
                notes_json:str=Form(default=""),vibrato:float=0.,scale:str|None=None):
     if not (0<=strength<=1):
         raise HTTPException(400,"Strength must be between 0 and 1")
@@ -366,19 +374,20 @@ async def tune(file:UploadFile=File(...),strength:float=.85,engine:str="world",
             raise HTTPException(400,"Scale must list MIDI pitch classes 0..11")
     if engine!="world":
         raise HTTPException(400,"Only the open-source WORLD tuning engine is supported")
-    x,sr=decode_wav(await read_upload(file))
-    if len(x)/sr>25:
-        raise HTTPException(400,"Use a solo vocal recording 25 seconds or shorter")
+    limits=limits_for(request); max_seconds=limits["tune_seconds"]
+    x,sr=decode_wav(await read_upload(file,limits["audio_bytes"]),max(max_seconds,limits["analyze_seconds"]))
+    if len(x)/sr>max_seconds:
+        raise HTTPException(400,f"Use a solo vocal recording {max_seconds} seconds or shorter")
     notes=None
     if notes_json:
         try:
             parsed=json.loads(notes_json)
-            if not isinstance(parsed,list) or len(parsed)>128:
+            if not isinstance(parsed,list) or len(parsed)>limits["tune_notes"]:
                 raise ValueError("Invalid note list")
             notes=[]
             for n in parsed:
                 midi=int(n["m"]); t=float(n["t"]); d=float(n["d"])
-                if not (36<=midi<=96 and 0<=t<=25 and .05<=d<=25):
+                if not (36<=midi<=96 and 0<=t<=max_seconds and .05<=d<=max_seconds):
                     raise ValueError("Invalid note")
                 notes.append({"m":midi,"t":t,"d":d})
         except (ValueError,TypeError,KeyError) as exc:

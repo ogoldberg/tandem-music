@@ -60,7 +60,7 @@ def _target_notes(f0, times, notes, strength, vibrato=0.):
     if not 0<=vibrato<=1:raise ValueError("Vibrato must be between 0 and 1")
     out=f0.copy()
     changed=0
-    for n in notes[:128]:
+    for n in notes:
         start=float(n["t"]); end=start+float(n["d"]); midi=int(n["m"])
         if midi<36 or midi>96 or start<0 or end<=start:continue
         voiced=(times>=start)&(times<end)&(f0>65)&(f0<1100)&np.isfinite(f0)

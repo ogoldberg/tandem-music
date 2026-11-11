@@ -32,6 +32,16 @@ def test_note_editor_targets_override_nearest_semitone():
     assert result[:3]==pytest.approx([440*2**(3/12)]*3,rel=1e-9)
     assert result[-1]==0.
 
+def test_every_target_is_applied_not_only_the_first_128():
+    # DESK.2: the Mac app sends up to 4096 targets in one request; the route checks the count.
+    times=np.arange(2000)*.01
+    f0=np.full(2000,435.)
+    notes=[{"m":69,"t":round(i*.1,2),"d":.1} for i in range(200)]
+    notes[150]["m"]=72
+    out,_=_target_notes(f0,times,notes,1.0)
+    late=(times>=15.)&(times<15.1)
+    assert out[late]==pytest.approx([440*2**(3/12)]*int(late.sum()),rel=1e-9)
+
 def _cents(f0,midi):
     return 1200*np.log2(np.asarray(f0)/(440*2**((midi-69)/12)))
 

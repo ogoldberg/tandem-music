@@ -7,9 +7,18 @@ pywebview so it can be tested on any platform.
 The port is chosen on the first launch and kept: the page's draft, versions and recordings live
 in the web view's storage for the origin http://127.0.0.1:<port>, so a different port would be a
 different origin and would hide them.
+
+DESK.2: every launch makes a new secret. The launcher puts it in its own window's page (see
+__main__.py), the page sends it in the x-tandem-launch header on every /api/ request, and the
+server refuses /api/ requests without it and any request from another origin. Requests that pass
+are marked local (scope["tandem_local"]), and only those get the lifted limits: no rate limits and
+long recordings tuned and analysed in one request. The secret keeps out web pages in the user's
+browser; other programs running as the same user can read it and are outside this threat model.
 """
+import hmac
 import json
 import os
+import secrets
 import socket
 import threading
 import time
@@ -98,30 +107,78 @@ def bind(port):
     return sock
 
 
-def guarded_app(port, inner=None):
-    """Wrap the ASGI app so it answers only requests whose Host is exactly 127.0.0.1:<port>.
+LAUNCH_HEADER = "x-tandem-launch"
 
-    A web page in an ordinary browser can reach a loopback port; this check stops DNS-rebinding
-    pages (whose requests carry their own host name) from reading or driving the local server.
+
+def new_launch_secret():
+    """A fresh secret for one launch: 256 random bits, URL-safe so it fits in a header."""
+    return secrets.token_urlsafe(32)
+
+
+def _is_api(path):
+    # Starlette matches routes exactly and case-sensitively, so every API route is under /api/.
+    return path == "/api" or path.startswith("/api/")
+
+
+def guarded_app(port, secret, inner=None):
+    """Wrap the ASGI app for the Mac app's local server.
+
+    - Host must be exactly 127.0.0.1:<port> (421 otherwise). A web page in an ordinary browser can
+      reach a loopback port; this stops DNS-rebinding pages, whose requests carry their own host.
+    - An Origin header, when sent, must be the app's own origin http://127.0.0.1:<port> (403
+      otherwise), so no other origin gets CORS approval or reaches a route, even with a simple
+      request that needs no preflight.
+    - /api/ requests must carry the launch secret in the x-tandem-launch header, compared in
+      constant time (403 otherwise). It is read from that header only, never from a query
+      string or a cookie.
+    Requests that pass are marked scope["tandem_local"] = True, which lifts the hosted limits.
     """
+    if not isinstance(secret, str) or len(secret) < 32:
+        raise ValueError("guarded_app needs the launch secret from new_launch_secret()")
     if inner is None:
         from tandem_backend import app as inner
-    expected = f"127.0.0.1:{port}".encode()
+    expected_host = f"127.0.0.1:{port}".encode()
+    own_origin = f"http://127.0.0.1:{port}".encode()
+    secret_bytes = secret.encode()
+    header = LAUNCH_HEADER.encode()
+
+    async def refuse(scope, send, status, text):
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        await send({"type": "http.response.start", "status": status,
+                    "headers": [(b"content-type", b"text/plain; charset=utf-8")]})
+        await send({"type": "http.response.body", "body": text})
 
     async def app(scope, receive, send):
-        if scope["type"] in ("http", "websocket"):
-            hosts = [v for k, v in scope.get("headers", []) if k == b"host"]
-            if hosts != [expected]:
-                if scope["type"] == "websocket":
-                    await send({"type": "websocket.close", "code": 1008})
-                    return
-                await send({"type": "http.response.start", "status": 421,
-                            "headers": [(b"content-type", b"text/plain; charset=utf-8")]})
-                await send({"type": "http.response.body", "body": b"Unknown host"})
+        if scope["type"] not in ("http", "websocket"):
+            await inner(scope, receive, send)
+            return
+        headers = scope.get("headers", [])
+        if [v for k, v in headers if k == b"host"] != [expected_host]:
+            await refuse(scope, send, 421, b"Unknown host")
+            return
+        origins = [v for k, v in headers if k == b"origin"]
+        if origins and origins != [own_origin]:
+            await refuse(scope, send, 403, b"Requests from other origins are refused")
+            return
+        if _is_api(scope.get("path", "")):
+            given = [v for k, v in headers if k == header]
+            if len(given) != 1 or not hmac.compare_digest(given[0], secret_bytes):
+                await refuse(scope, send, 403, b"This server answers only the Tandem app's own window")
                 return
-        await inner(scope, receive, send)
+        await inner({**scope, "tandem_local": True}, receive, send)
 
     return app
+
+
+def launch_script(port, secret):
+    """JavaScript the launcher adds to its window at document start: it gives the page the launch
+    secret, but only when the page is the app's own origin, so a page the window might navigate
+    to elsewhere never sees it."""
+    origin = f"http://127.0.0.1:{port}"
+    return ("if(location.origin===" + json.dumps(origin) + ")Object.defineProperty(window,'tandemLaunch',"
+            "{value:Object.freeze({header:" + json.dumps(LAUNCH_HEADER) + ",secret:" + json.dumps(secret) + "})});")
 
 
 def allow_media(scheme, host, port, kind, own_port):
@@ -130,11 +187,12 @@ def allow_media(scheme, host, port, kind, own_port):
     return kind == MEDIA_MICROPHONE and scheme == "http" and host == "127.0.0.1" and port == own_port
 
 
-def start_server(port, timeout=30):
+def start_server(port, secret, timeout=30):
     """Start the studio on 127.0.0.1:<port> in a background thread; returns (server, thread)."""
     import uvicorn
+    app = guarded_app(port, secret)
     sock = bind(port)
-    server = uvicorn.Server(uvicorn.Config(guarded_app(port), log_level="warning"))
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
     server._tandem_previous_runtime = os.environ.get("TANDEM_RUNTIME")
     os.environ["TANDEM_RUNTIME"] = "desktop"
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, name="tandem-server", daemon=True)
