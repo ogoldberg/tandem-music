@@ -2,6 +2,7 @@
 WKWebView). The page gets the per-launch secret from desk.launch_script, the same script the
 launcher adds to its window at document start."""
 import io
+import json
 import os
 import re
 import socket
@@ -13,6 +14,24 @@ import pytest
 from playwright.sync_api import expect
 
 import tandem_desktop as desk
+from tandem_desktop.projects import ProjectFolders
+
+
+class Dialogs:
+    """Stands in for the window's native save and folder dialogs (DESK.3): answers what the test sets."""
+    save = folder = None
+
+    def choose_save(self, directory, name):
+        return self.save
+
+    def choose_folder(self, directory):
+        return self.folder
+
+
+def free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 @pytest.fixture
@@ -22,13 +41,12 @@ def desktop(monkeypatch):
             monkeypatch.delenv(key)
     # A hosted limit this low would stop the second request; the app's own window has none.
     monkeypatch.setenv("TANDEM_AUDIO_RATE_LIMIT", "1")
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
+    port = free_port()
     secret = desk.new_launch_secret()
-    server, thread = desk.start_server(port, secret)
+    dialogs = Dialogs()
+    server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(dialogs))
     try:
-        yield {"url": f"http://127.0.0.1:{port}", "port": port, "secret": secret}
+        yield {"url": f"http://127.0.0.1:{port}", "port": port, "secret": secret, "dialogs": dialogs}
     finally:
         desk.stop_server(server, thread)
 
@@ -99,3 +117,71 @@ def test_a_long_take_is_tuned_in_one_request_in_the_mac_app(page, desktop, tmp_p
     with wave.open(str(info.value.path())) as w:
         assert w.getnframes() == 70 * w.getframerate()  # the whole take, decoded at the device rate
     assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+
+
+def test_a_project_saved_to_a_folder_opens_with_its_audio_after_a_relaunch(page, desktop, browser, tmp_path):
+    """DESK.3: Save to folder writes project.json and the recording as WAV into the folder the save
+    dialog answers; after a relaunch (a new server and secret) in a browser profile with none of the
+    old storage, as on a second Mac reading a synced folder, Open folder brings back the notes'
+    tempo and the recording."""
+    problems = open_app(page, desktop)
+    expect(page.locator("#savefolder")).to_be_visible()
+    take = held_tones_wav(tmp_path / "take.wav", 3)
+    page.set_input_files("#audiofile", str(take))
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Recorded 3\.0s\."))
+    page.fill("#bpm", "84")
+    page.dispatch_event("#bpm", "change")
+    folder = tmp_path / "synced" / "Chorus idea"
+    folder.parent.mkdir()
+    desktop["dialogs"].save = str(folder)
+    page.click("#savefolder")
+    expect(page.locator("#status")).to_have_text(f"Saved the project folder {folder}.")
+    assert sorted(p.name for p in folder.iterdir()) == ["original.wav", "project.json", "tandem.json"]
+    assert (folder / "original.wav").read_bytes() == take.read_bytes()  # a WAV take is kept exactly
+    assert json.loads((folder / "project.json").read_text())["bpm"] == 84
+    assert json.loads((folder / "tandem.json").read_text())["name"] == "Chorus idea"
+    assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+
+    port, secret, dialogs = free_port(), desk.new_launch_secret(), Dialogs()
+    server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(dialogs))
+    context = browser.new_context()
+    try:
+        again = context.new_page()
+        problems = open_app(again, {"url": f"http://127.0.0.1:{port}", "port": port, "secret": secret})
+        expect(again.locator("#original")).to_be_disabled()
+        dialogs.folder = str(folder)
+        again.click("#openfolder")
+        expect(again.locator("#status")).to_have_text(re.compile(r"^Opened Chorus idea with its recording\."))
+        expect(again.locator("#original")).to_be_enabled()
+        expect(again.locator("#bpm")).to_have_value("84")
+        # Saving again suggests the folder it came from and writes the same files.
+        dialogs.save = str(folder)
+        again.click("#savefolder")
+        expect(again.locator("#status")).to_have_text(f"Saved the project folder {folder}.")
+        assert (folder / "original.wav").read_bytes() == take.read_bytes()
+        assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+    finally:
+        context.close()
+        desk.stop_server(server, thread)
+
+
+def test_a_cancelled_dialog_changes_nothing_and_a_wrong_folder_is_explained(page, desktop, tmp_path):
+    problems = open_app(page, desktop)
+    page.click("#savefolder")
+    expect(page.locator("#status")).to_have_text("Not saved.")
+    page.click("#openfolder")
+    expect(page.locator("#status")).to_have_text("Nothing opened.")
+    desktop["dialogs"].folder = str(tmp_path)
+    page.click("#openfolder")
+    expect(page.locator("#status")).to_contain_text("has no project.json, so it is not a Tandem project folder")
+    assert list(tmp_path.iterdir()) == []
+    # Chromium logs the route's 400 answer as a console error; the page itself reported nothing.
+    expected = "console.error: Failed to load resource: the server responded with a status of 400 (Bad Request)"
+    assert problems == [expected], "Browser reported errors:\n" + "\n".join(problems)
+
+
+def test_the_folder_buttons_are_only_in_the_mac_app(page, server_url):
+    page.goto(server_url + "/")
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    expect(page.locator("#savefolder")).to_be_hidden()
+    expect(page.locator("#openfolder")).to_be_hidden()
