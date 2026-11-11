@@ -6,6 +6,7 @@ storage for the app's origin keeps the draft, versions and recordings between la
 import sys
 
 import tandem_desktop as desk
+from tandem_desktop.projects import ProjectFolders, WindowDialogs
 
 MEDIA_SELECTOR = b"webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:"
 
@@ -48,7 +49,9 @@ def main():
     try:
         port = desk.load_port()
         secret = desk.new_launch_secret()
-        server, thread = desk.start_server(port, secret)
+        # DESK.3: Save to folder and Open folder use this window's native dialogs.
+        dialogs = WindowDialogs(save_kind=webview.FileDialog.SAVE, folder_kind=webview.FileDialog.FOLDER)
+        server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(dialogs))
     except desk.DesktopError as exc:
         print(f"Tandem could not start: {exc}", file=sys.stderr)
         return 1
@@ -56,6 +59,7 @@ def main():
         install_microphone_rule(port)
         webview.settings["ALLOW_DOWNLOADS"] = True
         window = webview.create_window("Tandem", f"http://127.0.0.1:{port}/", width=1280, height=860, min_size=(720, 560))
+        dialogs.window = window
         if sys.platform == "darwin":
             window.events.before_show += lambda window: install_launch_secret(window, port, secret)
         webview.start(private_mode=False)

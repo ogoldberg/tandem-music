@@ -120,7 +120,7 @@ def _is_api(path):
     return path == "/api" or path.startswith("/api/")
 
 
-def guarded_app(port, secret, inner=None):
+def guarded_app(port, secret, inner=None, desktop_api=None):
     """Wrap the ASGI app for the Mac app's local server.
 
     - Host must be exactly 127.0.0.1:<port> (421 otherwise). A web page in an ordinary browser can
@@ -132,6 +132,8 @@ def guarded_app(port, secret, inner=None):
       constant time (403 otherwise). It is read from that header only, never from a query
       string or a cookie.
     Requests that pass are marked scope["tandem_local"] = True, which lifts the hosted limits.
+    /api/desktop/ requests that pass go to `desktop_api` (DESK.3's project folders, projects.py)
+    and never reach the hosted app; without it they are answered 404.
     """
     if not isinstance(secret, str) or len(secret) < 32:
         raise ValueError("guarded_app needs the launch secret from new_launch_secret()")
@@ -167,6 +169,12 @@ def guarded_app(port, secret, inner=None):
             if len(given) != 1 or not hmac.compare_digest(given[0], secret_bytes):
                 await refuse(scope, send, 403, b"This server answers only the Tandem app's own window")
                 return
+        if scope.get("path", "").startswith("/api/desktop/"):
+            if desktop_api is None:
+                await refuse(scope, send, 404, b"Not found")
+                return
+            await desktop_api({**scope, "tandem_local": True}, receive, send)
+            return
         await inner({**scope, "tandem_local": True}, receive, send)
 
     return app
@@ -187,10 +195,10 @@ def allow_media(scheme, host, port, kind, own_port):
     return kind == MEDIA_MICROPHONE and scheme == "http" and host == "127.0.0.1" and port == own_port
 
 
-def start_server(port, secret, timeout=30):
+def start_server(port, secret, desktop_api=None, timeout=30):
     """Start the studio on 127.0.0.1:<port> in a background thread; returns (server, thread)."""
     import uvicorn
-    app = guarded_app(port, secret)
+    app = guarded_app(port, secret, desktop_api=desktop_api)
     sock = bind(port)
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
     server._tandem_previous_runtime = os.environ.get("TANDEM_RUNTIME")
