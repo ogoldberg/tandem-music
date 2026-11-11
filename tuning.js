@@ -1,7 +1,8 @@
 // Chunked pitch correction (PERF.2). The server's /api/tune accepts one short clip per request
 // (25 s cap, Vercel's 4.5 MB body limit), so long recordings are split into overlapping chunks,
 // each tuned by the server, and stitched back with linear crossfades. Pure functions: the network
-// call is injected, so tests run without a server.
+// call is injected, so tests run without a server. The Mac app's own server (DESK.2) takes up to
+// 10 minutes per request; the page passes its limits from /api/config as chunkSeconds/maxNotes.
 
 export const CHUNK_SECONDS = 16;
 export const OVERLAP_SECONDS = 1;
@@ -22,15 +23,15 @@ export function planChunks(total, sampleRate, chunkSeconds = CHUNK_SECONDS, over
 
 // Note targets for one chunk, in the chunk's own time base: keep notes that overlap
 // [startSec, endSec), clip them to the chunk and shift them to start at 0.
-export function notesForChunk(notes, startSec, endSec) {
+export function notesForChunk(notes, startSec, endSec, maxNotes = MAX_NOTES_PER_REQUEST) {
   const out = [];
   for (const n of notes || []) {
     const t0 = Math.max(n.t, startSec), t1 = Math.min(n.t + n.d, endSec);
     if (t1 - t0 < MIN_NOTE_SECONDS) continue;
     out.push({ m: n.m, t: round3(t0 - startSec), d: round3(t1 - t0) });
   }
-  if (out.length > MAX_NOTES_PER_REQUEST)
-    throw Error(`Too many note targets (${out.length}) in one ${Math.round(endSec - startSec)} s section; the limit is ${MAX_NOTES_PER_REQUEST}`);
+  if (out.length > maxNotes)
+    throw Error(`Too many note targets (${out.length}) in one ${Math.round(endSec - startSec)} s section; the limit is ${maxNotes}`);
   return out;
 }
 
@@ -126,12 +127,12 @@ export function decodeWav16(arrayBuffer) {
 // With note targets set, a chunk that has none keeps its original audio: the server snaps
 // every voiced frame of a request without targets, but leaves audio outside the targets of a
 // request that has them alone, so sending it would tune one take two different ways.
-export async function tuneInChunks(samples, sampleRate, { strength, notes, send, sleep = ms => new Promise(r => setTimeout(r, ms)), onProgress = () => {}, maxRetries = 4 }) {
-  const plan = planChunks(samples.length, sampleRate), outputs = [];
+export async function tuneInChunks(samples, sampleRate, { strength, notes, send, sleep = ms => new Promise(r => setTimeout(r, ms)), onProgress = () => {}, maxRetries = 4, chunkSeconds = CHUNK_SECONDS, maxNotes = MAX_NOTES_PER_REQUEST }) {
+  const plan = planChunks(samples.length, sampleRate, chunkSeconds), outputs = [];
   let corrected = 0;
   for (let k = 0; k < plan.length; k++) {
     const { start, end } = plan[k];
-    const chunkNotes = notes?.length ? notesForChunk(notes, start / sampleRate, end / sampleRate) : null;
+    const chunkNotes = notes?.length ? notesForChunk(notes, start / sampleRate, end / sampleRate, maxNotes) : null;
     if (chunkNotes && !chunkNotes.length) { outputs.push(samples.slice(start, end)); continue; }
     const wav = encodeWav16(samples.subarray(start, end), sampleRate);
     onProgress({ index: k, count: plan.length });

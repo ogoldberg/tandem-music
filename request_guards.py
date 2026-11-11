@@ -26,6 +26,15 @@ AUDIO_PATHS = frozenset({"/api/analyze", "/api/tune"})
 CHAT_PATH = "/api/chat"
 AUDIO_BODY_MAX_BYTES = 18_000_000
 CHAT_BODY_MAX_BYTES = 262_144
+# DESK.2: the Mac app's own window (a request tandem_desktop.guarded_app has checked and marked
+# local) may send up to 10 minutes of 96 kHz stereo 16-bit WAV in one request.
+LOCAL_AUDIO_BODY_MAX_BYTES = 240_000_000
+
+
+def is_local(scope) -> bool:
+    """Whether tandem_desktop.guarded_app checked this request's launch secret. Nothing else
+    sets this scope key, so the hosted app never lifts its limits."""
+    return scope.get("tandem_local") is True
 
 
 class RateLimitUnavailable(Exception):
@@ -142,7 +151,9 @@ class _BodyTooLarge(Exception):
 
 class RequestGuardMiddleware:
     """ASGI middleware: rate-limits audio routes, then caps request body size
-    for audio routes and /api/chat (checked on Content-Length and while streaming)."""
+    for audio routes and /api/chat (checked on Content-Length and while streaming).
+    Requests from the Mac app's own window (is_local) are not rate-limited and may send
+    longer audio."""
 
     def __init__(self, app: Callable[..., Awaitable[None]]) -> None:
         self.app = app
@@ -152,10 +163,13 @@ class RequestGuardMiddleware:
             return await self.app(scope, receive, send)
         path = scope.get("path", "")
         if path in AUDIO_PATHS:
-            max_bytes = AUDIO_BODY_MAX_BYTES
-            blocked = await self._rate_limit(scope)
-            if blocked:
-                return await self._send(send, *blocked)
+            if is_local(scope):
+                max_bytes = LOCAL_AUDIO_BODY_MAX_BYTES
+            else:
+                max_bytes = AUDIO_BODY_MAX_BYTES
+                blocked = await self._rate_limit(scope)
+                if blocked:
+                    return await self._send(send, *blocked)
         elif path == CHAT_PATH:
             max_bytes = CHAT_BODY_MAX_BYTES
         else:

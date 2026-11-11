@@ -261,11 +261,13 @@ $('tune').onclick=async()=>{if(allTargetsRemoved()){status('Every vocal target w
   const form=new FormData();form.append('file',new Blob([wav],{type:'audio/wav'}),'vocal.wav');
   if(notes?.length)form.append('notes_json',JSON.stringify(notes));
   const shape=notes?.length?'&vibrato='+tuningSettings().vibrato:tuningKey.scale!=='chromatic'?'&scale='+keyPcs().join(','):'';
-  const r=await fetch(apiUrl('/api/tune?engine=world&strength='+encodeURIComponent(strength)+shape),{method:'POST',body:form,headers:{'x-tandem-token':$('token').value.trim()}});
+  const url=apiUrl('/api/tune?engine=world&strength='+encodeURIComponent(strength)+shape);
+  const r=await fetch(url,{method:'POST',body:form,headers:apiHeaders(url)});
   if(!r.ok){const text=await r.text();throw Object.assign(Error('HTTP '+r.status+': '+text.slice(0,180)),r.status===429?{retryAfter:Number(r.headers.get('Retry-After'))||10}:{})}
   return {wav:await r.arrayBuffer(),corrected:Number(r.headers.get('X-Tandem-Tuned-Notes')||0)};
  };
- const result=await tuneInChunks(mono,buf.sampleRate,{strength,notes:vocalNotes,send,onProgress:p=>status(p.waiting?'Rate limited; resuming section '+(p.index+1)+' of '+p.count+' in '+p.waiting+' s…':p.count>1?'Correcting singing pitch, section '+(p.index+1)+' of '+p.count+'…':'Correcting singing pitch…')});
+ const limits=await localLimits();
+ const result=await tuneInChunks(mono,buf.sampleRate,{strength,notes:vocalNotes,send,...(limits?{chunkSeconds:limits.tune_seconds,maxNotes:limits.tune_notes}:{}),onProgress:p=>status(p.waiting?'Rate limited; resuming section '+(p.index+1)+' of '+p.count+' in '+p.waiting+' s…':p.count>1?'Correcting singing pitch, section '+(p.index+1)+' of '+p.count+'…':'Correcting singing pitch…')});
  tuned=wavBlob(result.samples,buf.sampleRate);
  const count=result.corrected;
  $('playtuned').disabled=$('downloadtuned').disabled=false;saveDraftAudio();
@@ -276,7 +278,14 @@ $('playtuned').onclick=()=>playBlob(tuned).catch(e=>status(e.message));
 $('downloadtuned').onclick=()=>download(tuned,'tandem-tuned.wav');
 $('original').onclick=()=>playBlob(audio).catch(e=>status(e.message));$('polished').onclick=()=>playBlob(polished).catch(e=>status(e.message));$('downloadvocal').onclick=()=>download(polished,'tandem-polished.wav');
 function apiUrl(path){const base=$('api').value.trim().replace(/\/+$/,'');return (base||window.location.origin)+path}
-async function request(path,opts={}){const h={'x-tandem-token':$('token').value.trim(),...(opts.headers||{})};const r=await fetch(apiUrl(path),{...opts,headers:h});if(!r.ok){let text=await r.text();throw Error('HTTP '+r.status+': '+text.slice(0,180))}return r}
+// DESK.2: the Mac app's launcher gives its own window a per-launch secret (window.tandemLaunch); every
+// request to the app's own server carries it in a header, and it is never sent to another server.
+const launch=window.tandemLaunch;
+function apiHeaders(url,extra={}){const h={'x-tandem-token':$('token').value.trim(),...extra};if(launch&&new URL(url,location.href).origin===location.origin)h[launch.header]=launch.secret;return h}
+// The local server's lifted limits (one request per take up to 10 minutes); the hosted limits otherwise.
+let localLimitsPromise=null;
+function localLimits(){if(!launch||apiUrl('/')!==location.origin+'/')return Promise.resolve(null);return localLimitsPromise||=request('/api/config').then(r=>r.json()).then(c=>c.limits).catch(e=>{localLimitsPromise=null;throw e})}
+async function request(path,opts={}){const url=apiUrl(path),h=apiHeaders(url,opts.headers||{});const r=await fetch(url,{...opts,headers:h});if(!r.ok){let text=await r.text();throw Error('HTTP '+r.status+': '+text.slice(0,180))}return r}
 $('connect').onclick=async()=>{try{const x=await(await request('/api/config')).json();$('provider').textContent=x.ai_ready?x.provider+' / '+x.model:'Server online, AI model not configured';localStorage.setItem('tandem-api',$('api').value.trim());tabToken.set($('token').value.trim());status('Backend connection succeeded')}catch(e){status(e.message)}};
 async function audioRequest(path,mode){if(!audio)throw Error('Record a sound first');const wav=monoWav(await decoded(audio)),form=new FormData();form.append('file',wav,'capture.wav');return request(path+(mode?'?mode='+mode:''),{method:'POST',body:form})}
 $('analyze').onclick=async()=>{try{

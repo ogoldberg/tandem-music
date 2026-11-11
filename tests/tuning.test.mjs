@@ -179,3 +179,27 @@ test("encodeWav16 uses the same 32768 scale as decodeWav16, so untouched audio r
   const v = new DataView(encodeWav16(Float32Array.from([1, -1, 1.5, -1.5]), 22050));
   assert.deepEqual([0, 1, 2, 3].map(i => v.getInt16(44 + i * 2, true)), [32767, -32768, 32767, -32768]);
 });
+
+test("tuneInChunks sends a long take in one request when the server's limits allow it (DESK.2)", async () => {
+  const sr = 8000, x = sine(180 * sr, sr), sent = [];
+  const notes = Array.from({ length: 300 }, (_, i) => ({ m: 60, t: i * 0.5, d: 0.4 }));
+  const send = async ({ wav, notes }) => {
+    const { sampleRate, samples } = decodeWav16(wav);
+    sent.push({ length: samples.length, notes });
+    return { wav: encodeWav16(samples, sampleRate), corrected: 1 };
+  };
+  const res = await tuneInChunks(x, sr, { strength: 1, notes, send, chunkSeconds: 600, maxNotes: 4096 });
+  assert.equal(res.chunks, 1);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].length, x.length);
+  assert.equal(sent[0].notes.length, 300);
+  // Without the raised note limit, 300 targets in one section are refused.
+  await assert.rejects(tuneInChunks(x, sr, { strength: 1, notes, send, chunkSeconds: 600 }), /limit is 128/);
+  assert.equal(planChunks(180 * sr, sr).length, 12);
+});
+
+test("notesForChunk takes the server's note limit", () => {
+  const notes = Array.from({ length: 200 }, (_, i) => ({ m: 60, t: i * 0.1, d: 0.08 }));
+  assert.throws(() => notesForChunk(notes, 0, 30), /limit is 128/);
+  assert.equal(notesForChunk(notes, 0, 30, 4096).length, 200);
+});
