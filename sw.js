@@ -1,1 +1,26 @@
-const CACHE='tandem-v20';const ASSETS=['./','./index.html','./history.js','./versions.js','./groove.js','./voices.js','./contour.js','./harmony.js','./phrases.js','./storage.js','./recordings.js','./samples.js','./manifest.webmanifest','./capture','./ideas.js','./capture.webmanifest'];self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))));self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||!e.request.url.startsWith(self.location.origin)||e.request.url.includes('/api/'))return;e.respondWith(fetch(e.request).then(r=>{if(r.ok){const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy))}return r}).catch(()=>caches.match(e.request)))});
+// The app shell is precached on install, so the studio and the capture page open with no network (MOB.2).
+// Bump CACHE when a precached file changes in a way that matters before the network copy is fetched.
+const CACHE='tandem-v21';
+// Self-hosted vendor files (Basic Pitch, instrument samples) never change at a given path, so they are
+// cached the first time they are used, served from the cache first, and kept when CACHE is bumped.
+const VENDOR='tandem-vendor-1';
+const ASSETS=['./','./history.js','./versions.js','./groove.js','./voices.js','./contour.js','./harmony.js','./phrases.js','./storage.js','./recordings.js','./samples.js','./manifest.webmanifest','./capture','./ideas.js','./capture.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-maskable-512.png','./icons/apple-touch-icon.png'];
+self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
+self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE&&k!==VENDOR).map(k=>caches.delete(k))))));
+// Only whole responses can be cached (a 206 range response cannot).
+// A page is stored under its address without the query, so ?idea= links do not each add a copy.
+const keyOf=req=>{const u=new URL(req.url);return req.mode==='navigate'&&u.search?u.origin+u.pathname:req};
+const keep=(name,req,r)=>{if(r.status===200){const copy=r.clone();caches.open(name).then(c=>c.put(keyOf(req),copy)).catch(()=>{})}return r};
+self.addEventListener('fetch',e=>{
+  const req=e.request;
+  if(req.method!=='GET'||!req.url.startsWith(self.location.origin)||req.url.includes('/api/'))return;
+  if(new URL(req.url).pathname.startsWith('/vendor/')){
+    e.respondWith(caches.open(VENDOR).then(c=>c.match(req,{ignoreVary:true})).then(hit=>hit||fetch(req).then(r=>keep(VENDOR,req,r))));
+    return;
+  }
+  // Lookups ignore Vary: the server sends Vary: Origin (CORS), and a module import carries an Origin
+  // header the precache request did not, which would miss every precached module offline.
+  // Network first, so a deploy shows at once; offline, the cached copy. A page opened with a query
+  // string (the studio's ?idea=) is the same cached page.
+  e.respondWith(fetch(req).then(r=>keep(CACHE,req,r)).catch(()=>caches.match(req,{ignoreSearch:req.mode==='navigate',ignoreVary:true}).then(hit=>hit||Response.error())));
+});
