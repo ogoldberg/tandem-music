@@ -29,9 +29,11 @@ function readMidi(bytes) {
       let status = bytes[i];
       if (status & 128) i++; else status = running;
       if (status === 0xff) {
-        const type = bytes[i], len = bytes[i + 1];
-        events.push({ tick, meta: type, data: [...bytes.slice(i + 2, i + 2 + len)] });
-        i += 2 + len;
+        const type = bytes[i++];
+        let len = 0;
+        do { b = bytes[i++]; len = (len << 7) | (b & 127); } while (b & 128);
+        events.push({ tick, meta: type, data: [...bytes.slice(i, i + len)] });
+        i += len;
       } else {
         running = status;
         const kind = status >> 4, channel = status & 15, size = kind === 0xc || kind === 0xd ? 1 : 2;
@@ -93,7 +95,8 @@ test("notes land on the right ticks, channels and programs", () => {
 });
 
 test("a note-off comes before a note-on of the same pitch at the same tick", () => {
-  const p = { ...song(), notes: [{ m: 60, t: 0, d: 0.5 }, { m: 60, t: 0.5, d: 0.5 }], harmony: [], drums: [] };
+  // The later note comes first, so the order cannot come from the input.
+  const p = { ...song(), notes: [{ m: 60, t: 0.5, d: 0.5 }, { m: 60, t: 0, d: 0.5 }], harmony: [], drums: [] };
   const melody = readMidi(midiFile(p)).tracks[1].filter(e => e.kind === 8 || e.kind === 9);
   assert.deepEqual(melody.map(e => [e.tick, e.kind]), [[0, 9], [960, 8], [960, 9], [1920, 8]]);
 });

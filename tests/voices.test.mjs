@@ -117,7 +117,7 @@ test("planNote normalises layer gains and tunes layers to the note", () => {
 });
 
 test("planNote drops partials at or above Nyquist and clamps the filter", () => {
-  // Export renders at 22050 Hz: C8's 4th marimba partial (16.7 kHz) would alias, so it is dropped.
+  // At 22050 Hz (the export's rate before EXP.1; the clamp still guards any lower-rate render): C8's 4th marimba partial (16.7 kHz) would alias, so it is dropped.
   const plan = planNote("marimba", 108, 0, 0.5, 22050);
   assert.equal(plan.layers.length, 1);
   assert.equal(plan.layers[0].frequency, midiToHz(108));

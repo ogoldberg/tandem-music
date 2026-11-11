@@ -1297,3 +1297,22 @@ def test_stems_line_up_with_the_mix_and_the_midi_has_a_track_per_part(studio, tm
     page.select_option("#harmonykey", "9:minor")
     minor = mido.MidiFile(file=io.BytesIO(download(page, "#exportmidi", tmp_path).read_bytes()))
     assert [m.key for m in minor.tracks[0] if m.type == "key_signature"] == ["Am"]
+
+
+def test_an_edit_during_the_stem_export_does_not_change_what_is_exported(studio, tmp_path):
+    """#62 review: the export works on the project as it was when Export stems was pressed, so clearing
+    the melody while it renders leaves the stems, the mix and the MIDI agreeing on the old melody."""
+    page = studio
+    page.click("#demo")
+    with page.expect_download() as info:
+        page.click("#exportstems")
+        page.click("#clearnotes")
+    assert count(page, "notecount") == 0
+    path = tmp_path / "stems.zip"
+    info.value.save_as(path)
+    with zipfile.ZipFile(path) as z:
+        assert z.namelist() == ["mix.wav", "melody.wav", "drums.wav", "tandem.mid"]
+        with wave.open(io.BytesIO(z.read("melody.wav"))) as w:
+            assert np.abs(np.frombuffer(w.readframes(w.getnframes()), "<i2")).max() > 1000
+        data = z.read("tandem.mid")
+    assert [p for _, p in midi_note_ons(data, 0)] == [60, 64, 67, 69, 67, 64, 62, 60]
