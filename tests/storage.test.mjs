@@ -127,3 +127,31 @@ test("storage errors explain a full quota and pass others through", () => {
 test("openKV explains a browser without IndexedDB", async () => {
   await assert.rejects(openKV(undefined), /no IndexedDB/);
 });
+
+// Issue #40: an IndexedDB factory whose open request is blocked by another tab holding an older
+// version of the database. `release()` lets the open finish, as when that tab finally closes.
+function blockedFactory() {
+  const db = { closed: false, close() { this.closed = true; }, objectStoreNames: { contains: () => true } };
+  let req;
+  return {
+    db,
+    open() {
+      req = { result: undefined };
+      setTimeout(() => req.onblocked?.({ type: "blocked" }), 0);
+      return req;
+    },
+    release() { req.result = db; req.onsuccess?.({ target: req }); },
+  };
+}
+
+test("openKV refuses a blocked open with a message instead of waiting forever (#40)", { timeout: 5000 }, async () => {
+  const factory = blockedFactory();
+  await assert.rejects(openKV(factory), /Close other Tandem tabs/);
+});
+
+test("openKV closes a connection that opens after it gave up on a blocked open (#40)", { timeout: 5000 }, async () => {
+  const factory = blockedFactory();
+  await assert.rejects(openKV(factory), /Close other Tandem tabs/);
+  factory.release();
+  assert.equal(factory.db.closed, true);
+});

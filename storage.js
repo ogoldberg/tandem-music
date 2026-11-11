@@ -35,8 +35,18 @@ export async function openKV(indexedDB, { name = DB_NAME } = {}) {
   req.onupgradeneeded = () => {
     if (!req.result.objectStoreNames.contains(KV_STORE)) req.result.createObjectStore(KV_STORE);
   };
-  req.onblocked = () => {};
-  const db = await done(req);
+  // Another tab holds an older version of the database open and has not closed it (#40). Waiting
+  // would leave start-up frozen with no message, so give up and say why; if that tab closes later
+  // and the open completes after all, close the connection nobody is using.
+  let gaveUp = false;
+  const db = await new Promise((resolve, reject) => {
+    req.onsuccess = () => { if (gaveUp) req.result.close(); else resolve(req.result); };
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => {
+      gaveUp = true;
+      reject(Error("Another Tandem tab is still using an older version of the saved work. Close other Tandem tabs, then reload this one."));
+    };
+  });
   // Let a newer version of the app (or a test deleting the database) take over.
   db.onversionchange = () => db.close();
 
