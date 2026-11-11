@@ -286,15 +286,20 @@ def test_long_recordings_are_analysed_and_tuned_in_one_request_locally(local):
     assert r.status_code == 200 and r.json()["duration"] == 120.0
 
     take = wav(32)
-    notes = [{"m": 57, "t": round(i * 0.25, 2), "d": 0.2} for i in range(128)] + [{"m": 57, "t": 30.0, "d": 1.5}]
+    # The take is a steady A3 (MIDI 57); only the 129th target asks for B3 (MIDI 59).
+    notes = [{"m": 57, "t": round(i * 0.25, 2), "d": 0.2} for i in range(128)] + [{"m": 59, "t": 30.0, "d": 1.5}]
     form = {"notes_json": json.dumps(notes)}
     guards.reset_memory_store()  # the fixture's hosted limit is one audio request per window
     hosted = local("POST", "/api/tune", secret=None, guard=False, files={"file": ("v.wav", take, "audio/wav")}, data=form)
     assert hosted.status_code == 400
-    r = local("POST", "/api/tune", files={"file": ("v.wav", take, "audio/wav")}, data=form)
+    r = local("POST", "/api/tune?strength=1", files={"file": ("v.wav", take, "audio/wav")}, data=form)
     assert r.status_code == 200, r.text
     with wave.open(io.BytesIO(r.content)) as w:
         assert w.getnframes() == 32 * 16000
+        tuned = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float)
+    late = tuned[int(30.3 * 16000):int(31.3 * 16000)]
+    peak = np.argmax(np.abs(np.fft.rfft(late * np.hanning(len(late))))) * 16000 / len(late)
+    assert abs(1200 * np.log2(peak / (440 * 2 ** ((59 - 69) / 12)))) < 25, peak
     too_long = local("POST", "/api/tune", files={"file": ("v.wav", wav(601, rate=8000), "audio/wav")})
     assert too_long.status_code == 400 and "600 seconds" in too_long.text
 
