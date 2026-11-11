@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Tandem app icon (MOB.2): two beamed notes, one per voice. Rendered to PNG by tools/icons/build.py. -->
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a2b44"/><stop offset="1" stop-color="#0d1523"/></linearGradient></defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g transform="translate(256 256) scale(1.25) translate(-263 -243)">
+    <rect x="224" y="150" width="24" height="200" fill="#e9f4ff"/>
+    <rect x="364" y="120" width="24" height="200" fill="#e9f4ff"/>
+    <polygon points="224,128 388,98 388,150 224,180" fill="#e9f4ff"/>
+    <ellipse cx="196" cy="350" rx="54" ry="38" transform="rotate(-20 196 350)" fill="#d9434e"/>
+    <ellipse cx="336" cy="320" rx="54" ry="38" transform="rotate(-20 336 320)" fill="#8ce6cf"/>
+  </g>
+</svg>

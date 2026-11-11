@@ -115,6 +115,33 @@ def gm_sample(name: str):
     return FileResponse(GM_SAMPLES_DIR / name, media_type=media_type,
                         headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
+# MOB.2: the app icons, rendered from icons/*.svg by tools/icons/build.py. Only the built PNGs are served.
+ICONS_DIR = Path(__file__).resolve().parent / "icons"
+ICON_FILES = {"icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"}
+
+@app.get("/icons/{name}", include_in_schema=False)
+def app_icon(name: str):
+    if name not in ICON_FILES:
+        return Response(status_code=404)
+    return FileResponse(ICONS_DIR / name, media_type="image/png")
+
+# MOB.1: the phone capture page, its module and its own manifest (so adding it to the home screen opens capture).
+@app.get("/capture", include_in_schema=False)
+def capture_page():
+    return FileResponse(Path(__file__).resolve().parent / "capture.html", media_type="text/html")
+
+@app.get("/bundle.js", include_in_schema=False)
+def bundle_js():
+    return FileResponse(Path(__file__).resolve().parent / "bundle.js", media_type="text/javascript")
+
+@app.get("/ideas.js", include_in_schema=False)
+def ideas_js():
+    return FileResponse(Path(__file__).resolve().parent / "ideas.js", media_type="text/javascript")
+
+@app.get("/capture.webmanifest", include_in_schema=False)
+def capture_manifest():
+    return FileResponse(Path(__file__).resolve().parent / "capture.webmanifest", media_type="application/manifest+json")
+
 @app.get("/manifest.webmanifest", include_in_schema=False)
 def manifest():
     return FileResponse(Path(__file__).resolve().parent / "manifest.webmanifest", media_type="application/manifest+json")

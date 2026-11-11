@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0e1522"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Capture"><title>Tandem Capture</title><link rel="manifest" href="./capture.webmanifest"><link rel="apple-touch-icon" href="./icons/apple-touch-icon.png"><style>
+*{box-sizing:border-box}html,body{margin:0;background:#0d1523;color:#e9f4ff;font-family:system-ui,sans-serif}
+main{max-width:560px;margin:auto;padding:calc(12px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));min-height:100dvh;display:flex;flex-direction:column;gap:14px}
+header{display:flex;justify-content:space-between;align-items:center;gap:10px}h1{margin:0;font-size:1.35rem}a{color:#8ce6cf}
+button,input{font:inherit;border:1px solid #455c78;background:#263950;color:white;border-radius:10px;padding:10px 12px;min-height:44px}button{cursor:pointer}button:disabled{opacity:.45}
+.recorder{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 0 8px}
+#record{width:min(52vw,190px);height:min(52vw,190px);border-radius:50%;border:6px solid #f3d4d4;background:#d9434e;font-size:1.25rem;font-weight:700;letter-spacing:.02em;box-shadow:0 8px 30px rgba(217,67,78,.35);touch-action:manipulation}
+#record[aria-pressed=true]{background:#0d1523;border-color:#d9434e;color:#ffb3b8;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 14px rgba(217,67,78,.12)}}
+#time{font-variant-numeric:tabular-nums;font-size:1.6rem;min-height:1.2em}
+.status{font-size:.9rem;background:#101e32;border-radius:8px;padding:10px;min-height:2.6em}
+ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.idea{border:1px solid #33465f;background:#1a283d;border-radius:14px;padding:12px}
+.idea .title{font-weight:600;overflow-wrap:anywhere}.idea small,.muted{color:#b3c6d9}.muted{font-size:.85rem}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.actions a{display:inline-flex;align-items:center;padding:0 12px;min-height:44px;border:1px solid #455c78;border-radius:10px;text-decoration:none}
+.rename{display:flex;gap:8px}.rename input{flex:1;min-width:0}
+button.danger{background:#7a2530;border-color:#d9434e}.hide{display:none}
+</style></head><body><main>
+<header><h1>♫ Tandem Capture</h1><a href="./">Open studio →</a></header>
+<section class="recorder" aria-label="Recorder"><button id="record" aria-pressed="false">Record</button><div id="time" aria-hidden="true"></div></section>
+<div id="status" class="status" role="status" aria-live="polite">Opening storage…</div>
+<button id="rescue" class="hide">Download the recording that was not kept</button>
+<section aria-labelledby="ideasheading"><h2 id="ideasheading" style="font-size:1.05rem">Your ideas <small id="count"></small></h2><ul id="ideas"></ul></section>
+<p id="storageinfo" class="muted"></p>
+</main>
+<script type="module">
+// MOB.1 (ADR-013): record a song idea in one tap; every take is kept on this device at once, in the
+// same storage as the studio (ideas.js list, recordings.js files), and can be opened in the studio.
+import {openKV,persistence,PERSISTENCE_TEXT} from './storage.js';
+import {openRecordings} from './recordings.js';
+import {createVersionStore} from './versions.js';
+import {createIdeaStore,ideaTitle,formatDuration} from './ideas.js';
+import {writeBundle,toWav,ideaProject,bundleFileName,BUNDLE_TYPE} from './bundle.js';
+const $=id=>document.getElementById(id);
+let kv=null,recordings=null,ideas=null,recorder=null,mic=null,chunks=[],startedAt=0,ticker=null,unsaved=null,player=null,playingId=null,askedToPersist=false;
+// Whether the browser promised to keep this site's storage. Asked for once per visit, when an idea is
+// first kept (browsers grant it more readily once the site holds something, and some ask the user).
+const showPersistence=(request=false)=>persistence(navigator.storage,{request}).then(s=>{$('storageinfo').textContent=PERSISTENCE_TEXT[s]},()=>{});
+const status=s=>{$('status').textContent=s};
+const when=ms=>new Date(ms).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+const elapsed=()=>(performance.now()-startedAt)/1000;
+
+function setRecording(on){
+  $('record').setAttribute('aria-pressed',String(on));$('record').textContent=on?'Stop':'Record';
+  $('record').setAttribute('aria-label',on?'Stop and keep the idea':'Record an idea');
+  clearInterval(ticker);ticker=null;
+  if(on){const show=()=>{$('time').textContent=formatDuration(elapsed())};show();ticker=setInterval(show,250)}else $('time').textContent='';
+}
+async function start(){
+  if(!ideas||!recordings)return;
+  stopPlayback();
+  try{mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}})}
+  catch(e){status('The microphone is not available: '+e.message);return}
+  chunks=[];recorder=new MediaRecorder(mic);
+  recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  recorder.onstop=()=>keep(recorder.mimeType);
+  // Ask for the audio every second, so a take cut short (the phone locks, another app comes up) still has its data.
+  recorder.start(1000);startedAt=performance.now();setRecording(true);status('Recording… tap Stop when the idea is down.');
+}
+function stop(){if(recorder?.state==='recording')recorder.stop()}
+async function keep(type){
+  const duration=elapsed();mic?.getTracks().forEach(t=>t.stop());mic=null;setRecording(false);
+  const blob=new Blob(chunks,{type:type||chunks[0]?.type||''});chunks=[];
+  if(!blob.size){status('Nothing was recorded. Check the microphone and try again.');return}
+  status('Keeping the idea…');
+  try{
+    await recordings.hold(async()=>ideas.add({duration,audio:await recordings.put(blob)}));
+    unsaved=null;$('rescue').classList.add('hide');
+    status('Kept a '+formatDuration(duration)+' idea on this device.');
+    if(!askedToPersist){askedToPersist=true;showPersistence(true)}
+  }catch(e){
+    // Never lose a take silently: offer it as a download instead.
+    unsaved=blob;$('rescue').classList.remove('hide');
+    status('Could not keep the idea on this device: '+e.message+' Download it so it is not lost.');
+  }
+  await render();
+}
+$('record').onclick=()=>recorder?.state==='recording'?stop():start();
+// A web app on a phone loses the microphone when it leaves the screen: end the take there and keep it.
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&recorder?.state==='recording'){stop();status('Recording stopped when Tandem left the screen.')}});
+$('rescue').onclick=()=>{if(!unsaved)return;const ext=/mp4|aac/.test(unsaved.type)?'m4a':/ogg/.test(unsaved.type)?'ogg':'webm';const u=URL.createObjectURL(unsaved),a=document.createElement('a');a.href=u;a.download='tandem-idea.'+ext;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
+
+function stopPlayback(){if(player){player.pause();URL.revokeObjectURL(player.src);player=null}const was=playingId;playingId=null;if(was)for(const b of document.querySelectorAll('.idea .play'))b.textContent='Play'}
+async function play(idea,button){
+  if(playingId===idea.id){stopPlayback();return}
+  stopPlayback();
+  if(!recordings){status('Recordings cannot be read in this browser.');return}
+  try{
+    const entry=await ideas.get(idea.id),blob=entry&&await recordings.get(entry.audio);
+    if(!blob){status('The recording of this idea is no longer on this device.');return}
+    player=new Audio(URL.createObjectURL(blob));playingId=idea.id;button.textContent='Stop';
+    player.onended=stopPlayback;await player.play();status('Playing '+ideaTitle(idea,when)+'.');
+  }catch(e){stopPlayback();status('Could not play the idea: '+e.message)}
+}
+// MOB.3: share an idea as one file (bundle.js: the project and its recording as WAV) through the share sheet
+// (AirDrop, Files, iCloud Drive) where the browser can share files, or download it elsewhere. Safari refuses a
+// share that comes too long after the tap, and building the file takes a moment: then the file is kept ready
+// and the next tap shares it at once.
+let prepared=null;
+const decodeAudio=buffer=>new OfflineAudioContext(1,1,48000).decodeAudioData(buffer);
+async function share(idea,button){
+  const title=ideaTitle(idea,when);
+  if(prepared?.id===idea.id){const file=prepared.file;prepared=null;button.textContent='Share';await send(file,title,button,idea.id,true);return}
+  if(prepared){prepared=null;for(const b of document.querySelectorAll('.idea .share'))b.textContent='Share'}
+  if(!recordings){status('Recordings cannot be read in this browser.');return}
+  status('Preparing '+title+' to share…');
+  let file;
+  try{
+    const entry=await ideas.get(idea.id),blob=entry&&await recordings.get(entry.audio);
+    if(!blob){status('The recording of this idea is no longer on this device.');return}
+    const bytes=writeBundle({name:idea.name,savedAt:idea.savedAt,project:ideaProject(),recordings:{original:await toWav(blob,decodeAudio)}});
+    file=new File([bytes],bundleFileName(title),{type:BUNDLE_TYPE});
+  }catch(e){status('Could not prepare the idea for sharing: '+e.message);return}
+  await send(file,title,button,idea.id,false);
+}
+async function send(file,title,button,id,retried){
+  let why='';
+  if(navigator.share&&navigator.canShare?.({files:[file]})){
+    try{await navigator.share({files:[file],title});status('Shared '+title+'.');return}
+    catch(e){
+      if(e.name==='AbortError'){status('Sharing was cancelled.');return}
+      if(e.name==='NotAllowedError'&&!retried){prepared={id,file};button.textContent='Tap to share';status('The file is ready. Tap Share again to send it.');return}
+      why=' Sharing did not work: '+e.message;
+    }
+  }
+  const u=URL.createObjectURL(file),a=document.createElement('a');a.href=u;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
+  status('Downloaded '+file.name+'.'+why);
+}
+function renameForm(idea,row){
+  const form=document.createElement('form');form.className='rename';
+  const input=document.createElement('input');input.type='text';input.maxLength=60;input.value=idea.name;input.placeholder='Name this idea';input.setAttribute('aria-label','Idea name');
+  const save=document.createElement('button');save.type='submit';save.textContent='Save';
+  const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';cancel.onclick=()=>render();
+  form.onsubmit=async e=>{e.preventDefault();try{await ideas.rename(idea.id,input.value);status(input.value.trim()?'Renamed the idea.':'Removed the name.')}catch(err){status('Could not rename the idea: '+err.message)}await render()};
+  input.onkeydown=e=>{if(e.key==='Escape')render()};
+  form.append(input,save,cancel);row.querySelector('.title').replaceWith(form);input.focus();input.select();
+}
+// Delete the stored recordings that no idea, version or draft links to.
+async function collect(){
+  const versions=createVersionStore(kv);
+  await recordings.gc(async()=>{const ids=await ideas.audioIds();for(const id of await versions.audioIds())ids.add(id);const draft=await kv.get('draft-audio');for(const l of Object.values(draft||{}))if(l?.id)ids.add(l.id);return ids});
+}
+function row(idea){
+  const li=document.createElement('li');li.className='idea';li.dataset.id=idea.id;
+  const title=document.createElement('div');title.className='title';title.textContent=ideaTitle(idea,when);
+  const meta=document.createElement('small');meta.textContent=formatDuration(idea.duration)+(idea.name?' · '+when(idea.savedAt):'');
+  const actions=document.createElement('div');actions.className='actions';
+  const playB=document.createElement('button');playB.className='play';playB.textContent=playingId===idea.id?'Stop':'Play';playB.onclick=()=>play(idea,playB);
+  const renameB=document.createElement('button');renameB.textContent='Rename';renameB.onclick=()=>renameForm(idea,li);
+  const shareB=document.createElement('button');shareB.className='share';shareB.textContent=prepared?.id===idea.id?'Tap to share':'Share';shareB.onclick=()=>share(idea,shareB);
+  const open=document.createElement('a');open.href='./?idea='+encodeURIComponent(idea.id);open.textContent='Open in studio';
+  const del=document.createElement('button');del.textContent='Delete';let armed=null;
+  del.onclick=async()=>{
+    if(!armed){del.textContent='Tap again to delete';del.classList.add('danger');armed=setTimeout(()=>{armed=null;del.textContent='Delete';del.classList.remove('danger')},4000);return}
+    clearTimeout(armed);if(playingId===idea.id)stopPlayback();
+    try{await ideas.remove(idea.id);status('Deleted '+ideaTitle(idea,when)+'.');await render();await collect()}catch(e){status('Could not delete the idea: '+e.message)}
+  };
+  actions.append(playB,shareB,renameB,open,del);li.append(title,meta,actions);return li;
+}
+async function render(){
+  const root=$('ideas');let list;
+  try{list=await ideas.list()}catch(e){root.replaceChildren();$('count').textContent='';status(e.message);return}
+  $('count').textContent=list.length?'('+list.length+')':'';
+  if(!list.length){const p=document.createElement('li');p.className='muted';p.textContent='No ideas yet. Tap Record and sing.';root.replaceChildren(p);return}
+  root.replaceChildren(...list.map(row));
+}
+
+$('record').disabled=true;
+try{
+  kv=await openKV(window.indexedDB);ideas=createIdeaStore(kv);
+  recordings=await openRecordings(navigator.storage,{locks:navigator.locks||null});
+  $('record').disabled=false;status(navigator.mediaDevices?.getUserMedia?'Ready. Tap Record and sing.':'This browser cannot record from the microphone.');
+  if(!navigator.mediaDevices?.getUserMedia)$('record').disabled=true;
+  await render();
+}catch(e){status('Ideas cannot be kept in this browser: '+e.message+' A private window cannot keep them; open Tandem in a normal window or from the home screen.');if(ideas)await render().catch(()=>{})}
+showPersistence();
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script></body></html>

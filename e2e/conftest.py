@@ -18,9 +18,49 @@ def _free_port():
         return s.getsockname()[1]
 
 
+class Server:
+    """A uvicorn process serving the app on a free port; stop() takes it down (a real network outage)."""
+
+    def __init__(self, log_path):
+        port = _free_port()
+        self.log_path = log_path
+        self.log = open(log_path, "wb")
+        # Run the app the way local dev does, without provider or Vercel settings leaking in.
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("TANDEM_", "VERCEL", "UPSTASH_"))}
+        self.proc = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "tandem_backend:app", "--host", "127.0.0.1", "--port", str(port)],
+            cwd=ROOT, env=env, stdout=self.log, stderr=subprocess.STDOUT,
+        )
+        self.url = f"http://127.0.0.1:{port}"
+        deadline = time.monotonic() + 30
+        try:
+            while True:
+                if self.proc.poll() is not None:
+                    raise RuntimeError("uvicorn exited early:\n" + log_path.read_text(errors="replace"))
+                try:
+                    if httpx.get(self.url + "/api/health", timeout=1).status_code == 200:
+                        break
+                except httpx.HTTPError:
+                    pass
+                if time.monotonic() > deadline:
+                    raise RuntimeError("uvicorn did not become healthy within 30 s")
+                time.sleep(0.2)
+        except BaseException:
+            self.stop()
+            raise
+
+    def stop(self):
+        if self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+        self.log.close()
+
+
 @pytest.fixture(scope="session")
 def server_url(tmp_path_factory):
-    port = _free_port()
     # Server output goes to a file: an unread pipe would block uvicorn once it filled.
     # E2E_SERVER_LOG puts it at a known path (CI uploads it when the job fails).
     if os.environ.get("E2E_SERVER_LOG"):
@@ -28,45 +68,33 @@ def server_url(tmp_path_factory):
         log_path.parent.mkdir(parents=True, exist_ok=True)
     else:
         log_path = tmp_path_factory.mktemp("server") / "uvicorn.log"
-    log = open(log_path, "wb")
-    # Run the app the way local dev does, without provider or Vercel settings leaking in.
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("TANDEM_", "VERCEL", "UPSTASH_"))}
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "tandem_backend:app", "--host", "127.0.0.1", "--port", str(port)],
-        cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
-    )
-    url = f"http://127.0.0.1:{port}"
-    deadline = time.monotonic() + 30
+    server = Server(log_path)
     try:
-        while True:
-            if proc.poll() is not None:
-                raise RuntimeError("uvicorn exited early:\n" + log_path.read_text(errors="replace"))
-            try:
-                if httpx.get(url + "/api/health", timeout=1).status_code == 200:
-                    break
-            except httpx.HTTPError:
-                pass
-            if time.monotonic() > deadline:
-                raise RuntimeError("uvicorn did not become healthy within 30 s")
-            time.sleep(0.2)
-        yield url
+        yield server.url
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-        log.close()
+        server.stop()
+
+
+@pytest.fixture
+def own_server(tmp_path):
+    """A server for this test alone, so the test can stop it and check what works with no network.
+    (Playwright's set_offline does not cover a service worker's own requests.)"""
+    server = Server(tmp_path / "uvicorn.log")
+    yield server
+    server.stop()
 
 
 @pytest.fixture(scope="session")
-def browser_type_launch_args(browser_type_launch_args):
+def browser_type_launch_args(browser_type_launch_args, browser_name):
     """Let Chromium fall back to software WebGL (SwiftShader) on GPU-less machines such as CI runners.
 
     Chromium no longer does that by default, so Basic Pitch's TensorFlow.js would drop to its
     pure-JS CPU backend, which is too slow to transcribe a long take within the test timeouts.
     """
-    args = [*browser_type_launch_args.get("args", []), "--enable-unsafe-swiftshader"]
+    args = [*browser_type_launch_args.get("args", [])]
+    if browser_name == "chromium":
+        # A synthetic microphone (a beeping tone) and no permission prompt, for the capture tests (MOB.1).
+        args += ["--enable-unsafe-swiftshader", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"]
     return {**browser_type_launch_args, "args": args}
 
 
