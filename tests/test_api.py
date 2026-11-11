@@ -642,3 +642,27 @@ def test_tune_rejects_bad_vibrato_or_scale(client,monkeypatch,query):
     capture_world_tune(monkeypatch)
     r=run(client("POST","/api/tune?"+query,files={"file":("v.wav",wav_bytes(np.zeros(16000)),"audio/wav")}))
     assert r.status_code==400,query
+
+def test_capture_page_and_ideas_module_are_served_and_precached(client):
+    # MOB.1: the phone capture page imports ideas.js, storage.js and recordings.js at start-up and must open offline.
+    page=run(client("GET","/capture"))
+    assert page.status_code==200 and "text/html" in page.headers["content-type"]
+    for module in ("./ideas.js","./storage.js","./recordings.js"):
+        assert "from '"+module+"'" in page.text
+    assert 'href="./capture.webmanifest"' in page.text
+    js=run(client("GET","/ideas.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function createIdeaStore" in js.text
+    sw=run(client("GET","/sw.js"))
+    for asset in ("./capture","./ideas.js","./capture.webmanifest","./storage.js","./recordings.js"):
+        assert "'"+asset+"'" in sw.text
+
+def test_capture_manifest_starts_at_the_capture_page(client):
+    r=run(client("GET","/capture.webmanifest"))
+    assert r.status_code==200 and "manifest+json" in r.headers["content-type"]
+    m=r.json()
+    assert m["start_url"]=="./capture" and m["display"]=="standalone"
+    studio=run(client("GET","/manifest.webmanifest")).json()
+    assert {"name":"Capture an idea","url":"./capture"}.items() <= studio["shortcuts"][0].items()
+    # The studio imports ideas.js so its recording clean-up keeps every idea's audio.
+    assert "from './ideas.js'" in run(client("GET","/")).text

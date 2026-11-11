@@ -13,6 +13,9 @@ flowchart TD
   UI --> Versions[versions.js: named versions]
   UI --> Storage[storage.js: draft and versions in IndexedDB]
   UI --> Recordings[recordings.js: recordings in OPFS]
+  Capture[capture.html: phone capture page] --> Ideas[ideas.js: captured song ideas]
+  Capture --> Recordings
+  UI --> Ideas
   UI --> Groove[groove.js: tempo detection and quantize with swing]
   UI --> Voices[voices.js: melody instrument voices]
   UI --> Samples[samples.js: recorded instrument samples]
@@ -85,6 +88,14 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - **Persistence.** The Versions panel says whether the browser has promised to keep the site's storage (`navigator.storage.persisted()`). Save version asks for it (`persist()`); browsers may grant it silently, prompt or refuse. Without it the browser may clear the data under storage pressure, and the panel says to export project files.
 - **No IndexedDB.** If the database cannot be opened (no IndexedDB, or it fails), the status line and Versions panel say saving on this device is unavailable; the studio still edits, plays and exports, and a legacy `localStorage` draft is shown but not saved.
 
+### Phone capture (MOB.1, ADR-013)
+`capture.html`, served at `/capture`, is a separate light page for catching song ideas on a phone. It opens the same IndexedDB store and OPFS directory as the studio (same origin), so ideas and studio work share one storage. Its own manifest (`capture.webmanifest`, start URL `./capture`) makes "Add to Home Screen" from that page open capture; the studio's manifest lists it as a shortcut where browsers support shortcuts (Android Chrome).
+- **Record.** One large button. `MediaRecorder` hands over its data every second; Stop ends the take, and so does the page being hidden (the phone locks or another app comes up), since a web app loses the microphone there. The take's length is the wall-clock time recorded.
+- **Keep.** The recording is stored by `recordings.js` and its idea entry `{id, name, savedAt, duration, audio}` is added to the list under the IndexedDB key `ideas` (newest first) inside one `recordings.hold()`, so collection cannot remove the file before it is linked. If storing fails, the status line says why and the take is offered as a download, never dropped.
+- **Ideas.** Each is listed with its name (or the time it was recorded) and length, and can be played, renamed, deleted (a second tap confirms) and opened in the studio. Entries this version does not recognise are hidden but kept; an unreadable list is an error and is never overwritten.
+- **Open in studio.** The link `./?idea=<id>` makes the studio, while it is still inert at start-up, save the current draft as the version "Before <idea>" (with its recordings) if it has notes, drums, harmony or audio, then start a new draft with the idea's recording loaded, and remove the query from the address.
+- **No device storage.** Where OPFS is refused (a private window in Safari, Playwright's WebKit), the page says ideas cannot be kept and does not record.
+
 ### Recordings (STORE.2a)
 `recordings.js` keeps the original, polished and tuned audio as files in the Origin Private File System, in a `recordings` directory, each named by the SHA-256 of its bytes and written once, so the same audio linked from the draft and several versions is stored once. A link is `{id, type}` (hash and MIME type).
 - **Links, not embedded audio.** The draft's links live under the IndexedDB key `draft-audio` as `{original, polished, tuned}`, not in the project: `/api/chat` validates the project with extra keys forbidden, and project files stay audio-free. Each version entry carries its own `audio` links beside its `project`.
@@ -92,6 +103,7 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - **Start-up.** While the page is still inert, the draft's recordings are read back and loaded: Play original, Polished and Tuned come back as they were. A linked file that is no longer on the device is reported in the status line; the project is kept.
 - **Garbage collection.** At start-up and after a version is deleted, files linked from neither the draft nor any stored version (recognised or not) are deleted. Storing a file and linking it hold a shared Web Lock and collection takes it exclusively, so a file another tab has just stored but not yet linked is never collected. Without Web Locks, collection is skipped.
 - **Errors.** A full quota while writing is reported ("Browser storage is full..."), a half-written file is removed, and the recording keeps playing for the session. Save version stores the recordings and the version together, so if a recording cannot be stored the version is not saved either and the status line says why; delete older versions to make room, then save again. Without OPFS (`navigator.storage.getDirectory`), the status line says recordings last only until the page is closed and everything else still saves.
+- **Garbage collection keeps ideas.** Files linked from a captured idea (MOB.1, `ideas.js`) are kept too, by the studio and by the capture page, which collects after deleting an idea.
 - **Not verified:** Safari. Writing OPFS files from the page needs `createWritable`, which older Safari versions lack (they offer only the worker-only sync access handle), so recordings may not be kept there; no real Safari or iOS device has been tried.
 
 ## Groove: Detect tempo and Quantize (ARR.1)
@@ -150,6 +162,8 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | versions.js | Named project versions (pure over the storage.js key-value store; imported by index.html and Node tests) |
 | storage.js | IndexedDB key-value store, migration from localStorage, persistent-storage status (STORE.2a) |
 | recordings.js | Recordings in OPFS named by SHA-256, links, garbage collection under Web Locks (STORE.2a) |
+| ideas.js | Song ideas captured on the phone: list, rename, delete, recording links (MOB.1; pure over the storage.js key-value store) |
+| capture.html | Phone capture page at `/capture`, with its own `capture.webmanifest` (MOB.1, ADR-013) |
 | groove.js | Tempo detection and quantize with swing (pure; imported by index.html and Node tests) |
 | samples.js | Recorded instrument samples for playback and WAV export, with fallback to voices.js (pure; imported by index.html and Node tests) |
 | vendor/gm-samples-1/ | Self-hosted General MIDI samples, manifest, licenses and SHA256SUMS, served by an allowlisted route (SND.1) |

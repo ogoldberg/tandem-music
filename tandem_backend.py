@@ -115,6 +115,19 @@ def gm_sample(name: str):
     return FileResponse(GM_SAMPLES_DIR / name, media_type=media_type,
                         headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
+# MOB.1: the phone capture page, its module and its own manifest (so adding it to the home screen opens capture).
+@app.get("/capture", include_in_schema=False)
+def capture_page():
+    return FileResponse(Path(__file__).resolve().parent / "capture.html", media_type="text/html")
+
+@app.get("/ideas.js", include_in_schema=False)
+def ideas_js():
+    return FileResponse(Path(__file__).resolve().parent / "ideas.js", media_type="text/javascript")
+
+@app.get("/capture.webmanifest", include_in_schema=False)
+def capture_manifest():
+    return FileResponse(Path(__file__).resolve().parent / "capture.webmanifest", media_type="application/manifest+json")
+
 @app.get("/manifest.webmanifest", include_in_schema=False)
 def manifest():
     return FileResponse(Path(__file__).resolve().parent / "manifest.webmanifest", media_type="application/manifest+json")
