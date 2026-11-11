@@ -115,6 +115,17 @@ def suggested_name(files):
     return clean or DEFAULT_NAME
 
 
+def _is_tandem_project_file(path):
+    """Whether a folder's project.json is a Tandem project (another tool's project.json is not)."""
+    if not path.is_file() or path.stat().st_size > MAX_BYTES:
+        return False
+    try:
+        _check({FILES["project"]: path.read_bytes()})
+    except ProjectError:
+        return False
+    return True
+
+
 def prepare_save_folder(path):
     """The folder to save a project into: made when new; an existing one must be empty or a Tandem
     project folder, so a save never mixes a project into someone else's folder."""
@@ -123,7 +134,7 @@ def prepare_save_folder(path):
         raise ProjectError(f"{path.name} is a file; choose a new name for the project folder.")
     if path.is_dir():
         others = [p.name for p in path.iterdir() if p.name not in IGNORABLE]
-        if others and not (path / FILES["project"]).is_file():
+        if others and not _is_tandem_project_file(path / FILES["project"]):
             raise ProjectError(f"{path.name} already holds other files and is not a Tandem project folder; choose a new name.")
     else:
         path.mkdir()

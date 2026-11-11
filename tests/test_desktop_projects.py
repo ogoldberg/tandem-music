@@ -168,6 +168,16 @@ def test_saving_into_a_folder_that_holds_other_things_is_refused(tmp_path):
     assert pj.prepare_save_folder(new) == new  # an existing project folder is saved over
 
 
+@pytest.mark.parametrize("content", ['{"name": "web-app", "targets": {}}', "{broken", '{"notes": [], "drums": [], "format": "other"}'])
+def test_another_apps_project_json_does_not_make_a_folder_tandems(tmp_path, content):
+    # An Nx, Angular or other tool's project.json must not let a save overwrite it and its folder.
+    (tmp_path / "project.json").write_text(content)
+    (tmp_path / "original.wav").write_bytes(wav_bytes())
+    with pytest.raises(pj.ProjectError, match="not a Tandem project folder"):
+        pj.prepare_save_folder(tmp_path)
+    assert (tmp_path / "project.json").read_text() == content
+
+
 # The routes behind the launch secret, with the dialogs stood in for
 
 class FakeDialogs:
