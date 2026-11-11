@@ -16,6 +16,8 @@ flowchart TD
   Capture[capture.html: phone capture page] --> Ideas[ideas.js: captured song ideas]
   Capture --> Recordings
   UI --> Ideas
+  Capture --> Bundle[bundle.js: Tandem files, .tandem.zip]
+  UI --> Bundle
   UI --> Groove[groove.js: tempo detection and quantize with swing]
   UI --> Voices[voices.js: melody instrument voices]
   UI --> Samples[samples.js: recorded instrument samples]
@@ -96,6 +98,21 @@ The audio endpoints consume CPU. `request_guards.py` rate-limits them per client
 - **Offline and install (MOB.2).** `sw.js` precaches the studio, the capture page, every module either imports at start-up, both manifests and the icons, so both open and record with no network once opened. Other same-origin GETs are network first with the cache as the offline copy; a navigation with a query string (`./?idea=<id>`) is stored once under its address without the query and falls back to that page. Cache lookups ignore `Vary`, because the server sends `Vary: Origin` (CORS) and a module import carries an `Origin` header the precache request did not. Files under `/vendor/` (Basic Pitch, instrument samples) never change at a given path, so they are cached on first use in a separate `tandem-vendor-1` cache, served from it first, and kept when `CACHE` is bumped. Both manifests list 192 and 512 px icons and a maskable 512 px icon; both pages link `icons/apple-touch-icon.png` (180 px, opaque) for iOS, which ignores manifest icons. After the first idea kept in a visit, the capture page asks for persistent storage (`navigator.storage.persist()`) and shows whether the browser granted it.
 - **Open in studio.** The link `./?idea=<id>` makes the studio, while it is still inert at start-up, save the current draft as the version "Before <idea>" (with its recordings) if it has notes, drums, harmony or audio, then start a new draft with the idea's recording loaded, and remove the query from the address.
 - **No device storage.** Where OPFS is refused (a private window in Safari, Playwright's WebKit), the page says ideas cannot be kept and does not record.
+- **Share (MOB.3).** Each idea has a Share button that builds a Tandem file (below) with the idea's recording converted to WAV and an empty project, and hands it to `navigator.share({files})` where `navigator.canShare` accepts it (the share sheet: AirDrop, Files, iCloud Drive); elsewhere the file is downloaded. Building the file (decoding the take) can outlast the tap's user activation, after which Safari refuses the share with `NotAllowedError`: the file is then kept ready, the button says "Tap to share", and the next tap shares it at once (a second refusal downloads it). A cancelled share sheet (`AbortError`) only says so. Android Chrome shares only an allowlist of file types, which does not include zip files, so there the file is downloaded.
+
+### Tandem files: one file for an idea or a project (MOB.3, shared with DESK.3)
+`bundle.js` writes and reads one file holding a project and its recordings. It is a zip (`<name>.tandem.zip`, `application/zip`) of exactly the files the Mac app keeps in a project folder (DESK.3), so unzipping it gives that folder and zipping such a folder gives a file the studio opens:
+
+| File | Content |
+| --- | --- |
+| `tandem.json` | `{"format":"tandem-bundle","version":1,"name","savedAt"}`: the idea's name (may be empty) and when it was recorded (ms since 1970, or null). Optional when reading. |
+| `project.json` | The portable project exactly as Save project writes it (`format: "tandem-project"`, `version: 1`), never any audio. |
+| `original.wav` | The recording, 16-bit PCM mono WAV. A take in another format (the phone's WebM or MP4) is decoded and written at 48 kHz; a WAV is kept byte for byte. |
+| `polished.wav`, `tuned.wav` | The studio's polished and tuned takes, when there are any. |
+
+- **Writing.** Entries are stored uncompressed (WAV hardly compresses, and every zip tool reads stored entries) with UTF-8 names and CRC-32s, in the order above.
+- **Reading.** Stored and deflated entries (`DecompressionStream('deflate-raw')`), at the top or inside one folder (as Finder zips a folder), ignoring `__MACOSX/` and `._` entries; exactly one `project.json`. Encrypted, damaged (CRC or size mismatch), ZIP64 and oversized entries (over 512 MB in all, checked before inflating and while inflating) are refused, as are a `project.json` without `notes` and `drums` arrays and a recording that is not WAV.
+- **Opening in the studio.** Open project accepts `.json` and `.zip`. A Tandem file is checked like a project file (instrument, harmony) before anything changes. With a recording, the current draft, if it has anything in it, is first saved as the version "Before <name>" with its recordings, then the project is applied as one undoable edit and the recordings are loaded and kept on the device as the draft's. Without a recording it opens like a project file.
 
 ### Recordings (STORE.2a)
 `recordings.js` keeps the original, polished and tuned audio as files in the Origin Private File System, in a `recordings` directory, each named by the SHA-256 of its bytes and written once, so the same audio linked from the draft and several versions is stored once. A link is `{id, type}` (hash and MIME type).
@@ -164,6 +181,7 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | storage.js | IndexedDB key-value store, migration from localStorage, persistent-storage status (STORE.2a) |
 | recordings.js | Recordings in OPFS named by SHA-256, links, garbage collection under Web Locks (STORE.2a) |
 | ideas.js | Song ideas captured on the phone: list, rename, delete, recording links (MOB.1; pure over the storage.js key-value store) |
+| bundle.js | Tandem files: an idea or project as one `.tandem.zip` (project.json plus WAV recordings, the DESK.3 folder), zip writer and reader (MOB.3; pure) |
 | capture.html | Phone capture page at `/capture`, with its own `capture.webmanifest` (MOB.1, ADR-013) |
 | icons/ | App icons: SVG sources and the PNGs `tools/icons/build.py` renders from them, served by an allowlisted `/icons/` route (MOB.2) |
 | sw.js | Service worker: precached app shell, network first with offline copy, `/vendor/` cached on first use (MOB.2) |

@@ -1,10 +1,10 @@
 // The app shell is precached on install, so the studio and the capture page open with no network (MOB.2).
 // Bump CACHE when a precached file changes in a way that matters before the network copy is fetched.
-const CACHE='tandem-v21';
+const CACHE='tandem-v22';
 // Self-hosted vendor files (Basic Pitch, instrument samples) never change at a given path, so they are
 // cached the first time they are used, served from the cache first, and kept when CACHE is bumped.
 const VENDOR='tandem-vendor-1';
-const ASSETS=['./','./history.js','./versions.js','./groove.js','./voices.js','./contour.js','./harmony.js','./phrases.js','./storage.js','./recordings.js','./samples.js','./manifest.webmanifest','./capture','./ideas.js','./capture.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-maskable-512.png','./icons/apple-touch-icon.png'];
+const ASSETS=['./','./history.js','./versions.js','./groove.js','./voices.js','./contour.js','./harmony.js','./phrases.js','./storage.js','./recordings.js','./samples.js','./manifest.webmanifest','./capture','./ideas.js','./bundle.js','./capture.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-maskable-512.png','./icons/apple-touch-icon.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE&&k!==VENDOR).map(k=>caches.delete(k))))));
 // Only whole responses can be cached (a 206 range response cannot).

@@ -31,6 +31,7 @@ import {openKV,persistence,PERSISTENCE_TEXT} from './storage.js';
 import {openRecordings} from './recordings.js';
 import {createVersionStore} from './versions.js';
 import {createIdeaStore,ideaTitle,formatDuration} from './ideas.js';
+import {writeBundle,toWav,ideaProject,bundleFileName,BUNDLE_TYPE} from './bundle.js';
 const $=id=>document.getElementById(id);
 let kv=null,recordings=null,ideas=null,recorder=null,mic=null,chunks=[],startedAt=0,ticker=null,unsaved=null,player=null,playingId=null,askedToPersist=false;
 // Whether the browser promised to keep this site's storage. Asked for once per visit, when an idea is
@@ -92,6 +93,40 @@ async function play(idea,button){
     player.onended=stopPlayback;await player.play();status('Playing '+ideaTitle(idea,when)+'.');
   }catch(e){stopPlayback();status('Could not play the idea: '+e.message)}
 }
+// MOB.3: share an idea as one file (bundle.js: the project and its recording as WAV) through the share sheet
+// (AirDrop, Files, iCloud Drive) where the browser can share files, or download it elsewhere. Safari refuses a
+// share that comes too long after the tap, and building the file takes a moment: then the file is kept ready
+// and the next tap shares it at once.
+let prepared=null;
+const decodeAudio=buffer=>new OfflineAudioContext(1,1,48000).decodeAudioData(buffer);
+async function share(idea,button){
+  const title=ideaTitle(idea,when);
+  if(prepared?.id===idea.id){const file=prepared.file;prepared=null;button.textContent='Share';await send(file,title,button,idea.id,true);return}
+  if(prepared){prepared=null;for(const b of document.querySelectorAll('.idea .share'))b.textContent='Share'}
+  if(!recordings){status('Recordings cannot be read in this browser.');return}
+  status('Preparing '+title+' to share…');
+  let file;
+  try{
+    const entry=await ideas.get(idea.id),blob=entry&&await recordings.get(entry.audio);
+    if(!blob){status('The recording of this idea is no longer on this device.');return}
+    const bytes=writeBundle({name:idea.name,savedAt:idea.savedAt,project:ideaProject(),recordings:{original:await toWav(blob,decodeAudio)}});
+    file=new File([bytes],bundleFileName(title),{type:BUNDLE_TYPE});
+  }catch(e){status('Could not prepare the idea for sharing: '+e.message);return}
+  await send(file,title,button,idea.id,false);
+}
+async function send(file,title,button,id,retried){
+  let why='';
+  if(navigator.share&&navigator.canShare?.({files:[file]})){
+    try{await navigator.share({files:[file],title});status('Shared '+title+'.');return}
+    catch(e){
+      if(e.name==='AbortError'){status('Sharing was cancelled.');return}
+      if(e.name==='NotAllowedError'&&!retried){prepared={id,file};button.textContent='Tap to share';status('The file is ready. Tap Share again to send it.');return}
+      why=' Sharing did not work: '+e.message;
+    }
+  }
+  const u=URL.createObjectURL(file),a=document.createElement('a');a.href=u;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
+  status('Downloaded '+file.name+'.'+why);
+}
 function renameForm(idea,row){
   const form=document.createElement('form');form.className='rename';
   const input=document.createElement('input');input.type='text';input.maxLength=60;input.value=idea.name;input.placeholder='Name this idea';input.setAttribute('aria-label','Idea name');
@@ -113,6 +148,7 @@ function row(idea){
   const actions=document.createElement('div');actions.className='actions';
   const playB=document.createElement('button');playB.className='play';playB.textContent=playingId===idea.id?'Stop':'Play';playB.onclick=()=>play(idea,playB);
   const renameB=document.createElement('button');renameB.textContent='Rename';renameB.onclick=()=>renameForm(idea,li);
+  const shareB=document.createElement('button');shareB.className='share';shareB.textContent=prepared?.id===idea.id?'Tap to share':'Share';shareB.onclick=()=>share(idea,shareB);
   const open=document.createElement('a');open.href='./?idea='+encodeURIComponent(idea.id);open.textContent='Open in studio';
   const del=document.createElement('button');del.textContent='Delete';let armed=null;
   del.onclick=async()=>{
@@ -120,7 +156,7 @@ function row(idea){
     clearTimeout(armed);if(playingId===idea.id)stopPlayback();
     try{await ideas.remove(idea.id);status('Deleted '+ideaTitle(idea,when)+'.');await render();await collect()}catch(e){status('Could not delete the idea: '+e.message)}
   };
-  actions.append(playB,renameB,open,del);li.append(title,meta,actions);return li;
+  actions.append(playB,shareB,renameB,open,del);li.append(title,meta,actions);return li;
 }
 async function render(){
   const root=$('ideas');let list;
