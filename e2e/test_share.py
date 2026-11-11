@@ -4,6 +4,7 @@ import base64
 import hashlib
 import io
 import json
+import re
 import wave
 import zipfile
 
@@ -265,5 +266,7 @@ def test_without_device_storage_opening_a_file_says_the_draft_was_not_kept(page,
     page.click("#demo")
     open_bundle(page, "Night drive.tandem.zip", finished_project_bundle())
     expect(page.locator("#status")).to_contain_text("Opened Night drive with its recordings. Your previous draft could not be saved as a version")
+    # The storage problem ends as a sentence before the next one starts.
+    expect(page.locator("#status")).to_have_text(re.compile(r"saved as a version: [^\n]*[^.]\. Undo brings back its notes but not its recording\.$"))
     assert count(page, "notecount") == 3
     assert not problems, problems

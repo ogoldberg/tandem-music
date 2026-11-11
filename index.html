@@ -346,7 +346,7 @@ if(recordings){try{const missing=await restoreAudio(cleanLinks(await kv.get(DRAF
 // Before an idea or a Tandem file replaces the recording, a draft with anything in it is saved as a version with its recordings.
 async function keepDraft(title){
   if(!(audio||state.notes.length||state.drums.length||state.harmony.length))return '';
-  if(!versions||!recordings)return ' Your previous draft could not be saved as a version: '+(recordingProblem||storageProblem||'storage is unavailable')+' Undo brings back its notes but not its recording.';
+  if(!versions||!recordings)return ' Your previous draft could not be saved as a version: '+String(recordingProblem||storageProblem||'storage is unavailable').replace(/\s*[.!?]?\s*$/,'.')+' Undo brings back its notes but not its recording.';
   const name=('Before '+title).slice(0,60),project=projectFromState(state),blobs=currentAudio();
   await recordings.hold(async()=>versions.save(name,project,await putAudio(blobs)));renderVersions();return ' Your previous draft was saved as the version "'+name+'".';
 }

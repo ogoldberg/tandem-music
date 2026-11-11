@@ -50,8 +50,29 @@ test("inflating stops as soon as the data grows past the declared size", async (
   const { deflateRawSync } = await import("node:zlib");
   const packed = new Uint8Array(deflateRawSync(Buffer.alloc(1_000_000)));
   assert.equal((await inflateWithin(packed, 1_000_000)).length, 1_000_000);
-  // A zip bomb declares a small size: reading stops at the limit, long before the whole stream is inflated.
   await assert.rejects(inflateWithin(packed, 10), /damaged/);
+});
+
+test("a zip bomb is refused long before the whole stream is inflated", async () => {
+  const { deflateRawSync } = await import("node:zlib");
+  const full = 50_000_000, bomb = new Uint8Array(deflateRawSync(Buffer.alloc(full)));
+  // Count the bytes the real decompressor hands on, so the test fails if inflating runs to the end
+  // and the size is checked only afterwards.
+  const Real = globalThis.DecompressionStream;
+  let produced = 0;
+  globalThis.DecompressionStream = class {
+    constructor(format) {
+      const real = new Real(format);
+      this.writable = real.writable;
+      this.readable = real.readable.pipeThrough(new TransformStream({ transform(chunk, c) { produced += chunk.length; c.enqueue(chunk); } }));
+    }
+  };
+  try {
+    await assert.rejects(inflateWithin(bomb, 1000), /damaged/);
+  } finally {
+    globalThis.DecompressionStream = Real;
+  }
+  assert.ok(produced < full / 20, `inflated ${produced} of ${full} bytes before refusing`);
 });
 
 test("encodes 16-bit mono PCM WAV", () => {
