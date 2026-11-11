@@ -173,6 +173,9 @@ def read_folder(folder):
     total = 0
     for name in sorted(NAMES):
         path = folder / name
+        # Only plain files in the folder are read: a link could point anywhere on the Mac (#61).
+        if path.is_symlink():
+            raise ProjectError(f"{name} in {folder.name} is a link, not a file; put the file itself in the folder.")
         if not path.exists():
             # An iCloud Drive file not downloaded to this Mac is a placeholder named .<name>.icloud.
             if (folder / f".{name}.icloud").exists():

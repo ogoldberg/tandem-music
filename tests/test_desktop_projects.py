@@ -151,6 +151,25 @@ def test_a_recording_still_in_icloud_is_named_instead_of_silently_left_out(tmp_p
         pj.read_folder(tmp_path)
 
 
+@pytest.mark.parametrize("name", ["project.json", "original.wav", "tandem.json"])
+def test_a_link_in_place_of_a_project_file_is_refused(tmp_path, name):
+    """#61: a folder's files are read only when they are plain files in it, never through a link,
+    even when the link points at a valid file elsewhere or at nothing."""
+    folder, elsewhere = tmp_path / "Song", tmp_path / "elsewhere"
+    folder.mkdir(); elsewhere.mkdir()
+    (folder / "project.json").write_text(json.dumps(PROJECT))
+    (folder / "original.wav").write_bytes(wav_bytes())
+    target = elsewhere / name
+    target.write_bytes((folder / name).read_bytes() if (folder / name).exists() else json.dumps({"format": "tandem-bundle", "version": 1}).encode())
+    (folder / name).unlink(missing_ok=True)
+    (folder / name).symlink_to(target)
+    with pytest.raises(pj.ProjectError, match=f"{name} in Song is a link"):
+        pj.read_folder(folder)
+    target.unlink()
+    with pytest.raises(pj.ProjectError, match=f"{name} in Song is a link"):
+        pj.read_folder(folder)
+
+
 def test_saving_into_a_folder_that_holds_other_things_is_refused(tmp_path):
     (tmp_path / "taxes.pdf").write_text("x")
     with pytest.raises(pj.ProjectError, match="not a Tandem project folder"):
