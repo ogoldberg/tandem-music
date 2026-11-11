@@ -130,6 +130,10 @@ def app_icon(name: str):
 def capture_page():
     return FileResponse(Path(__file__).resolve().parent / "capture.html", media_type="text/html")
 
+@app.get("/bundle.js", include_in_schema=False)
+def bundle_js():
+    return FileResponse(Path(__file__).resolve().parent / "bundle.js", media_type="text/javascript")
+
 @app.get("/ideas.js", include_in_schema=False)
 def ideas_js():
     return FileResponse(Path(__file__).resolve().parent / "ideas.js", media_type="text/javascript")

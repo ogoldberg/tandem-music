@@ -657,6 +657,16 @@ def test_capture_page_and_ideas_module_are_served_and_precached(client):
     for asset in ("./capture","./ideas.js","./capture.webmanifest","./storage.js","./recordings.js"):
         assert "'"+asset+"'" in sw.text
 
+def test_bundle_module_is_served_and_precached(client):
+    # MOB.3: the capture page (Share) and the studio (Open project) import bundle.js at start-up, so it is
+    # precached for offline use.
+    js=run(client("GET","/bundle.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export async function readBundle" in js.text and "export function writeBundle" in js.text
+    assert "from './bundle.js'" in run(client("GET","/")).text
+    assert "from './bundle.js'" in run(client("GET","/capture")).text
+    assert "./bundle.js" in run(client("GET","/sw.js")).text
+
 def test_capture_manifest_starts_at_the_capture_page(client):
     r=run(client("GET","/capture.webmanifest"))
     assert r.status_code==200 and "manifest+json" in r.headers["content-type"]
