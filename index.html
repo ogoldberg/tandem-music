@@ -589,7 +589,7 @@ async function openIdea(id){
   const title=ideaTitle(idea,shortTime);
   const blob=await recordings.get(idea.audio);if(!blob){status('The recording of '+title+' is no longer on this device.');return}
   const kept=await keepDraft(title);
-  newProject();edit('Open idea: '+title,()=>Object.assign(state,{bpm:100,instrument:'piano',melody_locked:true,notes:[],drums:[],harmony:[],harmony_instrument:'piano',band:null}));
+  newProject();edit('Open idea: '+title,()=>Object.assign(state,{bpm:100,instrument:'piano',melody_locked:true,notes:[],drums:[],harmony:[],harmony_instrument:'piano',band:null,timbre:null}));
   await loadAudio(blob);await saveDraftAudio();$('mode').value='melody';
   status('Opened '+title+'. Transcribe it to turn it into notes.'+kept);
 }

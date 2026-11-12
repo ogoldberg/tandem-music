@@ -297,3 +297,22 @@ def test_a_reload_keeps_every_recording_with_an_instrument_voice(page, app, tmp_
     page.wait_for_timeout(1000)
     assert page.evaluate("async () => await (" + IDB_GET + ")('draft-audio')") == kept
     assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+
+
+def test_opening_an_idea_drops_the_previous_projects_instrument_track(page, app, tmp_path):
+    desktop=app()
+    open_app(page, desktop)
+    record(page, hum(tmp_path/'hum.wav'))
+    page.click('#gentimbre')
+    expect(page.locator('#timbrestatus')).to_have_text(re.compile('^Your take played'), timeout=60000)
+    assert draft(page)['timbre']
+    idea=page.evaluate('''async () => {
+      const {openKV}=await import('./storage.js');
+      const {createIdeaStore}=await import('./ideas.js');
+      const kv=await openKV(indexedDB);
+      const links=await kv.get('draft-audio');
+      return await createIdeaStore(kv).add({duration:2,audio:links.original});
+    }''')
+    page.goto(desktop['url']+'/?idea='+idea['id'])
+    expect(page.locator('#status')).to_contain_text('Transcribe it to turn it into notes.')
+    assert draft(page)['timbre'] is None
