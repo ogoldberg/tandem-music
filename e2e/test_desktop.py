@@ -263,7 +263,7 @@ def test_your_own_ai_key_is_kept_out_of_the_page_and_an_edit_uses_it(page, stand
         page.click("#aisave")
         expect(page.locator("#aistate")).to_have_text("Ready: stand-in-model (key in the Keychain)")
         expect(page.locator("#aikey")).to_have_value("")
-        assert keys.items == {"custom": key}
+        assert keys.items == {"custom " + stand_in_provider["url"]: key}
         assert key not in (tmp_path / "ai.json").read_text()
 
         page.click("#demo")
@@ -287,6 +287,29 @@ def test_your_own_ai_key_is_kept_out_of_the_page_and_an_edit_uses_it(page, stand
         page.click("#aiforget")
         expect(page.locator("#aistate")).to_have_text("Ready: stand-in-model")
         assert keys.items == {}
+        assert problems == []
+    finally:
+        desk.stop_server(server, thread)
+
+
+def test_a_damaged_ai_settings_file_can_be_replaced_from_the_panel(page, tmp_path, monkeypatch):
+    """AI.4: when ai.json is damaged the panel says so and still lists the providers, so Save repairs it."""
+    for key in list(os.environ):
+        if key.startswith(("TANDEM_", "VERCEL", "UPSTASH_")):
+            monkeypatch.delenv(key)
+    (tmp_path / "ai.json").write_text("{not json")
+    keys = MemoryKeys()
+    port, secret = free_port(), desk.new_launch_secret()
+    server, thread = desk.start_server(port, secret, ai_settings=AISettings(tmp_path, keys))
+    try:
+        problems = open_app(page, {"url": f"http://127.0.0.1:{port}", "port": port, "secret": secret})
+        expect(page.locator("#aistate")).to_contain_text("is damaged")
+        expect(page.locator("#aiprovider option")).to_have_count(6)
+        page.select_option("#aiprovider", "ollama")
+        page.fill("#aimodel", "llama3.2")
+        page.click("#aisave")
+        expect(page.locator("#aistate")).to_have_text("Ready: llama3.2")
+        assert json.loads((tmp_path / "ai.json").read_text()) == {"provider": "ollama", "model": "llama3.2"}
         assert problems == []
     finally:
         desk.stop_server(server, thread)

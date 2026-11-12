@@ -1,8 +1,9 @@
 """AI.4: the person's own AI provider, model and key in the Mac app.
 
 The provider and model are kept in <home>/ai.json next to desktop.json. The key is kept only in the
-macOS Keychain (service "Tandem AI key", one item per provider), read by the local server when it
-calls the provider, and never written to ai.json, a project, a log or the page: the page is told
+macOS Keychain (service "Tandem AI key", one item per provider; for another OpenAI-compatible server
+one item per server address, so a key is only ever sent to the address it was saved for), read by
+the local server when it calls the provider, and never written to ai.json, a project, a log or the page: the page is told
 only whether a key is saved. /api/chat in the app's own window uses these settings through
 `llm_config()` (guarded_app passes this object to the hosted app as scope["tandem_ai"]), so the
 existing invoke_llm, normalize_actions and melody lock apply unchanged. Nothing here imports
@@ -82,7 +83,15 @@ def _check_base(base):
     parts = urlsplit(base.strip())
     if parts.scheme not in ("http", "https") or not parts.hostname or parts.username or parts.password or parts.query or parts.fragment:
         raise AISettingsError("Give the server's address as http:// or https:// with no password, query or fragment, such as http://localhost:1234/v1.")
-    return base.strip().rstrip("/")
+    return (parts.scheme + "://" + parts.netloc.lower() + parts.path).rstrip("/")
+
+
+def _account(settings):
+    """The Keychain item for these settings: the provider, or for another server its address too, so
+    a key saved for one server is never sent to another."""
+    if settings["provider"] == "custom":
+        return "custom " + settings["base_url"]
+    return settings["provider"]
 
 
 class AISettings:
@@ -121,10 +130,16 @@ class AISettings:
 
     def public(self):
         """What the page may know: the choices, the saved provider and model, and whether a key is
-        saved. Never the key."""
-        settings = self.load()
-        has_key = bool(settings and self.keys.get(settings["provider"]))
+        saved. Never the key. A damaged settings file is reported as `problem` with the choices
+        still listed, so the page can save new settings over it."""
+        problem = None
+        try:
+            settings = self.load()
+        except AISettingsError as exc:
+            settings, problem = None, str(exc)
+        has_key = bool(settings and self.keys.get(_account(settings)))
         return {"providers": [{"id": k, "label": v["label"], "needs_key": v["key"]} for k, v in PROVIDERS.items()],
+                "problem": problem,
                 "provider": settings["provider"] if settings else None,
                 "model": settings["model"] if settings else None,
                 "base_url": settings.get("base_url") if settings else None,
@@ -147,15 +162,22 @@ class AISettings:
                 raise AISettingsError(f"{PROVIDERS[provider]['label']} needs no key.")
             key = _check_key(key)
         with self._lock:
+            try:
+                before = self.load()
+            except AISettingsError:
+                before = None
             if key:
-                self.keys.set(provider, key)
+                self.keys.set(_account(settings), key)
             self._write(settings)
+            # Moving to another server's address replaces the server: its old key is removed.
+            if before and before["provider"] == provider == "custom" and _account(before) != _account(settings):
+                self.keys.delete(_account(before))
         return self.public()
 
     def forget_key(self):
         settings = self.load()
         if settings:
-            self.keys.delete(settings["provider"])
+            self.keys.delete(_account(settings))
         return self.public()
 
     def llm_config(self):
@@ -165,7 +187,7 @@ class AISettings:
         if settings is None:
             return None
         info = PROVIDERS[settings["provider"]]
-        key = self.keys.get(settings["provider"]) or ""
+        key = self.keys.get(_account(settings)) or ""
         if info["key"] is True and not key:
             raise AISettingsError(f"Add your {info['label']} key in Your AI settings to use {info['label']}.")
         return {"provider": info["kind"], "model": settings["model"], "key": key,

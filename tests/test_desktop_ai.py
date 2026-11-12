@@ -220,8 +220,36 @@ def test_a_damaged_settings_file_is_explained(settings, tmp_path, provider):
     (tmp_path / "ai.json").write_text("{not json")
     r = chat(settings)
     assert r.status_code == 503 and "is damaged" in r.text and provider["seen"] == []
-    assert call(settings, "GET", "/api/desktop/ai").status_code == 400
-    assert save(settings, provider="openai", model="m", key=KEY).status_code == 200
+    r = call(settings, "GET", "/api/desktop/ai")
+    # The choices are still listed so the panel can save over the damaged file.
+    assert r.status_code == 200 and "is damaged" in r.json()["problem"] and len(r.json()["providers"]) == len(ai_keys.PROVIDERS)
+    assert r.json()["provider"] is None and r.json()["ready"] is False
+    r = save(settings, provider="openai", model="m", key=KEY)
+    assert r.status_code == 200 and r.json()["problem"] is None and r.json()["ready"] is True
+
+
+def test_a_key_saved_for_one_server_is_never_sent_to_another(settings, provider):
+    save(settings, provider="custom", model="m", base_url="https://first.example/v1", key=KEY)
+    assert settings.keys.items == {"custom https://first.example/v1": KEY}
+    r = save(settings, provider="custom", model="m", base_url="http://localhost:1234/v1")
+    assert r.json()["has_key"] is False and r.json()["ready"] is True
+    assert settings.llm_config()["key"] == "" and settings.keys.items == {}
+    assert chat(settings).status_code == 200
+    assert provider["seen"][0].url == "http://localhost:1234/v1/chat/completions"
+    assert "authorization" not in provider["seen"][0].headers
+
+
+def test_another_providers_key_is_kept_when_switching_to_a_server(settings):
+    save(settings, provider="openai", model="m", key=KEY)
+    save(settings, provider="custom", model="m", base_url="http://localhost:1234/v1")
+    assert settings.llm_config()["key"] == ""
+    assert save(settings, provider="openai", model="m").json()["has_key"] is True
+
+
+def test_the_same_server_address_written_differently_keeps_its_key(settings):
+    save(settings, provider="custom", model="m", base_url="https://First.Example/v1/", key=KEY)
+    save(settings, provider="custom", model="m", base_url="https://first.example/v1")
+    assert settings.llm_config()["key"] == KEY
 
 
 def test_the_routes_need_the_launch_secret_and_the_right_method(settings):

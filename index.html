@@ -411,7 +411,7 @@ let aiProviders=[];
 function showAI(x){
   aiProviders=x.providers;$('aiprovider').replaceChildren(...x.providers.map(p=>new Option(p.label,p.id)));
   if(x.provider)$('aiprovider').value=x.provider;$('aimodel').value=x.model||'';$('aibaseurl').value=x.base_url||'';$('aikey').value='';
-  aiFields(x);
+  aiFields(x);if(x.problem)$('aistate').textContent=x.problem;
 }
 function aiFields(x){
   const p=aiProviders.find(p=>p.id===$('aiprovider').value),same=x&&x.provider===$('aiprovider').value;
