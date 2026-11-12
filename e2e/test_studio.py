@@ -1301,18 +1301,32 @@ def test_stems_line_up_with_the_mix_and_the_midi_has_a_track_per_part(studio, tm
 
 def test_an_edit_during_the_stem_export_does_not_change_what_is_exported(studio, tmp_path):
     """#62 review: the export works on the project as it was when Export stems was pressed, so clearing
-    the melody while it renders leaves the stems, the mix and the MIDI agreeing on the old melody."""
+    the melody and the drums while it renders leaves the stems, the mix and the MIDI agreeing on the old
+    project. The first part's render is held until both edits are made, so the drums render after them."""
     page = studio
     page.click("#demo")
+    page.evaluate("""() => {
+        const start = OfflineAudioContext.prototype.startRendering;
+        window.renderHeld = false;
+        OfflineAudioContext.prototype.startRendering = function () {
+            if (window.releaseRender || this.length === 1) return start.call(this);
+            window.renderHeld = true;
+            return new Promise(resolve => { window.releaseRender = () => resolve(start.call(this)); });
+        };
+    }""")
     with page.expect_download() as info:
         page.click("#exportstems")
+        page.wait_for_function("window.renderHeld")
         page.click("#clearnotes")
+        page.click("#clearhits")
+        page.evaluate("window.releaseRender()")
     assert count(page, "notecount") == 0
     path = tmp_path / "stems.zip"
     info.value.save_as(path)
     with zipfile.ZipFile(path) as z:
         assert z.namelist() == ["mix.wav", "melody.wav", "drums.wav", "tandem.mid"]
-        with wave.open(io.BytesIO(z.read("melody.wav"))) as w:
-            assert np.abs(np.frombuffer(w.readframes(w.getnframes()), "<i2")).max() > 1000
+        for stem in ("melody.wav", "drums.wav"):
+            with wave.open(io.BytesIO(z.read(stem))) as w:
+                assert np.abs(np.frombuffer(w.readframes(w.getnframes()), "<i2")).max() > 1000, stem
         data = z.read("tandem.mid")
     assert [p for _, p in midi_note_ons(data, 0)] == [60, 64, 67, 69, 67, 64, 62, 60]
