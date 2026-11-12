@@ -14,3 +14,5 @@ einops==0.8.2
 # GEN.2: backing band with MusicGen-Melody (weights CC-BY-NC 4.0, LIC.1) through transformers. Its chroma
 # input is computed in tandem_desktop/band.py, since torchaudio has no release for this torch.
 transformers==5.22.2
+# TIMBRE.1: the voice played as an instrument with RAVE models (CC-BY-NC 4.0, LIC.1) needs only torch and
+# julius above: the models are TorchScript, run by torch itself.

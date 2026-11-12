@@ -83,6 +83,13 @@ In the Mac app, Generate band (in the Band track under Harmony) plays up to 30 s
 
 **Speed:** 8 s of band took 43-56 s on Metal on the operator's Mac (Apple M5, while the machine was otherwise heavily loaded), so a 30 s band takes about 3 minutes there; loading the model takes about 15 s. The first Generate band downloads the model (6.23 GB). Still to check by ear on the operator's Mac *(HUMAN)*: a 30 s band from a real hum, whether it sounds like a band playing the song, and the time it took.
 
+## Voice as an instrument (TIMBRE.1)
+In the Mac app, Play my voice on it (the Voice as instrument track under Band) plays the recorded voice as a soprano saxophone, an electric guitar or a church organ with RAVE timbre transfer (`tandem_desktop/timbre.py`, the Intelligent Instruments Lab's models, CC-BY-NC 4.0). It sends the tuned voice when there is one, else the take, and the result is a new recording of the same length that plays from zero with the parts; the original stays. RAVE keeps the timing, pitch and loudness of the voice and replaces its sound, so a clean, dry, in-tune take gives the best result: tune it first. Other models in the same collection (magnetic resonator piano, voices, birds, water) were left out: the piano model did not follow the sung pitch (196, 262 and 392 Hz came back at about 96 and 131 Hz), and the others are not instruments.
+
+**Pitch and timing check** (`tests/test_timbre.py::test_the_instrument_plays_the_sung_line_in_time_and_in_tune`, real models, `TANDEM_TEST_TIMBRE=1`): a 5 s synthetic sung line (ten notes C4-C5 with 5.5 Hz vibrato and harmonics, after 0.5 s of silence) through each model. Result on the operator's Mac: every note within 0.2 semitones of the sung pitch for all three (required: 8 of 10 within a semitone); the instrument starts 7 ms (sax), 9 ms (guitar) and 45 ms (organ, a slower attack) after the voice (required: within 60 ms); 5.5 s took 0.7-1.2 s on the CPU, model load included.
+
+Still to judge by ear on the operator's Mac *(HUMAN, the TIMBRE.1 acceptance)*: at least two of the instruments on real singing in the native window (whether it sounds like the instrument playing the person's line, and which takes work best).
+
 ## Research/evaluation plan
 Build a consented test set of dry solo voices across ranges, devices, vowels, consonants, vibrato, quiet notes, slides and sample rates (16/22.05/44.1/48 kHz). Include known target MIDI and timings, silence and noisy negatives. Measure note error in cents, preservation of length, spectral artifacts, clicks and loudness. Conduct blinded listening tests against original and reference correction. Never claim “professional quality” merely because a deployment succeeds or unit tests pass.
 
@@ -91,5 +98,6 @@ Build a consented test set of dry solo voices across ranges, devices, vowels, co
 - [WORLD](https://github.com/mmorise/World): open-source vocoder; used via `pyworld-prebuilt` Python package. Review redistributed binary and dependency licenses.
 - [Rubber Band](https://github.com/breakfastquay/rubberband) and [x42 Auto Tune](https://www.x42-plugins.com/x42/x42-autotune): alternative research references, **not incorporated**.
 - Melodyne and Antares are commercial UX/quality references, **not dependencies**.
+- [RAVE](https://github.com/acids-ircam/RAVE) models from the [Intelligent Instruments Lab](https://huggingface.co/Intelligent-Instruments-Lab/rave-models) (TIMBRE.1): CC-BY-NC 4.0, non-commercial use only, downloaded on request in the Mac app and never bundled; LIC.1 settles them before any distribution.
 
 Avoid copying proprietary code or bypassing license controls.

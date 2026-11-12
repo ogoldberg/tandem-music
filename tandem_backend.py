@@ -220,6 +220,16 @@ class ProjectBand(BaseModel):
     seconds: float = Field(ge=1,le=30,allow_inf_nan=False)
     muted: bool = False
     model: Literal["musicgen-melody"] = "musicgen-melody"
+class ProjectTimbre(BaseModel):
+    """TIMBRE.1: the recorded voice played as an instrument by a RAVE model in the Mac app. Its audio is a
+    recording kept beside the project (the timbre slot), never in it. No AI action edits it."""
+    model_config=ConfigDict(extra="forbid")
+    id: str = Field(pattern=r"^[A-Za-z0-9-]{1,64}$")
+    instrument: Literal["sax","guitar","organ"]
+    source: Literal["take","tuned"]
+    seconds: float = Field(gt=0,le=600,allow_inf_nan=False)
+    muted: bool = False
+    model: Literal["rave"] = "rave"
 class ChatProject(BaseModel):
     """The project fields the browser sends to /api/chat; mirrors the tandem-project schema."""
     model_config=ConfigDict(extra="forbid")
@@ -230,6 +240,8 @@ class ChatProject(BaseModel):
     melody_locked: bool = True
     # GEN.2: the generated band's description, when there is one (small, so before the harmony).
     band: ProjectBand | None = None
+    # TIMBRE.1: the voice played as an instrument, when there is one.
+    timbre: ProjectTimbre | None = None
     # ARR.1c: optional accompaniment part generated in the studio. Kept last so a long project is
     # cut at the harmony, not the melody, when the prompt is truncated. No AI action edits it.
     harmony: list[ProjectNote] = Field(default_factory=list,max_length=1024)

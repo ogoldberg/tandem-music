@@ -138,8 +138,8 @@ test("saving holds a shared lock and garbage collection an exclusive one, so a j
   assert.equal(dir.files.size, 1, "the fresh recording survived the collection");
 });
 
-test("the recording slots, in order, include the separated stems and the generated band", () => {
-  assert.deepEqual(AUDIO_SLOTS, ["original", "polished", "tuned", "vocal", "accompaniment", "band"]);
+test("the recording slots, in order, include the separated stems, the generated band and the instrument voice", () => {
+  assert.deepEqual(AUDIO_SLOTS, ["original", "polished", "tuned", "vocal", "accompaniment", "band", "timbre"]);
 });
 
 test("cleanLinks keeps only well-formed slot links; linkedIds collects their ids", () => {

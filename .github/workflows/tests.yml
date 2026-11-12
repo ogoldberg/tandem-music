@@ -72,4 +72,6 @@ jobs:
       - run: python -m pytest tests/test_separation.py -q -s
       # GEN.2: the chroma checks need torch and transformers; the real MusicGen-Melody test (6.23 GB) is skipped here.
       - run: python -m pytest tests/test_band.py -q -s
+      # TIMBRE.1: the TorchScript stand-in checks need torch; the real RAVE models are skipped here.
+      - run: python -m pytest tests/test_timbre.py -q -s
       - run: python -m pytest e2e/test_separation.py -q -s --browser chromium

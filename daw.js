@@ -21,12 +21,13 @@ const PARTS = [
 ];
 const DRUM_CHANNEL = 9;
 export const STEM_FILES = Object.freeze({
-  mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", drums: "drums.wav", band: "band.wav",
+  mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", drums: "drums.wav", band: "band.wav", timbre: "timbre.wav",
   original: "vocal-original.wav", polished: "vocal-polished.wav", tuned: "vocal-tuned.wav",
   vocal: "vocal-separated.wav", accompaniment: "accompaniment.wav", midi: "tandem.mid",
 });
-// GEN.2: the generated band is a part: it is in mix.wav and Export WAV.
-const PART_STEMS = ["melody", "harmony", "drums", "band"];
+// GEN.2 and TIMBRE.1: the generated band and the voice played as an instrument are parts: they are in
+// mix.wav and Export WAV.
+const PART_STEMS = ["melody", "harmony", "drums", "band", "timbre"];
 const VOCAL_STEMS = ["original", "polished", "tuned", "vocal", "accompaniment"];
 
 const encoder = new TextEncoder();
@@ -115,12 +116,13 @@ export function midiFile(project, { key = null } = {}) {
   return Uint8Array.from(header.concat(...tracks));
 }
 
-// Seconds of audio the arrangement needs: every note and hit with a second of tail, and the band
-// (GEN.2) unless it is muted, at least four, and one more second so the last release is not cut.
+// Seconds of audio the arrangement needs: every note and hit with a second of tail, the band (GEN.2)
+// and the voice played as an instrument (TIMBRE.1) unless muted, at least four, and one more second so
+// the last release is not cut.
 export function arrangementSeconds(project) {
   const ends = [...(project.notes || []), ...(project.harmony || [])].map(n => n.t + n.d + 1)
     .concat((project.drums || []).map(h => h.t + 1))
-    .concat(project.band && !project.band.muted && Number.isFinite(project.band.seconds) ? [project.band.seconds] : []);
+    .concat(["band", "timbre"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []));
   return Math.max(4, ...ends) + 1;
 }
 
