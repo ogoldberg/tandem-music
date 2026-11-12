@@ -7,6 +7,7 @@ import wave
 import zipfile
 
 import mido
+import pytest
 import numpy as np
 from playwright.sync_api import expect
 
@@ -1332,6 +1333,67 @@ def test_export_musicxml_writes_the_melody_and_harmony_as_sheet_music(studio, tm
     page.click("#clearharmony")
     page.click("#exportmusicxml")
     expect(page.locator("#status")).to_contain_text("Nothing to write as notation yet")
+
+
+def test_export_dawproject_writes_note_and_audio_tracks_a_daw_can_open(studio, tmp_path):
+    """EXP.3: Export DAWproject downloads a .dawproject zip whose project.xml and metadata.xml are valid
+    against the DAWproject 1.0 schemas, with the parts as note tracks in beats at the project tempo and
+    every recording as a 44.1 kHz WAV on an audio track from zero; only the most finished take plays."""
+    from pathlib import Path
+    from lxml import etree
+    xsd = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "dawproject-1.0"
+    page = studio
+    page.click("#exportdawproject")
+    expect(page.locator("#status")).to_have_text("DAWproject export failed: Nothing to export yet: add notes or drums, or record a take.")
+
+    page.click("#demo")
+    page.click("#genharmony")
+    import_recording(page, tone_wav(tmp_path / "take.wav"))
+    page.click("#polish")
+    expect(page.locator("#status")).to_have_text("Vocal polished. Compare Original and Polished.")
+    page.select_option("#harmonykey", "9:minor")
+    path = download(page, "#exportdawproject", tmp_path)
+    assert path.name == "tandem.dawproject"
+    expect(page.locator("#status")).to_have_text("Exported the DAWproject file with 2 audio tracks")
+
+    with zipfile.ZipFile(path) as z:
+        assert z.namelist() == ["project.xml", "metadata.xml", "audio/vocal-polished.wav", "audio/vocal-original.wav"]
+        project = etree.fromstring(z.read("project.xml"))
+        metadata = etree.fromstring(z.read("metadata.xml"))
+        wavs = {}
+        for name in z.namelist()[2:]:
+            with wave.open(io.BytesIO(z.read(name))) as w:
+                assert (w.getnchannels(), w.getsampwidth(), w.getframerate()) == (1, 2, 44100), name
+                wavs[name] = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float)
+    for name, doc in (("Project.xsd", project), ("MetaData.xsd", metadata)):
+        schema = etree.XMLSchema(etree.parse(str(xsd / name)))
+        assert schema.validate(doc), schema.error_log.filter_from_errors()
+    assert metadata.findtext("Comment") == "Key: A minor"
+    assert project.find("Transport/Tempo").get("value") == "100"
+
+    lanes = {l.get("track"): l for l in project.iter("Lanes") if l.get("track")}
+    tracks = {t.get("name"): (t, lanes[t.get("id")]) for t in project.find("Structure").iter("Track")}
+    assert list(tracks) == ["Melody", "Harmony", "Drums", "Vocal (polished)", "Vocal (original)", "Master"]
+    # 100 bpm: the example's 0.45 s steps are 0.75 of a beat.
+    melody = [(int(n.get("key")), float(n.get("time"))) for n in tracks["Melody"][1].iter("Note")]
+    assert melody == [(m, pytest.approx(i * 0.75)) for i, m in enumerate([60, 64, 67, 69, 67, 64, 62, 60])]
+    assert sorted(int(n.get("key")) for n in tracks["Harmony"][1].iter("Note")) == [52, 52, 55, 55, 60, 60]
+    assert {n.get("key") for n in tracks["Drums"][1].iter("Note")} <= {"36", "38", "42"}
+    for name, muted, file in (("Vocal (polished)", "false", "audio/vocal-polished.wav"), ("Vocal (original)", "true", "audio/vocal-original.wav")):
+        track, lane = tracks[name]
+        assert track.find("Channel/Mute").get("value") == muted
+        audio = lane.find("Clips/Clip/Warps/Audio")
+        assert audio.find("File").get("path") == file
+        # The clip's length is its WAV's, and the take is there from zero: it is not silent, it sounds in
+        # the first 10 ms, and its first 0.5 s is the imported take's first tone.
+        samples = wavs[file]
+        assert float(audio.get("duration")) == pytest.approx(len(samples) / 44100, abs=1e-6)
+        assert float(lane.find("Clips/Clip").get("time")) == 0
+        assert np.abs(samples).max() > 1000, name
+        assert np.argmax(np.abs(samples) > 100) < 441, name
+        first = samples[441:22050] * np.hanning(22050 - 441)
+        peak_hz = np.argmax(np.abs(np.fft.rfft(first))) * 44100 / len(first)
+        assert peak_hz == pytest.approx(TONES[0][0], abs=5), name
 
 
 def test_an_edit_during_the_stem_export_does_not_change_what_is_exported(studio, tmp_path):
