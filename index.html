@@ -65,7 +65,7 @@ let recordings=null,recordingProblem='';
 const currentAudio=()=>({original:audio,polished,tuned,vocal,accompaniment,band:bandBlob()});
 // GEN.2: generated bands by state.band.id, so undo and redo of Generate, Mute and Remove find their audio. The draft's
 // links are written again whenever the band the project names changes (see renderBand).
-const bands=new Map(),bandBlob=()=>state.band?bands.get(state.band.id)??null:null,BAND_LICENCE='MusicGen-Melody weights are CC-BY-NC 4.0: for non-commercial use only.';let savedBand=null,bandJob=null,cancelBand=false,bandConfirmed=false,bandFollowsChosen=false;
+const bands=new Map(),bandBlob=()=>state.band?bands.get(state.band.id)??null:null,BAND_LICENCE='MusicGen-Melody weights are CC-BY-NC 4.0: for non-commercial use only.';let savedBand=null,restoringAudio=false,projectEpoch=0,bandJob=null,cancelBand=false,bandConfirmed=false,bandFollowsChosen=false;
 // SEP.1: once a recording is separated, the vocal is what Transcribe, Polish, Detect and Tune work on; Original still plays the full recording.
 const take=()=>vocal??audio;
 async function putAudio(blobs){const links={};for(const s of AUDIO_SLOTS)if(blobs[s])links[s]=await recordings.put(blobs[s]);return links}
@@ -74,13 +74,15 @@ async function saveDraftAudio(){if(!kv)return;if(!recordings){if(recordingProble
 // Load stored recordings by their links. Returns the slots whose files are no longer on this device.
 async function restoreAudio(links,band=state.band){const got={},missing=[];for(const s of AUDIO_SLOTS)if(links[s]){got[s]=await recordings.get(links[s]);if(!got[s])missing.push(s)}if(got.band&&band)bands.set(band.id,got.band);if(!got.original)return links.original||links.band?missing:null;await useAudio(got,'kept on this device');return missing}
 // Load an original recording with the polished and tuned ones made from it.
-async function useAudio(got,from){await loadAudio(got.original);if(got.vocal&&got.accompaniment){showSeparation(got.vocal,got.accompaniment);$('separateinfo').textContent='Restored the separated voice and music '+from+'. Transcribe, Polish and Tune work on the voice.'}if(got.polished){polished=got.polished;$('polished').disabled=$('downloadvocal').disabled=false;$('polishinfo').textContent='Restored the polished vocal '+from+'.'}if(got.tuned){tuned=got.tuned;$('playtuned').disabled=$('downloadtuned').disabled=false;$('tuneinfo').textContent='Restored the tuned voice '+from+'.'}}
+// The draft's links are saved once every slot is back: a save from loadAudio's renderBand would miss the polished,
+// tuned and separated recordings set after it, and the start-up clean-up would then delete their files.
+async function useAudio(got,from){restoringAudio=true;try{await loadAudio(got.original);if(got.vocal&&got.accompaniment){showSeparation(got.vocal,got.accompaniment);$('separateinfo').textContent='Restored the separated voice and music '+from+'. Transcribe, Polish and Tune work on the voice.'}if(got.polished){polished=got.polished;$('polished').disabled=$('downloadvocal').disabled=false;$('polishinfo').textContent='Restored the polished vocal '+from+'.'}if(got.tuned){tuned=got.tuned;$('playtuned').disabled=$('downloadtuned').disabled=false;$('tuneinfo').textContent='Restored the tuned voice '+from+'.'}}finally{restoringAudio=false}savedBand=bandBlob();await saveDraftAudio()}
 const missingText=m=>'The '+m.join(' and ')+' recording'+(m.length>1?'s are':' is')+' no longer on this device.';
 // Delete stored recordings that neither the draft, a version nor a captured idea (MOB.1) links to.
 function collectRecordings(){if(!recordings||!kv)return;recordings.gc(async()=>{const ids=await versions.audioIds();for(const id of await ideas.audioIds())ids.add(id);for(const id of linkedIds([await kv.get(DRAFT_AUDIO_KEY)]))ids.add(id);return ids}).catch(e=>status('Could not tidy stored recordings: '+e.message))}
 function showPersistence(request=false){persistence(navigator.storage,{request}).then(s=>{$('storageinfo').textContent=' '+PERSISTENCE_TEXT[s]},()=>{})}
 function renderRoll(id,events,drums,{base=48,step=2.2,label=drums?'Remove drum hit':'Remove note',marked=null}={}){const el=$(id);el.replaceChildren();const end=Math.max(8,...events.map(n=>(n.t||0)+(n.d||.3)));events.forEach((n,i)=>{const b=document.createElement('button');b.className='note'+(drums?' hit':'')+(marked?.has(i)?' inphrase':'');b.title=drums?n.k+' at '+n.t+'s':'MIDI '+n.m+' at '+n.t+'s';b.style.left=(n.t/end*97)+'%';b.style.width=(Math.max(.25,drums?.15:n.d)/end*97)+'%';b.style.top=drums?({kick:8,snare:40,hat:72}[n.k]||8)+'%':Math.min(92,Math.max(2,85-(n.m-base)*step))+'%';b.onclick=()=>edit(label,()=>events.splice(i,1));el.append(b)})}
-function demo(){edit('Load example',()=>{state.bpm=100;state.instrument='marimba';state.notes=[60,64,67,69,67,64,62,60].map((m,i)=>({m,t:i*.45,d:.36}));state.drums=Array.from({length:16},(_,i)=>({k:i%4===0?'kick':i%4===2?'snare':'hat',t:i*.225}))});status('Example loaded — press Play')}
+function demo(){newProject();edit('Load example',()=>{state.bpm=100;state.instrument='marimba';state.notes=[60,64,67,69,67,64,62,60].map((m,i)=>({m,t:i*.45,d:.36}));state.drums=Array.from({length:16},(_,i)=>({k:i%4===0?'kick':i%4===2?'snare':'hat',t:i*.225}))});status('Example loaded — press Play')}
 $('demo').onclick=demo;
 $('melodylock').onchange=()=>edit($('melodylock').checked?'Protect melody':'Unprotect melody',()=>{state.melody_locked=$('melodylock').checked});
 $('bpm').onchange=()=>edit('Change tempo',()=>{state.bpm=Number($('bpm').value)});
@@ -117,7 +119,7 @@ function checkBand(b){if(b==null)return;if(typeof b!=='object'||!/^[A-Za-z0-9-]{
 const bandPart=p=>({band:p.band?{id:p.band.id,style:p.band.style,follows:p.band.follows,seconds:p.band.seconds,muted:p.band.muted===true,model:'musicgen-melody'}:null});
 // Named versions (EDIT.2): kept in IndexedDB by versions.js (STORE.2a); restoring is an undoable edit.
 let renderGen=0;
-async function renderVersions(){const root=$('versionlist'),gen=++renderGen;if(!versions){root.textContent=storageProblem;return}let list;try{list=await versions.list()}catch(e){if(gen===renderGen)root.textContent=e.message;return}if(gen!==renderGen)return;root.replaceChildren();if(!list.length){root.textContent='No saved versions yet.';return}for(const v of list){const r=document.createElement('div');r.className='row version';const label=document.createElement('span');label.className='grow';label.textContent=v.name+' · '+new Date(v.savedAt).toLocaleString();const open=document.createElement('button');open.textContent='Restore';open.title='Restore '+v.name;open.onclick=async()=>{try{const p=await versions.get(v.id);if(!p)throw Error('That version no longer exists.');if(p.instrument!=null&&!INSTRUMENTS.includes(p.instrument))throw Error('Unsupported instrument: '+p.instrument);checkHarmony(p);checkBand(p.band);const links=recordings?await versions.audio(v.id):null;let missing=null;if(links){missing=await restoreAudio(links,p.band);if(missing)saveDraftAudio()}edit('Restore version: '+v.name,()=>Object.assign(state,{bpm:p.bpm||100,instrument:p.instrument||'piano',melody_locked:p.melody_locked!==false,notes:p.notes,drums:p.drums,...harmonyPart(p),...bandPart(p)}));status('Restored version: '+v.name+(missing?.length?'. '+missingText(missing):''))}catch(e){status(e.message)}renderVersions()};const del=document.createElement('button');del.textContent='Delete';del.title='Delete '+v.name;del.onclick=async()=>{try{await versions.remove(v.id);status('Deleted version: '+v.name);collectRecordings()}catch(e){status(e.message)}renderVersions()};r.append(label,open,del);root.append(r)}}
+async function renderVersions(){const root=$('versionlist'),gen=++renderGen;if(!versions){root.textContent=storageProblem;return}let list;try{list=await versions.list()}catch(e){if(gen===renderGen)root.textContent=e.message;return}if(gen!==renderGen)return;root.replaceChildren();if(!list.length){root.textContent='No saved versions yet.';return}for(const v of list){const r=document.createElement('div');r.className='row version';const label=document.createElement('span');label.className='grow';label.textContent=v.name+' · '+new Date(v.savedAt).toLocaleString();const open=document.createElement('button');open.textContent='Restore';open.title='Restore '+v.name;open.onclick=async()=>{try{const p=await versions.get(v.id);if(!p)throw Error('That version no longer exists.');if(p.instrument!=null&&!INSTRUMENTS.includes(p.instrument))throw Error('Unsupported instrument: '+p.instrument);checkHarmony(p);checkBand(p.band);const links=recordings?await versions.audio(v.id):null;let missing=null;if(links){missing=await restoreAudio(links,p.band);if(missing)saveDraftAudio()}newProject();edit('Restore version: '+v.name,()=>Object.assign(state,{bpm:p.bpm||100,instrument:p.instrument||'piano',melody_locked:p.melody_locked!==false,notes:p.notes,drums:p.drums,...harmonyPart(p),...bandPart(p)}));status('Restored version: '+v.name+(missing?.length?'. '+missingText(missing):''))}catch(e){status(e.message)}renderVersions()};const del=document.createElement('button');del.textContent='Delete';del.title='Delete '+v.name;del.onclick=async()=>{try{await versions.remove(v.id);status('Deleted version: '+v.name);collectRecordings()}catch(e){status(e.message)}renderVersions()};r.append(label,open,del);root.append(r)}}
 $('saveversion').onclick=async()=>{try{if(!versions)throw Error(storageProblem);normalize();const name=$('versionname').value,project=projectFromState(state),blobs=currentAudio();const v=recordings&&(audio||bandBlob())?await recordings.hold(async()=>versions.save(name,project,await putAudio(blobs))):await versions.save(name,project);$('versionname').value='';status('Saved version: '+v.name);showPersistence(true)}catch(e){status(e.message)}renderVersions()};
 $('versionname').onkeydown=e=>{if(e.key==='Enter')$('saveversion').click()};
 // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z and Ctrl+Y redo; text fields keep their own native undo.
@@ -146,7 +148,7 @@ $('load').onclick=()=>$('projectfile').click();
 // Open project reads a project file (.json) or a Tandem file (.tandem.zip, bundle.js: the project with its recordings, MOB.3).
 function checkProject(x){if(!x||!Array.isArray(x.notes)||!Array.isArray(x.drums))throw Error('Invalid project');if(x.instrument!=null&&!INSTRUMENTS.includes(x.instrument))throw Error('Unsupported instrument: '+x.instrument);checkHarmony(x);checkBand(x.band)}
 const projectFields=x=>({bpm:x.bpm||100,instrument:x.instrument||'piano',notes:x.notes,drums:x.drums,melody_locked:x.melody_locked!==false,...harmonyPart(x),...bandPart(x)});
-function openProject(x){checkProject(x);edit('Open project',()=>Object.assign(state,projectFields(x)));status('Project opened')}
+function openProject(x){checkProject(x);newProject();edit('Open project',()=>Object.assign(state,projectFields(x)));status('Project opened')}
 $('projectfile').onchange=async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;try{const bytes=new Uint8Array(await file.arrayBuffer());if(isBundle(bytes))await openBundle(await readBundle(bytes),file.name);else openProject(JSON.parse(new TextDecoder().decode(bytes)))}catch(err){status(err.message)}};
 function wavBlob(samples,sr){const b=new ArrayBuffer(44+samples.length*2),v=new DataView(b);function s(o,x){for(let i=0;i<x.length;i++)v.setUint8(o+i,x.charCodeAt(i))}s(0,'RIFF');v.setUint32(4,36+samples.length*2,true);s(8,'WAVE');s(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);s(36,'data');v.setUint32(40,samples.length*2,true);for(let i=0;i<samples.length;i++){let x=Math.max(-1,Math.min(1,samples[i]));v.setInt16(44+i*2,Math.round(x*32767),true)}return new Blob([b],{type:'audio/wav'})}
 // Export WAV waits longer than Play for the samples, but not forever: a stalled request exports with the oscillator voices and the status line says so.
@@ -391,7 +393,7 @@ async function openBundle(b,fileName){
   // Decode the recording before anything changes, so a file whose audio cannot be read leaves the draft as it was.
   try{await decoded(wav('original'))}catch(e){throw Error('Could not decode the recording in the file: '+e.message)}
   const kept=await keepDraft(title);
-  edit('Open '+title,()=>Object.assign(state,projectFields(b.project)));
+  newProject();edit('Open '+title,()=>Object.assign(state,projectFields(b.project)));
   await useAudio({original:wav('original'),polished:wav('polished'),tuned:wav('tuned'),vocal:wav('vocal'),accompaniment:wav('accompaniment')},'from the file');await saveDraftAudio();
   projectName=title;
   status('Opened '+title+' with its recording'+(Object.keys(b.recordings).length>1?'s':'')+'.'+kept);
@@ -462,8 +464,12 @@ function renderBand(){
   if(launch&&!bandFollowsChosen)$('bandfollows').value=state.notes.length||!audio?'melody':'recording';
   $('playbandtrack').disabled=!blob;$('bandmute').disabled=$('removeband').disabled=!b;$('bandmute').checked=!!b?.muted;
   $('bandinfo').textContent=b?(blob?'Generated audio: MusicGen-Melody played "'+b.style+'" following the '+(b.follows==='melody'?'melody notes':'recording')+', '+b.seconds+' s from the start'+(b.muted?' (muted)':'')+'. '+BAND_LICENCE:'The band recording is not on this device; generate it again.'):launch?'Describe a style and Generate band: MusicGen-Melody plays a backing band that follows your melody, on this Mac (up to 30 s; about a minute per 10 s).':'';
-  if(blob!==savedBand){savedBand=blob;saveDraftAudio()}
+  if(blob!==savedBand&&!restoringAudio){savedBand=blob;saveDraftAudio()}
 }
+// A band belongs to the project it was made for: after another project, idea or version is opened, a band still being
+// generated is not sent or not added (a model download carries on).
+const STALE_BAND='another project was opened meanwhile, so this band was not added to it.';
+function newProject(){projectEpoch++}
 async function bandMelody(follows){
   if(follows==='melody'){
     const p=structuredClone(state);if(!p.notes.length)throw Error('there are no melody notes; transcribe or add some, or follow the recording.');
@@ -478,7 +484,7 @@ $('genband').onclick=async()=>{
   if(bandJob){cancelBand=true;if(bandJob!=='starting')folderRequest('/api/desktop/jobs/'+bandJob,{method:'DELETE'}).catch(()=>{});return}
   const info=t=>{$('bandstatus').textContent=t;status(t)},pct=j=>' '+Math.round(j.progress*100)+'%',style=$('bandstyle').value.trim(),follows=$('bandfollows').value;
   if(!style){info('Describe the band\'s style first, for example: lo-fi band with brushed drums.');$('bandstyle').focus();return}
-  let label='Generate band';bandJob='starting';cancelBand=false;$('genband').textContent='Cancel';
+  let label='Generate band';const epoch=projectEpoch;bandJob='starting';cancelBand=false;$('genband').textContent='Cancel';
   try{
     const m=(await(await folderRequest('/api/desktop/models')).json()).models.find(x=>x.id==='musicgen-melody');
     if(!m)throw Error('this version of Tandem has no band model.');
@@ -488,10 +494,10 @@ $('genband').onclick=async()=>{
     info('Preparing the melody…');
     const {wav,seconds}=await bandMelody(follows),key=exportKey(state,$('harmonykey').value);
     const q=new URLSearchParams({style,bpm:String(state.bpm),seconds:String(Math.round(seconds*10)/10)});if(key)q.set('key',KEY_NAMES[key.tonic].replace('♯','#').replace('♭','b')+' '+key.mode);
-    const job=await(await folderRequest('/api/desktop/band?'+q,{method:'POST',headers:{'content-type':'audio/wav'},body:wav})).json();
+    if(epoch!==projectEpoch)throw Error(STALE_BAND);const job=await(await folderRequest('/api/desktop/band?'+q,{method:'POST',headers:{'content-type':'audio/wav'},body:wav})).json();
     const done=await bandWait(job.id,j=>info((j.message||'Playing your melody with the band')+'…'+pct(j)));
     const blob=new Blob([await(await folderRequest('/api/desktop/band/'+job.id+'/band.wav')).arrayBuffer()],{type:'audio/wav'}),id=crypto.randomUUID();
-    bands.set(id,blob);edit('Generate band: '+style,()=>{state.band={id,style,follows,seconds:done.result.seconds,muted:false,model:'musicgen-melody'}});
+    if(epoch!==projectEpoch)throw Error(STALE_BAND);bands.set(id,blob);edit('Generate band: '+style,()=>{state.band={id,style,follows,seconds:done.result.seconds,muted:false,model:'musicgen-melody'}});
     info('Generated '+done.result.seconds+' s of band. Press Play to hear it with your parts; Undo brings back the previous band.');
   }catch(e){info(e.cancelled?'Band generation cancelled.':'Could not generate the band: '+e.message)}
   finally{bandJob=null;cancelBand=false;$('genband').textContent=label}
@@ -531,7 +537,7 @@ async function openIdea(id){
   const title=ideaTitle(idea,shortTime);
   const blob=await recordings.get(idea.audio);if(!blob){status('The recording of '+title+' is no longer on this device.');return}
   const kept=await keepDraft(title);
-  edit('Open idea: '+title,()=>Object.assign(state,{bpm:100,instrument:'piano',melody_locked:true,notes:[],drums:[],harmony:[],harmony_instrument:'piano',band:null}));
+  newProject();edit('Open idea: '+title,()=>Object.assign(state,{bpm:100,instrument:'piano',melody_locked:true,notes:[],drums:[],harmony:[],harmony_instrument:'piano',band:null}));
   await loadAudio(blob);await saveDraftAudio();$('mode').value='melody';
   status('Opened '+title+'. Transcribe it to turn it into notes.'+kept);
 }

@@ -11,6 +11,7 @@ import io
 import json
 import os
 import re
+import threading
 import wave
 import zipfile
 
@@ -87,6 +88,37 @@ def draft(page):
     return page.evaluate(IDB_DRAFT)
 
 
+# Records every scheduled Web Audio source: its start time and, for a buffer, its length and peak.
+WATCH_STARTS = """() => {
+  window.starts = [];
+  // AudioBufferSourceNode has a start of its own, so both are watched.
+  for (const proto of [AudioScheduledSourceNode.prototype, AudioBufferSourceNode.prototype]) {
+    const start = proto.start;
+    proto.start = function (when = 0, ...rest) {
+      const b = this.buffer, d = b ? b.getChannelData(0) : null;
+      let peak = 0;
+      if (d) for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
+      window.starts.push({when, seconds: b ? b.duration : null, peak, now: this.context.currentTime});
+      return start.call(this, when, ...rest);
+    };
+  }
+}"""
+
+
+def played(page):
+    """Press Play, wait for it to start and return (band starts, the earliest other start, the first part event's time)."""
+    page.evaluate("window.starts = []")
+    page.click("#play")
+    expect(page.locator("#status")).to_have_text(re.compile("^Playing composition"))
+    starts = page.evaluate("window.starts")
+    page.click("#stop")
+    bands = [s for s in starts if s["seconds"] and abs(s["seconds"] - 4) < 0.05 and abs(s["peak"] - TONE) < 0.01]
+    others = [s["when"] for s in starts if s not in bands]
+    d = draft(page)
+    first = min(n["t"] for n in d["notes"] + d["drums"] + d["harmony"])
+    return bands, min(others), first
+
+
 def test_the_band_is_offered_only_in_the_mac_app(studio):
     expect(studio.locator("#bandtrack")).to_be_hidden()
 
@@ -118,9 +150,12 @@ def test_a_band_follows_the_melody_and_is_kept_played_undone_and_exported(page, 
     assert {k: b[k] for k in ("style", "follows", "seconds", "muted", "model")} == {
         "style": "lo-fi band with brushed drums", "follows": "melody", "seconds": 4, "muted": False, "model": "musicgen-melody"}
     wait_for_draft_audio(page, ["band"])
-    page.click("#play")
-    expect(page.locator("#status")).to_have_text(re.compile("^Playing composition"))
-    page.click("#stop")
+    # Play schedules the band once, from the project's zero: where the parts' zero is.
+    page.evaluate(WATCH_STARTS)
+    bands, earliest, first = played(page)
+    assert len(bands) == 1, bands
+    assert bands[0]["when"] == pytest.approx(earliest - first, abs=1e-3)
+    assert bands[0]["when"] > bands[0]["now"]
     # The band is a part: its stem starts at zero, at the level it plays, and it is in the mix.
     files = stems(page)
     assert {"mix.wav", "melody.wav", "drums.wav", "band.wav"} <= set(files), list(files)
@@ -135,6 +170,7 @@ def test_a_band_follows_the_melody_and_is_kept_played_undone_and_exported(page, 
     # Muted, it is out of the stems and the mix, and still in the project.
     page.check("#bandmute")
     assert draft(page)["band"]["muted"] is True
+    assert played(page)[0] == [], "a muted band does not play"
     assert "band.wav" not in stems(page)
     page.click("#undo")
     expect(page.locator("#bandmute")).not_to_be_checked()
@@ -187,7 +223,9 @@ def test_a_band_can_follow_the_recording(page, app, tmp_path):
 
 
 def test_the_download_is_confirmed_with_its_size_and_licence(page, app, tmp_path):
-    desktop = app(models.ModelRuntime(tmp_path / "empty"))
+    # The real entry without its packages, so the confirmation shows where the model packages are not installed (as in CI).
+    spec = dataclasses.replace(models.MUSICGEN_MELODY, packages=())
+    desktop = app(models.ModelRuntime(tmp_path / "empty", [spec]))
     problems = open_app(page, desktop)
     page.click("#demo")
     page.fill("#bandstyle", "rock")
@@ -212,3 +250,69 @@ def test_missing_packages_are_named(page, app, tmp_path):
     expect(page.locator("#genband")).to_have_text("Generate band")
     assert not problems, "Browser reported errors:\n" + "\n".join(problems)
 
+
+
+def test_a_band_finished_after_another_project_opened_is_not_added_to_it(page, app, monkeypatch):
+    desktop = app()
+    release = threading.Event()
+
+    def held(loaded, x, rate, text, seconds, job=None):
+        job.report(0.5, "Holding the band")
+        assert release.wait(30)
+        return np.full(int(seconds * band.RATE), 0.1, dtype=np.float32)
+    monkeypatch.setattr(band, "generate", held)
+    problems = open_app(page, desktop)
+    page.click("#demo")
+    page.fill("#bandstyle", "rock")
+    page.click("#genband")
+    expect(page.locator("#bandstatus")).to_have_text(re.compile("Holding the band"))
+    try:
+        page.set_input_files("#projectfile", {
+            "name": "other.json", "mimeType": "application/json",
+            "buffer": json.dumps({"bpm": 150, "instrument": "piano", "notes": [], "drums": []}).encode()})
+        expect(page.locator("#status")).to_have_text("Project opened")
+    finally:
+        release.set()
+    expect(page.locator("#bandstatus")).to_have_text(
+        "Could not generate the band: another project was opened meanwhile, so this band was not added to it.", timeout=60_000)
+    expect(page.locator("#genband")).to_have_text("Generate band")
+    d = draft(page)
+    assert d["bpm"] == 150 and d["band"] is None
+    expect(page.locator("#playbandtrack")).to_be_disabled()
+    assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+
+
+def test_a_reload_keeps_every_recording_with_a_band(page, app, tmp_path):
+    desktop = app()
+    problems = open_app(page, desktop)
+    path = tmp_path / "voice.wav"
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+        w.writeframes((np.sin(np.arange(32000) * 2 * np.pi * 330 / 16000) * 10000).astype("<i2").tobytes())
+    page.set_input_files("#audiofile", str(path))
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Recorded 2"))
+    page.click("#polish")
+    expect(page.locator("#status")).to_have_text("Vocal polished. Compare Original and Polished.")
+    page.fill("#bandstyle", "rock")
+    page.select_option("#bandfollows", "recording")
+    page.click("#genband")
+    expect(page.locator("#bandstatus")).to_have_text(re.compile("^Generated"), timeout=60_000)
+    kept = wait_for_draft_audio(page, ["original", "polished", "band"])
+    # Slow decoding: the band is back before the polished recording, and its save must not drop the polished link.
+    page.add_init_script("""
+        const decode = BaseAudioContext.prototype.decodeAudioData;
+        BaseAudioContext.prototype.decodeAudioData = async function (...args) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          return decode.apply(this, args);
+        };""")
+    page.reload()
+    expect(page.locator("#polished")).to_be_enabled(timeout=30_000)
+    expect(page.locator("#playbandtrack")).to_be_enabled()
+    page.wait_for_timeout(1000)
+    links = page.evaluate("async () => await (" + IDB_GET + ")('draft-audio')")
+    assert links == kept
+    # Another reload still finds the polished recording (the clean-up kept its file).
+    page.reload()
+    expect(page.locator("#polished")).to_be_enabled(timeout=30_000)
+    expect(page.locator("#polishinfo")).to_have_text(re.compile("^Restored the polished vocal"))
+    assert not problems, "Browser reported errors:\n" + "\n".join(problems)
