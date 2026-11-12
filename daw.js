@@ -14,7 +14,7 @@ export const STEM_RATE = 44100;
 // the same programs, which a Node test checks against the sample manifest.
 export const PROGRAMS = Object.freeze({ piano: 0, marimba: 12, strings: 48, bass: 33, chip: 80, organ: 16, guitar: 24, flute: 73 });
 export const DRUM_NOTES = Object.freeze({ kick: 36, snare: 38, hat: 42 });
-const DRUM_SECONDS = 0.1;
+export const DRUM_SECONDS = 0.1;
 const PARTS = [
   { key: "notes", name: "Melody", channel: 0, velocity: 90, instrument: "instrument" },
   { key: "harmony", name: "Harmony", channel: 1, velocity: 70, instrument: "harmony_instrument" },

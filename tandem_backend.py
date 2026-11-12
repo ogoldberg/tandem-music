@@ -142,6 +142,10 @@ def daw_js():
 def notation_js():
     return FileResponse(Path(__file__).resolve().parent / "notation.js", media_type="text/javascript")
 
+@app.get("/dawproject.js", include_in_schema=False)
+def dawproject_js():
+    return FileResponse(Path(__file__).resolve().parent / "dawproject.js", media_type="text/javascript")
+
 @app.get("/ideas.js", include_in_schema=False)
 def ideas_js():
     return FileResponse(Path(__file__).resolve().parent / "ideas.js", media_type="text/javascript")
