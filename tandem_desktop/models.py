@@ -235,20 +235,21 @@ class ModelStore:
         except (OSError, ValueError):
             return {}
 
+    def _kept(self, spec, f, record):
+        """`f` is present and unchanged since it was verified (by size and modification time)."""
+        entry = record.get(f.name)
+        try:
+            st = (self.folder(spec) / f.name).stat()
+        except OSError:
+            return False
+        return isinstance(entry, dict) and entry.get("sha256") == f.sha256 and st.st_size == f.size \
+            and entry.get("mtime_ns") == st.st_mtime_ns
+
     def installed(self, spec):
-        """Every file is present and unchanged since it was verified (by size and modification
-        time; `verify` hashes them again before loading)."""
+        """Every file is present and unchanged since it was verified (`verify` hashes them again
+        before loading)."""
         record = self._record(spec)
-        for f in spec.files:
-            entry = record.get(f.name)
-            try:
-                st = (self.folder(spec) / f.name).stat()
-            except OSError:
-                return False
-            if not isinstance(entry, dict) or entry.get("sha256") != f.sha256 or st.st_size != f.size \
-                    or entry.get("mtime_ns") != st.st_mtime_ns:
-                return False
-        return True
+        return all(self._kept(spec, f, record) for f in spec.files)
 
     def verify(self, spec, job=None):
         """Hash every file again; refuse the model unless each matches its pinned SHA-256."""
@@ -268,7 +269,10 @@ class ModelStore:
         import httpx
         folder = self.folder(spec)
         folder.mkdir(parents=True, exist_ok=True)
-        record = self._record(spec) if self.installed(spec) else {}
+        # Keep each file still as verified (a retry after a later file failed or was cancelled
+        # downloads, and needs disk space for, only the rest); forget every other record.
+        old = self._record(spec)
+        record = {f.name: old[f.name] for f in spec.files if self._kept(spec, f, old)}
         todo = [f for f in spec.files if f.name not in record]
         need = sum(f.size for f in todo)
         free = shutil.disk_usage(folder).free

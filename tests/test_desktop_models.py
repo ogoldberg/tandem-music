@@ -291,6 +291,51 @@ def test_not_enough_disk_space_is_refused_before_downloading(tmp_path, files, mo
     assert job.state == "failed" and "free disk space" in job.error and files.requests == []
 
 
+@pytest.mark.parametrize("interrupt", ["failed", "cancelled"])
+def test_a_retry_keeps_the_files_already_verified_and_needs_space_only_for_the_rest(tmp_path, files, monkeypatch, interrupt):
+    spec, payloads = stand_in(files, parts=2)
+    runtime = models.ModelRuntime(tmp_path, [spec])
+    second = "/tiny/weights-1.bin"
+    if interrupt == "failed":
+        body = files.files.pop(second)
+        job = finish(runtime, runtime.start_download("tiny").id)
+        assert job.state == "failed" and "answered 404" in job.error
+        files.files[second] = body
+    else:
+        files.hold.add(second)
+        job_id = runtime.start_download("tiny").id
+        assert files.halfway.wait(10)
+        runtime.jobs.cancel(job_id)
+        files.release.set()
+        assert finish(runtime, job_id).state == "cancelled"
+        files.hold.clear()
+    folder = tmp_path / "models" / "tiny"
+    assert sorted(p.name for p in folder.iterdir()) == ["verified.json", "weights-0.bin"]
+    assert runtime.installed_ids() == []
+    # Room for the remaining file only: the first one is already on disk and is not counted again.
+    room = len(payloads[1]) + models.FREE_SPACE_MARGIN
+    monkeypatch.setattr(models.shutil, "disk_usage", lambda path: type("U", (), {"free": room})())
+    files.requests.clear()
+    job = finish(runtime, runtime.start_download("tiny").id)
+    assert job.state == "done", job.error
+    assert files.requests == [second]
+    assert runtime.installed_ids() == ["tiny"]
+
+
+def test_a_kept_file_changed_on_disk_is_downloaded_again(tmp_path, files):
+    spec, payloads = stand_in(files, parts=2)
+    runtime = models.ModelRuntime(tmp_path, [spec])
+    assert finish(runtime, runtime.start_download("tiny").id).state == "done"
+    first = tmp_path / "models" / "tiny" / "weights-0.bin"
+    first.write_bytes(b"x" * len(payloads[0]))
+    os.utime(first, ns=(1, 1))
+    (tmp_path / "models" / "tiny" / "weights-1.bin").unlink()
+    files.requests.clear()
+    assert finish(runtime, runtime.start_download("tiny").id).state == "done"
+    assert sorted(files.requests) == ["/tiny/weights-0.bin", "/tiny/weights-1.bin"]
+    assert first.read_bytes() == payloads[0]
+
+
 def test_the_routes_need_the_launch_secret_and_answer_unknown_names(tmp_path, files):
     spec, _ = stand_in(files)
     runtime = models.ModelRuntime(tmp_path, [spec])
