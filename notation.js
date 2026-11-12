@@ -35,6 +35,8 @@ const FLATS = [["C", 0], ["D", -1], ["D", 0], ["E", -1], ["E", 0], ["F", 0], ["G
 const HOLD = 1;
 // Below middle C on average, a part is written in the bass clef.
 const BASS_CLEF_BELOW = 60;
+// C0, the lowest pitch MusicXML can write (its octave runs from 0 to 9).
+const LOWEST = 12;
 
 const finite = x => typeof x === "number" && Number.isFinite(x);
 const escape = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -134,6 +136,10 @@ export function musicXml(project, { key = null, title = "Tandem" } = {}) {
   const parts = PARTS.map(p => ({ ...p, notes: (Array.isArray(project[p.key]) ? project[p.key] : []).filter(n => n && finite(n.m) && finite(n.t) && finite(n.d) && n.d > 0) }))
     .filter(p => p.notes.length);
   if (!parts.length) throw Error("Nothing to write as notation yet: add melody or harmony notes first.");
+  // MusicXML's lowest octave is 0, so MIDI 0-11 (below about 16 Hz) cannot be written. Refuse
+  // rather than move or drop them silently.
+  const low = parts.reduce((k, p) => k + p.notes.filter(n => Math.round(n.m) < LOWEST).length, 0);
+  if (low) throw Error(`${low} ${low === 1 ? "note is" : "notes are"} below C0, lower than notation can write: raise or remove ${low === 1 ? "it" : "them"} first.`);
   const sf = key ? keySignature(key).sf : 0;
   const keyXml = `<key><fifths>${sf}</fifths>${key ? `<mode>${key.mode}</mode>` : ""}</key>`;
   const written = parts.map(p => partMeasures(p.notes, bpm));

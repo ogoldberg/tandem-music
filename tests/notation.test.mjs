@@ -122,6 +122,17 @@ test("an unknown key writes no mode, and a part with no notes is left out", () =
   assert.equal((xml.match(/<score-part /g) || []).length, 1);
 });
 
+test("notes below C0 are refused, since MusicXML has no octave below 0", () => {
+  const notes = [{ m: 60, t: 0, d: 0.5 }, { m: 11, t: 0.5, d: 0.5 }, { m: 0, t: 1, d: 0.5 }];
+  assert.throws(() => musicXml({ bpm: 120, notes, harmony: [{ m: 5, t: 0, d: 2 }] }), /3 notes are below C0/);
+  assert.throws(() => musicXml({ bpm: 120, notes: [{ m: 11.4, t: 0, d: 1 }] }), /1 note is below C0/);
+  // The lowest and highest writable pitches are written in octaves 0 and 9.
+  const xml = musicXml({ bpm: 120, notes: [{ m: 12, t: 0, d: 0.5 }, { m: 127, t: 0.5, d: 0.5 }, { m: 11.6, t: 1, d: 0.5 }] });
+  assert.match(xml, /<step>C<\/step><octave>0<\/octave>/);
+  assert.match(xml, /<step>G<\/step><octave>9<\/octave>/);
+  assert.equal((xml.match(/<octave>0<\/octave>/g) || []).length, 2);
+});
+
 test("a project without melody or harmony notes is refused", () => {
   assert.throws(() => musicXml({ bpm: 100, notes: [], harmony: [], drums: [{ k: "kick", t: 0 }] }), /Nothing to write as notation/);
 });
