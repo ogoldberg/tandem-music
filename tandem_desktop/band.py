@@ -181,7 +181,7 @@ class Band:
             return self._loaded
 
     def start(self, data, style, bpm=None, key=None, seconds=None):
-        x, rate = decode_wav(data, MAX_INPUT_SECONDS)
+        x, rate = decode_wav(data, MAX_INPUT_SECONDS, "The band")
         text = prompt(style, bpm, key)
         length = len(x) / rate
         seconds = min(MAX_SECONDS, length) if seconds is None else seconds

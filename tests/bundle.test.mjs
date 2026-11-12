@@ -123,7 +123,16 @@ test("a bundle round-trips its name, project and recordings", async () => {
 
 test("the file names are the DESK.3 project folder's", () => {
   assert.deepEqual(BUNDLE_FILES, { meta: "tandem.json", project: "project.json", original: "original.wav", polished: "polished.wav", tuned: "tuned.wav",
-    vocal: "vocal.wav", accompaniment: "accompaniment.wav" });
+    vocal: "vocal.wav", accompaniment: "accompaniment.wav", band: "band.wav" });
+});
+
+test("a generated band is kept with its project, with or without a recording (GEN.2)", async () => {
+  const band = { id: "b-1", style: "lo-fi band", follows: "melody", seconds: 12, muted: false, model: "musicgen-melody" };
+  const zip = writeBundle({ name: "Band", project: { ...project(), band }, recordings: { band: wav(80) } });
+  assert.deepEqual([...(await unzipFiles(zip)).keys()], ["tandem.json", "project.json", "band.wav"]);
+  const back = await readBundle(zip);
+  assert.deepEqual(back.project.band, band);
+  assert.deepEqual(back.recordings, { band: wav(80) });
 });
 
 test("a separated recording keeps its vocal and music (SEP.1)", async () => {
