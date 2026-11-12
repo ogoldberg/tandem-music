@@ -22,10 +22,11 @@ const PARTS = [
 const DRUM_CHANNEL = 9;
 export const STEM_FILES = Object.freeze({
   mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", drums: "drums.wav",
-  original: "vocal-original.wav", polished: "vocal-polished.wav", tuned: "vocal-tuned.wav", midi: "tandem.mid",
+  original: "vocal-original.wav", polished: "vocal-polished.wav", tuned: "vocal-tuned.wav",
+  vocal: "vocal-separated.wav", accompaniment: "accompaniment.wav", midi: "tandem.mid",
 });
 const PART_STEMS = ["melody", "harmony", "drums"];
-const VOCAL_STEMS = ["original", "polished", "tuned"];
+const VOCAL_STEMS = ["original", "polished", "tuned", "vocal", "accompaniment"];
 
 const encoder = new TextEncoder();
 const finite = x => typeof x === "number" && Number.isFinite(x);

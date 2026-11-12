@@ -234,6 +234,23 @@ def test_a_run_can_be_cancelled(tmp_path, files):
     assert finish(runtime, job.id).state == "cancelled"
 
 
+def test_a_run_asked_to_be_alone_is_refused_while_another_runs(tmp_path, files):
+    spec, _ = stand_in(files)
+    runtime = models.ModelRuntime(tmp_path, [spec])
+    finish(runtime, runtime.start_download("tiny").id)
+    release = threading.Event()
+    first = runtime.run("tiny", "First", lambda folder, job: release.wait(10), busy="one at a time")
+    try:
+        with pytest.raises(models.ModelBusy, match="one at a time"):
+            runtime.run("tiny", "Second", lambda folder, job: None, busy="one at a time")
+        # Without `busy`, runs of one model may overlap, as before.
+        assert finish(runtime, runtime.run("tiny", "Alongside", lambda folder, job: None).id).state == "done"
+    finally:
+        release.set()
+    assert finish(runtime, first.id).state == "done"
+    assert finish(runtime, runtime.run("tiny", "After", lambda folder, job: None, busy="one at a time").id).state == "done"
+
+
 def test_a_job_error_is_reported(tmp_path, files):
     spec, _ = stand_in(files)
     runtime = models.ModelRuntime(tmp_path, [spec])

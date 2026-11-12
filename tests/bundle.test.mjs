@@ -122,7 +122,17 @@ test("a bundle round-trips its name, project and recordings", async () => {
 });
 
 test("the file names are the DESK.3 project folder's", () => {
-  assert.deepEqual(BUNDLE_FILES, { meta: "tandem.json", project: "project.json", original: "original.wav", polished: "polished.wav", tuned: "tuned.wav" });
+  assert.deepEqual(BUNDLE_FILES, { meta: "tandem.json", project: "project.json", original: "original.wav", polished: "polished.wav", tuned: "tuned.wav",
+    vocal: "vocal.wav", accompaniment: "accompaniment.wav" });
+});
+
+test("a separated recording keeps its vocal and music (SEP.1)", async () => {
+  const recordings = { original: wav(100), vocal: wav(60), accompaniment: wav(40) };
+  const zip = writeBundle({ name: "Along", project: project(), recordings });
+  assert.deepEqual([...(await unzipFiles(zip)).keys()], ["tandem.json", "project.json", "original.wav", "vocal.wav", "accompaniment.wav"]);
+  const back = await readBundle(zip);
+  assert.deepEqual(Object.keys(back.recordings), ["original", "vocal", "accompaniment"]);
+  for (const s of Object.keys(recordings)) assert.deepEqual(back.recordings[s], recordings[s]);
 });
 
 test("writing refuses a recording that is not WAV and a project without notes or drums", () => {

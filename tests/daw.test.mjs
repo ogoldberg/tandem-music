@@ -183,6 +183,12 @@ test("the stems zip holds same-length WAVs from zero, the mix of the parts, the 
   assert.equal(m[449], 0, "parts are padded with silence");
 });
 
+test("a separated recording exports its vocal and music as stems after the takes (SEP.1)", async () => {
+  const take = v => Float32Array.of(v, v);
+  const files = await unzipFiles(stemsZip({ parts: {}, vocals: { accompaniment: take(0.2), vocal: take(0.1), original: take(0.3) }, rate: 8000, midi: midiFile(song()) }));
+  assert.deepEqual([...files.keys()], ["vocal-original.wav", "vocal-separated.wav", "accompaniment.wav", "tandem.mid"]);
+});
+
 test("vocals alone make no mix; nothing at all is refused", async () => {
   const files = await unzipFiles(stemsZip({ parts: {}, vocals: { tuned: Float32Array.of(0.1, 0.2) }, rate: 8000, midi: midiFile(song()) }));
   assert.deepEqual([...files.keys()], [STEM_FILES.tuned, STEM_FILES.midi]);
@@ -193,6 +199,7 @@ test("the file names", () => {
   assert.equal(STEM_RATE, 44100);
   assert.deepEqual(STEM_FILES, {
     mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", drums: "drums.wav",
-    original: "vocal-original.wav", polished: "vocal-polished.wav", tuned: "vocal-tuned.wav", midi: "tandem.mid",
+    original: "vocal-original.wav", polished: "vocal-polished.wav", tuned: "vocal-tuned.wav",
+    vocal: "vocal-separated.wav", accompaniment: "accompaniment.wav", midi: "tandem.mid",
   });
 });

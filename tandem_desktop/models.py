@@ -102,9 +102,20 @@ class ModelSpec:
         return sum(f.size for f in self.files)
 
 
+# SEP.1: Demucs' htdemucs model, the safetensors weights its author publishes on Hugging Face,
+# pinned to one commit of adefossez/HTDemucs. Run by tandem_desktop/separation.py. Demucs' code is
+# MIT; the weights' terms for distribution are checked under LIC.1.
+HTDEMUCS = ModelSpec(
+    "htdemucs", "Voice separation (HTDemucs)",
+    (ModelFile("955717e8.safetensors",
+               "https://huggingface.co/adefossez/HTDemucs/resolve/cbc8a9b1a87023b7fd74e7b3412e6321c0eab003/955717e8.safetensors",
+               "d9fa14133cfcc034a6758923bb3a8ca9f8dfd0b582134643bbf83f72c17576dd", 84025440),),
+    packages=("torch", "demucs", "safetensors", "julius"),
+    licence="Demucs code MIT; weights' terms for distribution checked under LIC.1")
+
 # The models Tandem can download. Each model that uses this runtime (SEP.1 Demucs, GEN.2
-# MusicGen-Melody, TIMBRE.1 RAVE) adds its entry here with its pinned files when it is built.
-CATALOG = ()
+# MusicGen-Melody, TIMBRE.1 RAVE) adds its entry here with its pinned files.
+CATALOG = (HTDEMUCS,)
 
 
 @dataclass
@@ -383,13 +394,17 @@ class ModelRuntime:
             self.store.remove(spec)
         return self.describe(spec)
 
-    def run(self, model_id, label, work):
+    def run(self, model_id, label, work, busy=None):
         """Run `work(folder, job)` as a background job with the model's files, after checking its
-        packages and hashing every file again. `work` reports progress with job.report(...)."""
+        packages and hashing every file again. `work` reports progress with job.report(...).
+        With `busy` (a message), a run of this model that is still going refuses the new one with
+        ModelBusy(busy); the check and the new job's registration happen under one lock."""
         spec = self.spec(model_id)
         with self._lock:
             if self.jobs.running(kind="download", model=spec.id):
                 raise ModelBusy(f"{spec.label} is still downloading.")
+            if busy is not None and self.jobs.running(kind="run", model=spec.id):
+                raise ModelBusy(busy)
             if not self.store.installed(spec):
                 raise ModelError(f"Download {spec.label} first ({_mb(spec.size)}).")
 

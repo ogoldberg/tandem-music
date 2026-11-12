@@ -9,7 +9,7 @@ import { storageError } from "./storage.js";
 export const RECORDINGS_DIR = "recordings";
 // The draft's recordings, kept next to the draft in the IndexedDB key-value store.
 export const DRAFT_AUDIO_KEY = "draft-audio";
-export const AUDIO_SLOTS = ["original", "polished", "tuned"];
+export const AUDIO_SLOTS = ["original", "polished", "tuned", "vocal", "accompaniment"];
 const LOCK = "tandem-recordings";
 const ID = /^[0-9a-f]{64}$/;
 
@@ -18,7 +18,8 @@ export async function recordingId(blob) {
   return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-// The well-formed links among {original, polished, tuned}; anything else is dropped.
+// The well-formed links among AUDIO_SLOTS (original, polished, tuned, and SEP.1's separated vocal and
+// accompaniment); anything else is dropped.
 export function cleanLinks(value) {
   const out = {};
   if (!value || typeof value !== "object") return out;

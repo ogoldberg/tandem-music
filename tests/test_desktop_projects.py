@@ -69,6 +69,17 @@ def test_a_bundle_becomes_a_folder_and_the_folder_becomes_the_same_bundle(tmp_pa
     assert meta == {"format": "tandem-bundle", "version": 1, "name": "My song", "savedAt": 1700000000000}
 
 
+def test_a_separated_recording_keeps_its_vocal_and_music_in_the_folder(tmp_path):
+    """SEP.1: the separated vocal and accompaniment are recordings of the folder too."""
+    recs = {"original.wav": wav_bytes(0.2), "vocal.wav": wav_bytes(0.3), "accompaniment.wav": wav_bytes(0.4)}
+    folder = tmp_path / "Along"
+    folder.mkdir()
+    pj.write_folder(folder, pj.files_from_bundle(bundle(recs)))
+    assert sorted(p.name for p in folder.iterdir()) == ["accompaniment.wav", "original.wav", "project.json", "tandem.json", "vocal.wav"]
+    back = zip_names(pj.bundle_from_files(pj.read_folder(folder)))
+    assert {k: v for k, v in back.items() if k.endswith(".wav")} == recs
+
+
 def test_the_folder_is_plain_files_a_person_can_read(tmp_path):
     folder = tmp_path / "Plain"
     folder.mkdir()
