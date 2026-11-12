@@ -20,12 +20,12 @@ Open http://localhost:8000. The FastAPI server serves the browser interface and 
 
 If a PyWorld wheel is unsupported on your workstation's OS/architecture, investigate compatible binaries instead of silently removing tuning or calling the feature verified. On Vercel Python 3.12 the earlier `pyworld` package failed to resolve; `pyworld-prebuilt==0.3.6.post1` allowed a READY build. This is a packaging result, not proof of natural sounding correction.
 
-## Mac app from source (DESK.1-DESK.3)
+## Mac app from source (DESK.1-DESK.3, AI.4)
 
 The Mac app is the same studio in a native window (pywebview over WKWebView), with the same FastAPI app running on `127.0.0.1` behind it. It runs from source; a signed `.app` is DESK.4.
 
 ```bash
-python -m pip install -r requirements-desktop.txt   # requirements.txt plus pywebview
+python -m pip install -r requirements-desktop.txt   # requirements.txt plus pywebview and keyring
 python -m tandem_desktop
 ```
 
@@ -34,6 +34,7 @@ python -m tandem_desktop
 - The microphone is granted to the app's own page without a WebKit prompt (see SECURITY.md). Running from source, macOS asks for microphone access on behalf of the app that started Python (for example Terminal), once.
 - Closing the window stops the server. Export WAV/MIDI and Save project open the native Save panel.
 - **Save to folder…** saves the project as a folder (`project.json`, `tandem.json` and its recordings as WAV) wherever you pick, such as an iCloud Drive or Dropbox folder; **Open folder…** opens one, with its recordings (DESK.3). The folder's name is the project's name. These two buttons are only in the Mac app's window.
+- **Your AI** (under Compose together, only in the Mac app's window) uses your own AI account (AI.4): choose the provider, name the model as the provider lists it, paste your key and Save. The key goes to your login Keychain (item `Tandem AI key`), the provider and model to `ai.json` next to `desktop.json`. Ollama needs no key; another OpenAI-compatible server (LM Studio, vLLM, a gateway) needs its address and, if it asks for one, a key. With nothing saved, the `TANDEM_*` environment variables still configure chat.
 - `/api/config` reports `"runtime": "desktop"` in the Mac app and `"web"` elsewhere. The Mac app's own window has no rate limits and tunes or analyses a take up to 10 minutes in one request (DESK.2; `/api/config` reports the limits under `limits`). Its server answers `/api/` only with the per-launch secret the launcher gives its window, so opening `http://127.0.0.1:<port>/` in an ordinary browser shows the studio but its server features (analyse, tune, chat) get 403; use the window.
 
 ## Tests
