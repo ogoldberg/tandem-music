@@ -210,6 +210,16 @@ class ProjectHit(BaseModel):
     model_config=ConfigDict(extra="forbid")
     k: Literal["kick","snare","hat"]
     t: float = Field(ge=0,le=600,allow_inf_nan=False)
+class ProjectBand(BaseModel):
+    """GEN.2: the backing band generated in the Mac app. Its audio is a recording kept beside the project
+    (the band slot), never in it; this records what made it. No AI action edits it."""
+    model_config=ConfigDict(extra="forbid")
+    id: str = Field(pattern=r"^[A-Za-z0-9-]{1,64}$")
+    style: str = Field(min_length=1,max_length=200)
+    follows: Literal["melody","recording"]
+    seconds: float = Field(ge=1,le=30,allow_inf_nan=False)
+    muted: bool = False
+    model: Literal["musicgen-melody"] = "musicgen-melody"
 class ChatProject(BaseModel):
     """The project fields the browser sends to /api/chat; mirrors the tandem-project schema."""
     model_config=ConfigDict(extra="forbid")
@@ -218,6 +228,8 @@ class ChatProject(BaseModel):
     notes: list[ProjectNote] = Field(default_factory=list,max_length=1024)
     drums: list[ProjectHit] = Field(default_factory=list,max_length=1024)
     melody_locked: bool = True
+    # GEN.2: the generated band's description, when there is one (small, so before the harmony).
+    band: ProjectBand | None = None
     # ARR.1c: optional accompaniment part generated in the studio. Kept last so a long project is
     # cut at the harmony, not the melody, when the prompt is truncated. No AI action edits it.
     harmony: list[ProjectNote] = Field(default_factory=list,max_length=1024)

@@ -21,6 +21,13 @@ test("projectFromState keeps the harmony part, and defaults it for projects with
   assert.deepEqual(projectFromState({ ...project(120), harmony: "junk" }).harmony, []);
 });
 
+test("projectFromState keeps the generated band only when there is one (GEN.2)", () => {
+  const band = { id: "b-1", style: "rock", follows: "recording", seconds: 9, muted: true, model: "musicgen-melody" };
+  assert.deepEqual(projectFromState({ ...project(), band }).band, band);
+  assert.equal("band" in projectFromState({ ...project(), band: null }), false);
+  assert.equal("band" in projectFromState(project()), false);
+});
+
 test("projectFromState keeps only the portable project fields", () => {
   const p = projectFromState({ ...project(120), extra: "x", melody_locked: false });
   assert.deepEqual(p, { format: "tandem-project", version: 1, bpm: 120, instrument: "piano", melody_locked: false, notes: [{ m: 60, t: 0, d: 0.4 }], drums: [{ k: "kick", t: 0 }], harmony: [], harmony_instrument: "piano" });

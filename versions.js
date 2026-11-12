@@ -23,6 +23,8 @@ export function projectFromState(state) {
     // ARR.1c: the optional accompaniment part; a project from before it has none.
     harmony: Array.isArray(state.harmony) ? state.harmony : [],
     harmony_instrument: state.harmony_instrument || "piano",
+    // GEN.2: the generated band, when there is one (its audio is the "band" recording, never in the project).
+    ...(state.band ? { band: state.band } : {}),
   };
 }
 

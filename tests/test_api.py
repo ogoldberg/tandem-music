@@ -273,6 +273,16 @@ def test_chat_project_accepts_an_optional_harmony_part():
     # The harmony fields come last, so the melody and drums are sent to the model before them.
     assert list(p.model_dump())[-2:]==["harmony","harmony_instrument"]
 
+def test_chat_project_accepts_an_optional_band():
+    # GEN.2: the generated band is described in the project; its audio never is.
+    assert server.ChatProject().band is None
+    band={"id":"b-1","style":"lo-fi band","follows":"melody","seconds":12.5,"muted":True,"model":"musicgen-melody"}
+    assert server.ChatProject(band=band).band.model_dump()==band
+    for bad in ({**band,"audio":"UklGRg=="},{**band,"seconds":31},{**band,"follows":"drums"},{**band,"model":"other"},
+                {**band,"id":"../x"},{**band,"style":""},{**band,"style":"x"*201}):
+        with pytest.raises(Exception):
+            server.ChatProject(band=bad)
+
 def test_new_instruments_are_accepted_everywhere():
     # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.
     for name in ("organ","guitar","flute"):

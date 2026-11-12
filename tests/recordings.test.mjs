@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  openRecordings, createRecordingStore, recordingId, cleanLinks, linkedIds, RECORDINGS_DIR,
+  openRecordings, createRecordingStore, recordingId, cleanLinks, linkedIds, RECORDINGS_DIR, AUDIO_SLOTS,
 } from "../recordings.js";
 
 // In-memory stand-in for an OPFS directory handle: getFileHandle, removeEntry, values() and
@@ -136,6 +136,10 @@ test("saving holds a shared lock and garbage collection an exclusive one, so a j
   await Promise.all([saving, collecting]);
   assert.deepEqual(locks.log, ["shared", "exclusive"]);
   assert.equal(dir.files.size, 1, "the fresh recording survived the collection");
+});
+
+test("the recording slots, in order, include the separated stems and the generated band", () => {
+  assert.deepEqual(AUDIO_SLOTS, ["original", "polished", "tuned", "vocal", "accompaniment", "band"]);
 });
 
 test("cleanLinks keeps only well-formed slot links; linkedIds collects their ids", () => {

@@ -39,7 +39,7 @@ class SeparationError(models.ModelError):
     pass
 
 
-def decode_wav(data, max_seconds=MAX_SECONDS):
+def decode_wav(data, max_seconds=MAX_SECONDS, what="Separation"):
     """A 16-bit PCM WAV as (mono float32 samples, rate)."""
     try:
         with wave.open(io.BytesIO(data), "rb") as w:
@@ -47,7 +47,7 @@ def decode_wav(data, max_seconds=MAX_SECONDS):
             if not (8000 <= rate <= 96000) or ch not in (1, 2) or width != 2 or frames <= 0:
                 raise SeparationError("Send a 16-bit PCM WAV, mono or stereo, 8-96 kHz.")
             if frames / rate > max_seconds:
-                raise SeparationError(f"Separation takes recordings up to {max_seconds // 60} minutes.")
+                raise SeparationError(f"{what} takes recordings up to {max_seconds // 60} minutes.")
             raw = w.readframes(frames)
     except (wave.Error, EOFError) as exc:
         raise SeparationError(f"That is not a WAV recording: {exc}") from exc
