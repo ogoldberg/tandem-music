@@ -53,7 +53,7 @@ A checked box means the feature is **implemented in code**, not that it has been
 - [x] Local-first storage with no accounts (ADR-011): the draft, versions and recordings are kept on the device (STORE.2a; not yet tried in Safari or on real devices).
 - [~] Sampled instruments: recorded General MIDI samples for melody, harmony and drums, with the synthesized voices as a fallback (SND.1; not yet judged by ear on real speakers).
 - [ ] A Mac app running the same studio with its own local backend: no hosted limits, projects as files (DESK.1-DESK.4, ADR-012).
-- [ ] Stems and multi-track MIDI for GarageBand and Logic (EXP.1).
+- [~] Stems and multi-track MIDI for any DAW (EXP.1; not yet checked by importing into GarageBand or Logic).
 - [ ] Local AI audio models in the Mac app: voice separation (SEP.1), a backing band from your hum (GEN.2), voice to instrument (TIMBRE.1).
 - [ ] Hosted generative music providers (GEN.1).
 - [ ] Voice conversation (SPEECH.1).
