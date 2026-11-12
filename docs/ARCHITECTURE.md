@@ -30,6 +30,7 @@ flowchart TD
   API -->|when credentials configured| LLM[OpenAI-compatible / Anthropic / Gemini]
   UI --> Local[Local project JSON files]
   UI --> Export[daw.js: WAV, stems zip, multi-track MIDI]
+  UI --> Notation[notation.js: MusicXML score]
 ```
 
 **Direction (ADR-011, ADR-012).** Tandem is local-first: the draft, versions and recordings are already kept on the device in IndexedDB/OPFS (STORE.2a, implemented). Implemented from source, needs the operator's QA: a Mac app that runs this same backend on `127.0.0.1` in a native window (DESK.1, see below). Planned: no hosted limits, projects as files and AI keys in the Keychain in that app (DESK.2-DESK.3, AI.4), then local AI audio models in that backend (Demucs, MusicGen-Melody, RAVE). The Vercel deployment stays as the hosted web mode. See ROADMAP.md sections 6-8.
@@ -196,6 +197,7 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | recordings.js | Recordings in OPFS named by SHA-256, links, garbage collection under Web Locks (STORE.2a) |
 | ideas.js | Song ideas captured on the phone: list, rename, delete, recording links (MOB.1; pure over the storage.js key-value store) |
 | daw.js | Hand-off to any DAW (EXP.1; pure): the type-1 MIDI file (tempo, 4/4, key, a named track per part with its General MIDI program) and the stems zip (a WAV per part and recorded vocal, same length from zero, their mix, the MIDI) |
+| notation.js | Sheet music for notation apps (EXP.2; pure): the melody and harmony as a MusicXML 4.0 partwise score, a part each with its General MIDI program, on a sixteenth-note grid in 4/4 at the project tempo, key signature and mode from the same key as the MIDI file, black keys spelled as flats in flat keys; notes split into notatable lengths and tied across barlines, rests on the beat, notes starting together written as a chord, a note ending a sixteenth short of the next note or beat held to it; drums are not written |
 | bundle.js | Tandem files: an idea or project as one `.tandem.zip` (project.json plus WAV recordings, the DESK.3 folder), zip writer and reader (MOB.3; pure) |
 | capture.html | Phone capture page at `/capture`, with its own `capture.webmanifest` (MOB.1, ADR-013) |
 | icons/ | App icons: SVG sources and the PNGs `tools/icons/build.py` renders from them, served by an allowlisted `/icons/` route (MOB.2) |

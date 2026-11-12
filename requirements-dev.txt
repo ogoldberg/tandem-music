@@ -1,2 +1,5 @@
 -r requirements.txt
 pytest>=8,<10
+# EXP.2 tests: validate the MusicXML export against the schema and read it back with a notation parser.
+lxml>=5,<7
+music21>=9,<11

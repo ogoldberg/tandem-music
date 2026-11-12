@@ -1299,6 +1299,41 @@ def test_stems_line_up_with_the_mix_and_the_midi_has_a_track_per_part(studio, tm
     assert [m.key for m in minor.tracks[0] if m.type == "key_signature"] == ["Am"]
 
 
+def test_export_musicxml_writes_the_melody_and_harmony_as_sheet_music(studio, tmp_path):
+    """EXP.2: Export MusicXML downloads a MusicXML 4.0 score that a notation reader (music21) reads back
+    as the example song: the melody on the sixteenth grid at its tempo, the chords, 4/4 and the key."""
+    import music21
+    page = studio
+    page.click("#demo")
+    page.click("#genharmony")
+    target = download(page, "#exportmusicxml", tmp_path)
+    assert target.name == "tandem.musicxml"
+    expect(page.locator("#status")).to_have_text("Exported the MusicXML score")
+    score = music21.converter.parse(str(target), format="musicxml").stripTies()
+    melody, harmony = score.parts
+    assert (melody.partName, harmony.partName) == ("Melody", "Harmony")
+    # 100 bpm: each 0.45 s step of the example is three sixteenths (0.75 of a quarter).
+    notes = [(n.pitch.midi, float(n.offset), float(n.quarterLength)) for n in melody.flatten().notes]
+    assert notes == [(m, i * 0.75, 0.75) for i, m in enumerate([60, 64, 67, 69, 67, 64, 62, 60])]
+    chords = [(sorted(p.midi for p in c.pitches), float(c.offset)) for c in harmony.flatten().notes]
+    assert chords == [([52, 55, 60], 0.0), ([52, 55, 60], 4.0)]
+    key = melody.flatten().getElementsByClass(music21.key.Key).first()
+    assert (key.sharps, key.mode) == (0, "major")
+    assert score.flatten().getElementsByClass(music21.tempo.MetronomeMark).first().number == 100
+
+    # The key chosen for the harmony is the key written into the score, as for the MIDI file.
+    page.select_option("#harmonykey", "9:minor")
+    minor = music21.converter.parse(str(download(page, "#exportmusicxml", tmp_path)), format="musicxml")
+    key = minor.parts[0].flatten().getElementsByClass(music21.key.Key).first()
+    assert (key.sharps, key.mode) == (0, "minor")
+
+    # With no melody or harmony there is nothing to write, and the studio says so instead of downloading.
+    page.click("#clearnotes")
+    page.click("#clearharmony")
+    page.click("#exportmusicxml")
+    expect(page.locator("#status")).to_contain_text("Nothing to write as notation yet")
+
+
 def test_an_edit_during_the_stem_export_does_not_change_what_is_exported(studio, tmp_path):
     """#62 review: the export works on the project as it was when Export stems was pressed, so clearing
     the melody and the drums while it renders leaves the stems, the mix and the MIDI agreeing on the old
