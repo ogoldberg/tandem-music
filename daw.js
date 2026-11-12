@@ -6,6 +6,7 @@
 
 import { encodeWav, zipFiles } from "./bundle.js";
 import { detectKey, MODES } from "./harmony.js";
+import { monoSamples } from "./recordings.js";
 
 // 960 ticks per quarter note, the same resolution the single-track export used for its timing.
 export const TICKS_PER_BEAT = 960;
@@ -135,12 +136,7 @@ export function sumStems(stems, frames) {
 
 // A decoded AudioBuffer mixed down to mono.
 export function monoOf(buffer) {
-  const out = new Float32Array(buffer.length);
-  for (let c = 0; c < buffer.numberOfChannels; c++) {
-    const data = buffer.getChannelData(c);
-    for (let i = 0; i < out.length; i++) out[i] += data[i] / buffer.numberOfChannels;
-  }
-  return out;
+  return monoSamples(buffer);
 }
 
 const padded = (samples, frames) => {

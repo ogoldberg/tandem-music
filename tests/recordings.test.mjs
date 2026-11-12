@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   openRecordings, createRecordingStore, recordingId, cleanLinks, linkedIds, RECORDINGS_DIR, AUDIO_SLOTS,
+  liveChannels, monoSamples,
 } from "../recordings.js";
 
 // In-memory stand-in for an OPFS directory handle: getFileHandle, removeEntry, values() and
@@ -163,3 +164,27 @@ function memoryRootDir() {
   const dirs = new Map();
   return { dirs, async getDirectoryHandle(name, { create } = {}) { if (!dirs.has(name)) { if (!create) throw new Error("NotFoundError"); dirs.set(name, memoryDir()); } return dirs.get(name); } };
 }
+
+const decodedOf = (...channels) => ({ numberOfChannels: channels.length, length: channels[0].length, getChannelData: c => channels[c] });
+
+test("a microphone that fills one side of a stereo take: the silent side is not part of the recording", () => {
+  // The Mac app's WebKit recorder writes 2-channel audio with the voice on the left and the right all zero.
+  const voice = Float32Array.from({ length: 400 }, (_, i) => 0.3 * Math.sin(i / 7));
+  const silent = new Float32Array(400);
+  assert.deepEqual(liveChannels(decodedOf(voice, silent)), [voice]);
+  assert.deepEqual(liveChannels(decodedOf(silent, voice)), [voice]);
+  // Mono is the voice itself, at full level, not averaged with the silence.
+  assert.deepEqual([...monoSamples(decodedOf(voice, silent))], [...voice]);
+});
+
+test("a side 60 dB or more below the other counts as silent; real stereo and quiet takes keep every channel", () => {
+  const voice = Float32Array.from({ length: 400 }, (_, i) => 0.3 * Math.sin(i / 7));
+  const hiss = voice.map(x => x / 1000), quieter = voice.map(x => x / 100);
+  assert.deepEqual(liveChannels(decodedOf(voice, hiss)), [voice]);
+  assert.deepEqual(liveChannels(decodedOf(voice, quieter)), [voice, quieter]);
+  const left = Float32Array.of(1, 0.5), right = Float32Array.of(0, 0.5);
+  assert.deepEqual([...monoSamples(decodedOf(left, right))], [0.5, 0.5]);
+  const nothing = new Float32Array(4);
+  assert.deepEqual(liveChannels(decodedOf(nothing, nothing)), [nothing, nothing]);
+  assert.deepEqual(liveChannels(decodedOf(voice)), [voice]);
+});

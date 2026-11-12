@@ -12,7 +12,7 @@
 // deflated, at the top or inside one folder, ignoring Finder's __MACOSX entries. DOM-free so Node tests
 // import it directly; WAV decoding of other formats is passed in.
 
-import { AUDIO_SLOTS } from "./recordings.js";
+import { AUDIO_SLOTS, monoSamples } from "./recordings.js";
 
 export const BUNDLE_EXT = ".tandem.zip";
 export const BUNDLE_TYPE = "application/zip";
@@ -162,12 +162,7 @@ export async function toWav(blob, decode) {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   if (isWav(bytes)) return bytes;
   const buffer = await decode(bytes.buffer.slice(0));
-  const mono = new Float32Array(buffer.length);
-  for (let c = 0; c < buffer.numberOfChannels; c++) {
-    const data = buffer.getChannelData(c);
-    for (let i = 0; i < mono.length; i++) mono[i] += data[i] / buffer.numberOfChannels;
-  }
-  return encodeWav(mono, buffer.sampleRate);
+  return encodeWav(monoSamples(buffer), buffer.sampleRate);
 }
 
 // The project a captured idea starts as in the studio.

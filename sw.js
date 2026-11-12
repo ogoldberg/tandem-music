@@ -1,6 +1,6 @@
 // The app shell is precached on install, so the studio and the capture page open with no network (MOB.2).
 // Bump CACHE when a precached file changes in a way that matters before the network copy is fetched.
-const CACHE='tandem-v30';
+const CACHE='tandem-v31';
 // Self-hosted vendor files (Basic Pitch, instrument samples) never change at a given path, so they are
 // cached the first time they are used, served from the cache first, and kept when CACHE is bumped.
 const VENDOR='tandem-vendor-1';

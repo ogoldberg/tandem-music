@@ -90,6 +90,8 @@ export async function detectVocalTargets(audioBuffer, progress = () => {}, { loa
   return { notes: mergeFragments(run.notes({ maxNotes: VOCAL_TARGET_LIMITS.maxNotes, confidence: true }), contour), contour };
 }
 
+const nextTask = () => new Promise(resolve => setTimeout(resolve, 0));
+
 async function runBasicPitch(audioBuffer, progress, maxSeconds, loadModule) {
   if (!audioBuffer || typeof audioBuffer.getChannelData !== "function") {
     throw new TypeError("Expected a decoded AudioBuffer");
@@ -97,6 +99,14 @@ async function runBasicPitch(audioBuffer, progress, maxSeconds, loadModule) {
   if (audioBuffer.duration > maxSeconds) throw new Error(`For browser transcription, use a recording under ${maxSeconds} seconds.`);
   const { BasicPitch, outputToNotesPoly, noteFramesToTime, addPitchBendsToNoteEvents } = await loadModule();
   const model = new BasicPitch(BASIC_PITCH_MODEL);
+  // REC.1: the model runs one window of audio at a time on the page's thread, and those steps follow each
+  // other without ever handing the thread back, so the page drew nothing until the end and the progress
+  // sat at 0%. Waiting one task before each window lets the page draw the progress (and stay responsive).
+  // (Basic Pitch 1.0.1's evaluateModel calls this.evaluateSingleFrame per window; the vendored copy is pinned.)
+  if (typeof model.evaluateSingleFrame === "function") {
+    const step = model.evaluateSingleFrame.bind(model);
+    model.evaluateSingleFrame = async (...args) => { await nextTask(); return step(...args); };
+  }
   const frames=[], onsets=[], contours=[];
   const preparedBuffer = await resampleForBasicPitch(audioBuffer);
   await model.evaluateModel(preparedBuffer,

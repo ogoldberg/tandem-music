@@ -101,6 +101,10 @@ test("toWav keeps WAV bytes and decodes anything else to mono WAV", async () => 
   assert.equal(decodes, 1);
   assert.equal(v.getUint32(24, true), 48000);
   assert.deepEqual([0, 1, 2].map(i => v.getInt16(44 + i * 2, true)), [16384, 32767, 0]);
+  // A take with a silent side is written at the level of its live side.
+  const oneSided = async () => ({ sampleRate: 16000, length: 2, numberOfChannels: 2, getChannelData: c => Float32Array.from(c ? [0, 0] : [0.5, -0.5]) });
+  const w = new DataView((await toWav(new Blob([text("mp4 audio")], { type: "audio/mp4" }), oneSided)).buffer);
+  assert.deepEqual([0, 1].map(i => w.getInt16(44 + i * 2, true)), [16384, -16383]);
 });
 
 test("a bundle round-trips its name, project and recordings", async () => {

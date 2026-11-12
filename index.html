@@ -21,7 +21,7 @@
 import {createHistory} from './history.js';
 import {createVersionStore,projectFromState} from './versions.js';
 import {openKV,migrateLegacy,persistence,PERSISTENCE_TEXT,DRAFT_KEY,LEGACY_DRAFT_KEY} from './storage.js';
-import {openRecordings,cleanLinks,linkedIds,DRAFT_AUDIO_KEY,AUDIO_SLOTS} from './recordings.js';
+import {openRecordings,cleanLinks,linkedIds,liveChannels,DRAFT_AUDIO_KEY,AUDIO_SLOTS} from './recordings.js';
 import {createIdeaStore,ideaTitle} from './ideas.js';
 import {readBundle,isBundle,writeBundle,toWav,BUNDLE_TYPE} from './bundle.js';
 import {midiFile,exportKey,arrangementSeconds,sumStems,monoOf,stemsZip,STEM_RATE} from './daw.js';
@@ -177,7 +177,9 @@ $('exportdawproject').onclick=async()=>{try{const p=structuredClone(state),audio
 // Recorded vocals are decoded at STEM_RATE (decodeAudioData resamples to its context's rate) and start at zero, like the notes transcribed from them.
 async function vocalStem(blob){return monoOf(await new OfflineAudioContext(1,1,STEM_RATE).decodeAudioData(await blob.arrayBuffer()))}
 $('exportstems').onclick=async()=>{try{const p=structuredClone(state),keyChoice=$('harmonykey').value,takes=[['original',audio],['polished',polished],['tuned',tuned],['vocal',vocal],['accompaniment',accompaniment]];if(!p.notes.length&&!p.harmony.length&&!p.drums.length&&!audio&&!(p.band&&generated.get(p.band.id))&&!(p.timbre&&generated.get(p.timbre.id)))throw Error('Nothing to export yet: add notes or drums, or record a take.');const midi=exportMidi(p,keyChoice),{parts}=await renderParts(p),vocals={};for(const [slot,blob] of takes)if(blob)vocals[slot]=await vocalStem(blob);status('Writing the stems');download(new Blob([stemsZip({parts,vocals,rate:STEM_RATE,midi})],{type:'application/zip'}),'tandem-stems.zip');const names=[...Object.keys(parts),...Object.keys(vocals).map(k=>k==='accompaniment'?'separated music':k==='vocal'?'separated vocal':k+' vocal')];status('Exported '+names.length+' stem'+(names.length===1?'':'s')+' ('+names.join(', ')+') and the MIDI file'+sampleNote(sampleParts()))}catch(e){status('Stem export failed: '+e.message)}};
-async function decoded(blob){return await context().decodeAudioData(await blob.arrayBuffer())}
+// REC.1: a silent side of a recording (liveChannels) is dropped, so the take plays in both ears and everything
+// that reads it (transcription, polish, tuning, separation, exports) gets the voice at full level.
+async function decoded(blob){const ac=context(),buf=await ac.decodeAudioData(await blob.arrayBuffer()),live=liveChannels(buf);if(live.length===buf.numberOfChannels)return buf;const out=ac.createBuffer(live.length,buf.length,buf.sampleRate);live.forEach((data,c)=>out.copyToChannel(data,c));return out}
 function monoWav(buf){const x=new Float32Array(buf.length);for(let ch=0;ch<buf.numberOfChannels;ch++){const a=buf.getChannelData(ch);for(let i=0;i<x.length;i++)x[i]+=a[i]/buf.numberOfChannels}return wavBlob(x,buf.sampleRate)}
 // Drop what was made from the previous take: the polished and tuned takes and the vocal targets (also from Undo history).
 function clearDerived(){polished=null;tuned=null;vocalNotes=null;originalVocalNotes=null;vocalContour=null;selectedTarget=null;edits.rewrite(s=>{const x=JSON.parse(s);x.vocal=null;return JSON.stringify(x)},snap());renderVocalNotes();refreshHistory();$('playtuned').disabled=$('downloadtuned').disabled=true;$('tuneinfo').textContent='Ready to correct singing pitch. Best for one voice without background music'+(canSeparate?'; separate it from the music first.':'.');$('polishinfo').textContent='Vocal polish changes tone and dynamics, not singing pitch.';$('polished').disabled=$('downloadvocal').disabled=true}
