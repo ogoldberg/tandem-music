@@ -61,6 +61,21 @@ Vibrato: with `vibrato=0` (the API default) correction is applied frame by frame
 
 What it does not show: the fixtures are clean synthetic harmonics with known pitch, so WORLD's analysis is near ideal. They have no consonants, breaths, formant movement, octave errors or real-room noise, and nothing here measures timbre or artifacts by ear. Real-voice quality is VOX.2's blinded listening test.
 
+## Voice separation (SEP.1)
+In the Mac app, Separate voice from music splits a recording into the vocal and the accompaniment with Demucs' htdemucs model (`tandem_desktop/separation.py`); the vocal is then what Transcribe, Polish and Tune work on, and the full recording stays the original. It runs on Metal (MPS) when the Mac has it, else on the CPU.
+
+**Acceptance check** (`tests/test_separation.py`, run with the real model by the `separation` CI job on CPU, and on the Mac with `TANDEM_TEST_MODEL_HOME`): the fixture (`tests/separation_fixture.py`) is a 9 s, 16-note melody sung by a WORLD-synthesized voice (vowel formants, vibrato, glides, a "la" at each note) over plucked chords, a bass line and drums that are louder than the voice. The server's transcriber (`analyze_melody`) is scored by melody recall: a note of the melody counts as found when transcribed notes of the same MIDI pitch cover at least half of its duration.
+
+| Transcribed from | Recall (Mac, Metal) | Recall (CPU) | Required |
+| --- | --- | --- | --- |
+| The mixture | 0.00 | 0.00 | at most 0.2 |
+| The separated vocal | 0.81 | 0.75 | at least 0.6, at most 0.1 below the voice alone, and at least 0.4 above the mixture |
+| The voice alone (no music) | 0.62 | 0.62 | reference: the transcriber's own ceiling on this voice |
+
+Through the studio window (`e2e/test_separation.py`) the browser hands the server its own 48 kHz decoding of the take; recall there was 0.69 on Metal (required: at least 0.5, and at most 0.2 before separating). The stems also sum back to the recording (residual under 10% RMS) and correlate with the voice (above 0.8) and the band (above 0.9) they were made from.
+
+**Speed:** a 3-minute song (the fixture repeated) separated in 24 s on Metal on the operator's Mac (Apple M5, while the machine was otherwise busy) and in 263 s on its CPU; loading the model takes under half a second. The first Separate also downloads the model (84 MB). Still to check by ear on the operator's Mac: real songs (a phone recording of a song playing in the room, an existing track), and how much of the band leaks into the vocal.
+
 ## Research/evaluation plan
 Build a consented test set of dry solo voices across ranges, devices, vowels, consonants, vibrato, quiet notes, slides and sample rates (16/22.05/44.1/48 kHz). Include known target MIDI and timings, silence and noisy negatives. Measure note error in cents, preservation of length, spectral artifacts, clicks and loudness. Conduct blinded listening tests against original and reference correction. Never claim “professional quality” merely because a deployment succeeds or unit tests pass.
 

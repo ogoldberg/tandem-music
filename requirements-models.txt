@@ -4,3 +4,10 @@
 # Each model that uses the runtime (SEP.1, GEN.2, TIMBRE.1) adds its pinned packages here and
 # lists them in its catalog entry's `packages`, so the window can say what is missing.
 -r requirements-desktop.txt
+# SEP.1: voice separation with Demucs' htdemucs model (MIT). On Linux CI the CPU build of torch is
+# installed first from https://download.pytorch.org/whl/cpu; on the Mac the PyPI wheel uses Metal (MPS).
+torch==2.15.0
+demucs==4.1.0
+safetensors==0.8.0
+julius==0.2.8
+einops==0.8.2
