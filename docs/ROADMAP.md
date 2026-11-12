@@ -19,7 +19,7 @@ Last reviewed: 2026-11-10. This is a prioritized working plan, not a delivery pr
 | Planned (next) | Phone capture | Catch song ideas on the go: the web app installed on the phone, one tap to record, ideas kept on the phone and shared to the studio as files (MOB.1-MOB.4, ADR-013) |
 | Implemented from source, needs QA | Mac app | The same studio in a native window with its own local backend (DESK.1, `python -m tandem_desktop`); no hosted limits (DESK.2) and projects as folders of files (DESK.3) implemented, needing the same QA; your own AI key in the Keychain (AI.4) implemented, needing a real-key check; next: a signed app (DESK.4), ADR-012 |
 | Implemented, needs listening QA | Sampled instruments | Recorded General MIDI samples for melody, harmony and drums in playback and WAV export, with the oscillator voices as a fallback (SND.1); not yet judged by ear on real speakers |
-| Planned | Local AI audio models | Voice separation (Demucs), a backing band generated from the hum (MusicGen-Melody), voice-to-instrument (RAVE), run on the Mac (MODEL.1, SEP.1, GEN.2, TIMBRE.1) |
+| Planned | Local AI audio models | Voice separation (Demucs), a backing band generated from the hum (MusicGen-Melody), voice-to-instrument (RAVE), run on the Mac (SEP.1, GEN.2, TIMBRE.1); the runtime that downloads, verifies and runs them is implemented (MODEL.1) with no model in its catalog yet |
 | Planned | Music generation | Capability-specific adapters for externally hosted or self-hosted audio models |
 | Planned | Conversational speech | Spoken chat and audio intent alongside text |
 | Implemented, needs device QA | Local-first storage | No accounts (ADR-011): the draft, versions and recordings in IndexedDB/OPFS (STORE.2a); in the Mac app projects are plain files (DESK.3); the browser folder and bucket options are parked |
@@ -162,7 +162,7 @@ These models are too large and slow for Vercel's serverless functions, which is 
 - [ ] **LIC.1** *(HUMAN)* Decide whether Tandem will be sold or distributed to others, and so which model weights it may use and ship
   - MusicGen's weights (GEN.2) are licensed CC-BY-NC 4.0: non-commercial use only. The Demucs v4 (HTDemucs) weights are tagged MIT on Hugging Face, but other sources describe them as non-commercial; check the official repository. RAVE's and the sample sets' licenses still need checking. For the operator's own use, none of this blocks building; for any distribution, it decides which models ship and which are a download the user opts into.
   - **Acceptance:** decision and each model's license recorded in `docs/DECISIONS.md` and `docs/SECURITY.md`.
-- [ ] **MODEL.1** Local model runtime: download, verify and run large audio models in the Mac app
+- [x] **MODEL.1** Local model runtime: download, verify and run large audio models in the Mac app
   - **Depends:** DESK.2
   - Optional Python dependencies (PyTorch and friends) installed only for the Mac app, never in `requirements.txt` for Vercel. Weights download on first use into the app's data folder, pinned by URL and SHA-256 and verified before loading, with the size shown before the download starts. A small background-job API runs a model with progress and cancel, so a minute-long generation does not block the UI. `/api/config` reports which models are installed.
   - **Acceptance:** tests with a tiny stand-in model cover download, a bad hash being refused, progress, cancel and a job error being reported; the hosted mode does not import any of it (checked by a test).

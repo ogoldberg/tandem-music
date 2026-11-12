@@ -125,7 +125,7 @@ def _is_api(path):
     return path == "/api" or path.startswith("/api/")
 
 
-def guarded_app(port, secret, inner=None, desktop_api=None, ai_settings=None):
+def guarded_app(port, secret, inner=None, desktop_api=None, ai_settings=None, models=None):
     """Wrap the ASGI app for the Mac app's local server.
 
     - Host must be exactly 127.0.0.1:<port> (421 otherwise). A web page in an ordinary browser can
@@ -140,7 +140,9 @@ def guarded_app(port, secret, inner=None, desktop_api=None, ai_settings=None):
     /api/desktop/ requests that pass go to `desktop_api` (DESK.3's project folders, projects.py)
     and never reach the hosted app; without it they are answered 404. /api/desktop/ai requests go
     to `ai_settings` (AI.4, ai_keys.py), which the hosted app also receives as scope["tandem_ai"]
-    so /api/chat uses the person's own provider, model and Keychain key.
+    so /api/chat uses the person's own provider, model and Keychain key. /api/desktop/models and
+    /api/desktop/jobs requests go to `models` (MODEL.1, models.py), which the hosted app also
+    receives as scope["tandem_models"] so /api/config says which models are installed.
     """
     if not isinstance(secret, str) or len(secret) < 32:
         raise ValueError("guarded_app needs the launch secret from new_launch_secret()")
@@ -183,6 +185,12 @@ def guarded_app(port, secret, inner=None, desktop_api=None, ai_settings=None):
                 return
             await ai_settings({**scope, "tandem_local": True}, receive, send)
             return
+        if path in ("/api/desktop/models", "/api/desktop/jobs") or path.startswith(("/api/desktop/models/", "/api/desktop/jobs/")):
+            if models is None:
+                await refuse(scope, send, 404, b"Not found")
+                return
+            await models({**scope, "tandem_local": True}, receive, send)
+            return
         if path.startswith("/api/desktop/"):
             if desktop_api is None:
                 await refuse(scope, send, 404, b"Not found")
@@ -192,6 +200,8 @@ def guarded_app(port, secret, inner=None, desktop_api=None, ai_settings=None):
         local = {**scope, "tandem_local": True}
         if ai_settings is not None:
             local["tandem_ai"] = ai_settings
+        if models is not None:
+            local["tandem_models"] = models
         await inner(local, receive, send)
 
     return app
@@ -212,10 +222,10 @@ def allow_media(scheme, host, port, kind, own_port):
     return kind == MEDIA_MICROPHONE and scheme == "http" and host == "127.0.0.1" and port == own_port
 
 
-def start_server(port, secret, desktop_api=None, ai_settings=None, timeout=30):
+def start_server(port, secret, desktop_api=None, ai_settings=None, models=None, timeout=30):
     """Start the studio on 127.0.0.1:<port> in a background thread; returns (server, thread)."""
     import uvicorn
-    app = guarded_app(port, secret, desktop_api=desktop_api, ai_settings=ai_settings)
+    app = guarded_app(port, secret, desktop_api=desktop_api, ai_settings=ai_settings, models=models)
     sock = bind(port)
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
     server._tandem_previous_runtime = os.environ.get("TANDEM_RUNTIME")
