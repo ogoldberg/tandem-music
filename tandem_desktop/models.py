@@ -113,9 +113,30 @@ HTDEMUCS = ModelSpec(
     packages=("torch", "demucs", "safetensors", "julius"),
     licence="Demucs code MIT; weights' terms for distribution checked under LIC.1")
 
+# GEN.2: Meta's MusicGen-Melody (1.5B parameters) in the Hugging Face transformers format, pinned
+# to one commit of facebook/musicgen-melody: the config, the two safetensors shards with their
+# index, and the T5 tokenizer. The repository's state_dict.bin files (pickles) are not downloaded.
+# Run by tandem_desktop/band.py. The weights are CC-BY-NC 4.0: non-commercial use only (LIC.1).
+_MUSICGEN = "https://huggingface.co/facebook/musicgen-melody/resolve/68d653a95788ec0d2b0abccab22c0b3a200c2d90/"
+MUSICGEN_MELODY = ModelSpec(
+    "musicgen-melody", "Backing band (MusicGen-Melody)",
+    tuple(ModelFile(name, _MUSICGEN + name, sha, size) for name, sha, size in (
+        ("config.json", "16018e4e7906feea208af7ad0b30b175301ca8708b37f3743adf9a1fc565e8a6", 7781),
+        ("generation_config.json", "0c496442cb17f12f111b0baaf340a3a015baf80083deb806fab90229eb8d6d14", 224),
+        ("model.safetensors.index.json", "fbf97fdcda4fbcb6dc50404ce4b73e94e352aa091f91eff7174de00bc3a5598f", 68461),
+        ("model-00001-of-00002.safetensors", "3deb583fd977128b24f59c86d6706f01b35b4ab8553e8355cca6969a9b7440b4", 4966269512),
+        ("model-00002-of-00002.safetensors", "01268b3a5f9819026a9ee6b76df35574e7dd521de3e6431c7fad16b44ce5a9c0", 1263380400),
+        ("special_tokens_map.json", "5c87151ef0f72a99d1f766a4c418bd2a1f90aaa30a8e22fe5eca9641daebb64f", 2201),
+        ("tokenizer.json", "ca7dc3c343c9fb095db86dca7fe7945fff7608c25e170daf6c477bdca99b93ff", 2422346),
+        ("tokenizer_config.json", "cf78390648a76b34c0b3b24f2625521963360f6b386eb159129917243b6ecd41", 20794),
+        ("spiece.model", "d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86", 791656),
+    )),
+    packages=("torch", "transformers", "safetensors", "julius"),
+    licence="MusicGen weights CC-BY-NC 4.0 (non-commercial use only; LIC.1); code MIT")
+
 # The models Tandem can download. Each model that uses this runtime (SEP.1 Demucs, GEN.2
 # MusicGen-Melody, TIMBRE.1 RAVE) adds its entry here with its pinned files.
-CATALOG = (HTDEMUCS,)
+CATALOG = (HTDEMUCS, MUSICGEN_MELODY)
 
 
 @dataclass
