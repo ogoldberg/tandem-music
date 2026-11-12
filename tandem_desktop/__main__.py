@@ -7,6 +7,7 @@ import sys
 
 import tandem_desktop as desk
 from tandem_desktop.ai_keys import AISettings
+from tandem_desktop.models import ModelRuntime
 from tandem_desktop.projects import ProjectFolders, WindowDialogs
 
 MEDIA_SELECTOR = b"webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:"
@@ -54,7 +55,9 @@ def main():
         dialogs = WindowDialogs(save_kind=webview.FileDialog.SAVE, folder_kind=webview.FileDialog.FOLDER)
         # AI.4: the person's own provider and model (ai.json) and key (the macOS Keychain).
         ai_settings = AISettings(desk.desktop_home())
-        server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(dialogs), ai_settings=ai_settings)
+        # MODEL.1: large audio models downloaded on request into the settings folder, run as jobs.
+        models = ModelRuntime(desk.desktop_home())
+        server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(dialogs), ai_settings=ai_settings, models=models)
     except desk.DesktopError as exc:
         print(f"Tandem could not start: {exc}", file=sys.stderr)
         return 1
