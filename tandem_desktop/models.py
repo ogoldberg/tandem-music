@@ -134,9 +134,33 @@ MUSICGEN_MELODY = ModelSpec(
     packages=("torch", "transformers", "safetensors", "julius"),
     licence="MusicGen weights CC-BY-NC 4.0 (non-commercial use only; LIC.1); code MIT")
 
+# TIMBRE.1: RAVE instrument models from the Intelligent Instruments Lab, one TorchScript file each,
+# pinned to one commit of Intelligent-Instruments-Lab/rave-models. Run by tandem_desktop/timbre.py.
+# RAVE publishes its models only as TorchScript (no safetensors): torch.jit.load runs TorchScript code
+# in torch's own interpreter, not Python, and the file is loaded only after its SHA-256 matches the pin.
+# The models are CC-BY-NC 4.0: non-commercial use only (LIC.1).
+_RAVE = "https://huggingface.co/Intelligent-Instruments-Lab/rave-models/resolve/c25a03d625840c40cd3a48779ed72f2a1947d7b4/"
+_RAVE_LICENCE = "RAVE models CC-BY-NC 4.0 (non-commercial use only; LIC.1)"
+RAVE_SAX = ModelSpec(
+    "rave-sax", "Soprano saxophone (RAVE)",
+    (ModelFile("sax_soprano_franziskaschroeder_b2048_r48000_z20.ts", _RAVE + "sax_soprano_franziskaschroeder_b2048_r48000_z20.ts",
+               "216cf07fe8c121671b23771b03652c23fa39a20f7e7072d093cce1aef3fda3ae", 121405924),),
+    packages=("torch", "julius"), licence=_RAVE_LICENCE)
+RAVE_GUITAR = ModelSpec(
+    "rave-guitar", "Electric guitar (RAVE)",
+    (ModelFile("guitar_iil_b2048_r48000_z16.ts", _RAVE + "guitar_iil_b2048_r48000_z16.ts",
+               "02458214e23890d6818504319a5b9903eabfe87a524491f6524f453e7f3dbcf0", 163881670),),
+    packages=("torch", "julius"), licence=_RAVE_LICENCE)
+RAVE_ORGAN = ModelSpec(
+    "rave-organ", "Church organ (RAVE)",
+    (ModelFile("organ_bach_b2048_r48000_z16.ts", _RAVE + "organ_bach_b2048_r48000_z16.ts",
+               "f7c06309e0388e666993226c06ed1438b56adc23b2a5a3b8f9155ed26990423c", 163879431),),
+    packages=("torch", "julius"), licence=_RAVE_LICENCE)
+RAVE_MODELS = (RAVE_SAX, RAVE_GUITAR, RAVE_ORGAN)
+
 # The models Tandem can download. Each model that uses this runtime (SEP.1 Demucs, GEN.2
 # MusicGen-Melody, TIMBRE.1 RAVE) adds its entry here with its pinned files.
-CATALOG = (HTDEMUCS, MUSICGEN_MELODY)
+CATALOG = (HTDEMUCS, MUSICGEN_MELODY) + RAVE_MODELS
 
 
 @dataclass

@@ -10,6 +10,7 @@ from tandem_desktop.ai_keys import AISettings
 from tandem_desktop.band import Band
 from tandem_desktop.models import ModelRuntime
 from tandem_desktop.separation import Separation
+from tandem_desktop.timbre import Timbre
 from tandem_desktop.projects import ProjectFolders, WindowDialogs
 
 MEDIA_SELECTOR = b"webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:"
@@ -60,9 +61,11 @@ def main():
         # MODEL.1: large audio models downloaded on request into the settings folder, run as jobs.
         models = ModelRuntime(desk.desktop_home())
         # GEN.2: Generate band plays the melody with a MusicGen-Melody band.
+        # TIMBRE.1: Play as an instrument plays the voice as a RAVE instrument.
         # SEP.1: Separate splits a recording into the vocal and the accompaniment with HTDemucs.
         server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(dialogs), ai_settings=ai_settings,
-                                           models=models, separation=Separation(models), band=Band(models))
+                                           models=models, separation=Separation(models), band=Band(models),
+                                           timbre=Timbre(models))
     except desk.DesktopError as exc:
         print(f"Tandem could not start: {exc}", file=sys.stderr)
         return 1

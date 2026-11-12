@@ -25,6 +25,8 @@ export function projectFromState(state) {
     harmony_instrument: state.harmony_instrument || "piano",
     // GEN.2: the generated band, when there is one (its audio is the "band" recording, never in the project).
     ...(state.band ? { band: state.band } : {}),
+    // TIMBRE.1: the voice played as an instrument, when there is one (its audio is the "timbre" recording).
+    ...(state.timbre ? { timbre: state.timbre } : {}),
   };
 }
 

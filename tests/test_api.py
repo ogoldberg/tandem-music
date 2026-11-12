@@ -283,6 +283,16 @@ def test_chat_project_accepts_an_optional_band():
         with pytest.raises(Exception):
             server.ChatProject(band=bad)
 
+def test_chat_project_accepts_an_optional_instrument_voice():
+    # TIMBRE.1: the voice played as an instrument is described in the project; its audio never is.
+    assert server.ChatProject().timbre is None
+    timbre={"id":"t-1","instrument":"sax","source":"tuned","seconds":42.5,"muted":False,"model":"rave"}
+    assert server.ChatProject(timbre=timbre).timbre.model_dump()==timbre
+    for bad in ({**timbre,"audio":"UklGRg=="},{**timbre,"seconds":0},{**timbre,"seconds":601},{**timbre,"instrument":"violin"},
+                {**timbre,"source":"band"},{**timbre,"model":"other"},{**timbre,"id":"../x"}):
+        with pytest.raises(Exception):
+            server.ChatProject(timbre=bad)
+
 def test_new_instruments_are_accepted_everywhere():
     # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.
     for name in ("organ","guitar","flute"):

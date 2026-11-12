@@ -5,7 +5,8 @@
 //   tandem.json   {"format":"tandem-bundle","version":1,"name","savedAt"}   (optional when reading)
 //   project.json  the portable project, exactly what Save project writes; never any audio
 //   original.wav  the recording; polished.wav and tuned.wav when the studio made them; vocal.wav and
-//                 accompaniment.wav when it was separated (SEP.1); band.wav when a band was generated (GEN.2)
+//                 accompaniment.wav when it was separated (SEP.1); band.wav when a band was generated (GEN.2);
+//                 timbre.wav when the voice was played as an instrument (TIMBRE.1)
 //
 // Written uncompressed (WAV hardly compresses, and every zip tool reads stored entries); read stored or
 // deflated, at the top or inside one folder, ignoring Finder's __MACOSX entries. DOM-free so Node tests
@@ -16,7 +17,8 @@ import { AUDIO_SLOTS } from "./recordings.js";
 export const BUNDLE_EXT = ".tandem.zip";
 export const BUNDLE_TYPE = "application/zip";
 export const BUNDLE_FILES = { meta: "tandem.json", project: "project.json", original: "original.wav", polished: "polished.wav", tuned: "tuned.wav",
-  vocal: "vocal.wav", accompaniment: "accompaniment.wav", band: "band.wav" };
+  vocal: "vocal.wav", accompaniment: "accompaniment.wav", band: "band.wav",
+  timbre: "timbre.wav" };
 // Larger than any recording the studio handles (90 s hosted, minutes in the Mac app) with room to spare.
 export const MAX_BUNDLE_BYTES = 512 * 1024 * 1024;
 const MAX_NAME = 60;
@@ -197,7 +199,7 @@ function parse(bytes, file) {
   try { return JSON.parse(new TextDecoder().decode(bytes)); } catch (err) { throw Error(`${file} could not be read: ${err.message}`); }
 }
 
-// {name, savedAt, project, recordings: {original?, polished?, tuned?, vocal?, accompaniment?, band?}} with each recording as WAV bytes.
+// {name, savedAt, project, recordings: {original?, polished?, tuned?, vocal?, accompaniment?, band?, timbre?}} with each recording as WAV bytes.
 export async function readBundle(bytes, options) {
   const all = await unzipFiles(bytes, options);
   const files = new Map([...all].filter(([n]) => !n.startsWith("__MACOSX/") && !n.split("/").pop().startsWith("._")));

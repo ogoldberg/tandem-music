@@ -28,6 +28,12 @@ test("projectFromState keeps the generated band only when there is one (GEN.2)",
   assert.equal("band" in projectFromState(project()), false);
 });
 
+test("projectFromState keeps the voice played as an instrument only when there is one (TIMBRE.1)", () => {
+  const timbre = { id: "t-1", instrument: "organ", source: "take", seconds: 7, muted: false, model: "rave" };
+  assert.deepEqual(projectFromState({ ...project(), timbre }).timbre, timbre);
+  assert.equal("timbre" in projectFromState({ ...project(), timbre: null }), false);
+});
+
 test("projectFromState keeps only the portable project fields", () => {
   const p = projectFromState({ ...project(120), extra: "x", melody_locked: false });
   assert.deepEqual(p, { format: "tandem-project", version: 1, bpm: 120, instrument: "piano", melody_locked: false, notes: [{ m: 60, t: 0, d: 0.4 }], drums: [{ k: "kick", t: 0 }], harmony: [], harmony_instrument: "piano" });

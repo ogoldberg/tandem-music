@@ -125,7 +125,8 @@ def _is_api(path):
     return path == "/api" or path.startswith("/api/")
 
 
-def guarded_app(port, secret, inner=None, desktop_api=None, ai_settings=None, models=None, separation=None, band=None):
+def guarded_app(port, secret, inner=None, desktop_api=None, ai_settings=None, models=None, separation=None, band=None,
+                timbre=None):
     """Wrap the ASGI app for the Mac app's local server.
 
     - Host must be exactly 127.0.0.1:<port> (421 otherwise). A web page in an ordinary browser can
@@ -143,8 +144,9 @@ def guarded_app(port, secret, inner=None, desktop_api=None, ai_settings=None, mo
     so /api/chat uses the person's own provider, model and Keychain key. /api/desktop/models and
     /api/desktop/jobs requests go to `models` (MODEL.1, models.py), which the hosted app also
     receives as scope["tandem_models"] so /api/config says which models are installed.
-    /api/desktop/separate requests go to `separation` (SEP.1, separation.py), and /api/desktop/band
-    requests to `band` (GEN.2, band.py).
+    /api/desktop/separate requests go to `separation` (SEP.1, separation.py), /api/desktop/band
+    requests to `band` (GEN.2, band.py), and /api/desktop/timbre requests to `timbre` (TIMBRE.1,
+    timbre.py).
     """
     if not isinstance(secret, str) or len(secret) < 32:
         raise ValueError("guarded_app needs the launch secret from new_launch_secret()")
@@ -205,6 +207,12 @@ def guarded_app(port, secret, inner=None, desktop_api=None, ai_settings=None, mo
                 return
             await band({**scope, "tandem_local": True}, receive, send)
             return
+        if path == "/api/desktop/timbre" or path.startswith("/api/desktop/timbre/"):
+            if timbre is None:
+                await refuse(scope, send, 404, b"Not found")
+                return
+            await timbre({**scope, "tandem_local": True}, receive, send)
+            return
         if path.startswith("/api/desktop/"):
             if desktop_api is None:
                 await refuse(scope, send, 404, b"Not found")
@@ -236,11 +244,12 @@ def allow_media(scheme, host, port, kind, own_port):
     return kind == MEDIA_MICROPHONE and scheme == "http" and host == "127.0.0.1" and port == own_port
 
 
-def start_server(port, secret, desktop_api=None, ai_settings=None, models=None, separation=None, band=None, timeout=30):
+def start_server(port, secret, desktop_api=None, ai_settings=None, models=None, separation=None, band=None, timbre=None,
+                 timeout=30):
     """Start the studio on 127.0.0.1:<port> in a background thread; returns (server, thread)."""
     import uvicorn
     app = guarded_app(port, secret, desktop_api=desktop_api, ai_settings=ai_settings, models=models,
-                      separation=separation, band=band)
+                      separation=separation, band=band, timbre=timbre)
     sock = bind(port)
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
     server._tandem_previous_runtime = os.environ.get("TANDEM_RUNTIME")

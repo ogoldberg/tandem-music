@@ -154,6 +154,10 @@ test("the arrangement length covers every note and drum with a tail, at least fo
   const band = { id: "b", style: "rock", follows: "melody", seconds: 20, muted: false, model: "musicgen-melody" };
   assert.equal(arrangementSeconds({ notes: [{ m: 60, t: 0, d: 1 }], drums: [], band }), 21);
   assert.equal(arrangementSeconds({ notes: [{ m: 60, t: 0, d: 1 }], drums: [], band: { ...band, muted: true } }), 5);
+  // TIMBRE.1: so does the voice played as an instrument, the longer of the two deciding.
+  const timbre = { id: "t", instrument: "guitar", source: "take", seconds: 33.5, muted: false, model: "rave" };
+  assert.equal(arrangementSeconds({ notes: [], drums: [], band, timbre }), 34.5);
+  assert.equal(arrangementSeconds({ notes: [], drums: [], band, timbre: { ...timbre, muted: true } }), 21);
 });
 
 test("stems are summed sample by sample into the mix", () => {
@@ -201,6 +205,14 @@ test("a generated band is a part: in the mix, after the drums, before the takes 
   assert.deepEqual([0, 1, 2].map(i => s.getInt16(i * 2, true)), [Math.round(0.75 * 32767), Math.round(0.25 * 32767), Math.round(0.25 * 32767)]);
 });
 
+test("the voice played as an instrument is a part: in the mix, after the band, before the takes (TIMBRE.1)", async () => {
+  const files = await unzipFiles(stemsZip({ parts: { timbre: Float32Array.of(0.25, 0.25), band: Float32Array.of(0.25), melody: Float32Array.of(0.25) },
+    vocals: { tuned: Float32Array.of(0.1) }, rate: 8000, midi: midiFile(song()) }));
+  assert.deepEqual([...files.keys()], ["mix.wav", "melody.wav", "band.wav", "timbre.wav", "vocal-tuned.wav", "tandem.mid"]);
+  const mix = files.get("mix.wav"), s = new DataView(mix.buffer, mix.byteOffset + 44);
+  assert.deepEqual([0, 1].map(i => s.getInt16(i * 2, true)), [Math.round(0.75 * 32767), Math.round(0.25 * 32767)]);
+});
+
 test("vocals alone make no mix; nothing at all is refused", async () => {
   const files = await unzipFiles(stemsZip({ parts: {}, vocals: { tuned: Float32Array.of(0.1, 0.2) }, rate: 8000, midi: midiFile(song()) }));
   assert.deepEqual([...files.keys()], [STEM_FILES.tuned, STEM_FILES.midi]);
@@ -210,7 +222,7 @@ test("vocals alone make no mix; nothing at all is refused", async () => {
 test("the file names", () => {
   assert.equal(STEM_RATE, 44100);
   assert.deepEqual(STEM_FILES, {
-    mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", drums: "drums.wav", band: "band.wav",
+    mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", drums: "drums.wav", band: "band.wav", timbre: "timbre.wav",
     original: "vocal-original.wav", polished: "vocal-polished.wav", tuned: "vocal-tuned.wav",
     vocal: "vocal-separated.wav", accompaniment: "accompaniment.wav", midi: "tandem.mid",
   });
