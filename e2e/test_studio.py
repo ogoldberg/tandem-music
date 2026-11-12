@@ -1384,10 +1384,16 @@ def test_export_dawproject_writes_note_and_audio_tracks_a_daw_can_open(studio, t
         assert track.find("Channel/Mute").get("value") == muted
         audio = lane.find("Clips/Clip/Warps/Audio")
         assert audio.find("File").get("path") == file
-        # The clip's length is its WAV's, and the take is there from zero: the tone sounds in the first 10 ms.
-        assert float(audio.get("duration")) == pytest.approx(len(wavs[file]) / 44100, abs=1e-6)
+        # The clip's length is its WAV's, and the take is there from zero: it is not silent, it sounds in
+        # the first 10 ms, and its first 0.5 s is the imported take's first tone.
+        samples = wavs[file]
+        assert float(audio.get("duration")) == pytest.approx(len(samples) / 44100, abs=1e-6)
         assert float(lane.find("Clips/Clip").get("time")) == 0
-        assert np.argmax(np.abs(wavs[file]) > 100) < 441, name
+        assert np.abs(samples).max() > 1000, name
+        assert np.argmax(np.abs(samples) > 100) < 441, name
+        first = samples[441:22050] * np.hanning(22050 - 441)
+        peak_hz = np.argmax(np.abs(np.fft.rfft(first))) * 44100 / len(first)
+        assert peak_hz == pytest.approx(TONES[0][0], abs=5), name
 
 
 def test_an_edit_during_the_stem_export_does_not_change_what_is_exported(studio, tmp_path):
