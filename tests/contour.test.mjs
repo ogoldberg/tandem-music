@@ -179,6 +179,30 @@ test("vibrato fragments merge back into one target per sung note; distinct notes
   assert.equal(notes.length, 4, "input is not mutated");
 });
 
+test("a hummed note with wide vibrato and drift merges whole, though its pieces' centres span more than `within`", () => {
+  // TRANS.1: what Basic Pitch made of a 1.4 s hummed A3 with 40-cent vibrato at 5.5 Hz and 25 cents
+  // of slow drift: pieces about half a vibrato cycle long, each centred where its half-cycle sat
+  // (56.6..57.3, a 0.77 semitone spread), then a C4.
+  const t = Float64Array.from({ length: 300 }, (_, i) => i * 0.01);
+  const m = Float32Array.from(t, x => (x < 1.4 ? 57 + 0.4 * Math.sin(2 * Math.PI * 5.5 * x) + 0.25 * Math.sin(2 * Math.PI * 0.7 * x) : x < 1.52 ? NaN : 60));
+  const pieces = [];
+  for (let s = 0; s + 0.09 <= 1.4; s += 0.09) pieces.push({ m: 57, t: Math.round(s * 1000) / 1000, d: 0.09 });
+  for (const p of pieces) p.m = Math.round(m[Math.round((p.t + 0.045) * 100)]);
+  assert.ok(new Set(pieces.map(p => p.m)).size > 1, "the pieces are split across neighbouring pitches");
+  const out = mergeFragments([...pieces, { m: 60, t: 1.52, d: 1 }], { t, m });
+  assert.deepEqual(out.map(n => n.m), [57, 60]);
+  assert.deepEqual([out[0].t, out[0].d], [0, pieces.at(-1).t + 0.09]);
+});
+
+test("a wider `gap` joins pieces across a short dropout of the sung line, not across a breath", () => {
+  // TRANS.1: room noise drops a held C4's contour for 90 ms; a real breath before the repeat is 250 ms.
+  const t = Float64Array.from({ length: 300 }, (_, i) => i * 0.01);
+  const m = Float32Array.from(t, x => ((x >= 0.5 && x < 0.59) || (x >= 1.2 && x < 1.45) ? NaN : 60));
+  const notes = [{ m: 60, t: 0, d: 0.52 }, { m: 60, t: 0.58, d: 0.62 }, { m: 60, t: 1.45, d: 0.5 }];
+  assert.equal(mergeFragments(notes, { t, m }).length, 3, "by default an 80 ms dropout separates notes");
+  assert.deepEqual(mergeFragments(notes, { t, m }, { gap: 0.15 }).map(n => [n.t, n.d]), [[0, 1.2], [1.45, 0.5]]);
+});
+
 test("merging tolerates the detector's millisecond overlaps and absorbs contained ghost notes", () => {
   const t = Float64Array.from({ length: 200 }, (_, i) => i * 0.01);
   const m = new Float32Array(200).fill(67.2);

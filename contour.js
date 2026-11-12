@@ -195,12 +195,13 @@ function longestSilence(contour, a, b) {
 }
 
 // Basic Pitch splits a note sung with vibrato or drift into several short notes a semitone apart.
-// Merge each run of neighbours whose sung centres stay within `within` semitones of each other
-// into one target at the run's rounded sung centre, so "keep vibrato" sees the whole note.
+// Merge each run of neighbours whose sung centres stay within `within` semitones of the run's sung
+// centre so far into one target at the run's rounded sung centre, so "keep vibrato" sees the whole
+// note (and a hummed melody keeps its sustained notes, TRANS.1).
 // Neighbours join when the gap between them is under `gap` seconds (the detector's millisecond
 // overlaps and notes contained in the run count as touching) and the sung line stays voiced
-// across the join, so a breath always separates notes. Without contour data only same-pitch
-// neighbours merge. Confidence becomes the duration-weighted mean.
+// across the join (no dropout of `gap` seconds or more), so a breath always separates notes.
+// Without contour data only same-pitch neighbours merge. Confidence becomes the duration-weighted mean.
 export function mergeFragments(notes, contour, { gap = 0.08, within = 0.6 } = {}) {
   const sorted = [...notes].sort((a, b) => a.t - b.t || b.d - a.d), out = [];
   const centreOfNote = n => (contour ? noteCentre(contour, n) : null) ?? n.m;
@@ -223,16 +224,18 @@ export function mergeFragments(notes, contour, { gap = 0.08, within = 0.6 } = {}
     if (run) {
       const last = run.parts.at(-1), g = n.t - run.end, contained = n.t + n.d <= run.end + 1e-9;
       const touching = g < gap && (g > -0.05 || contained);
-      const samePitch = contour ? Math.abs(c - run.lo) <= within && Math.abs(c - run.hi) <= within : n.m === last.m;
+      // A piece is about half a vibrato cycle, so its centre swings with the vibrato: compare it with
+      // the sung centre of the whole run so far rather than with every other piece.
+      const samePitch = contour ? Math.abs(c - (noteCentre(contour, { t: run.parts[0].t, d: run.end - run.parts[0].t }) ?? run.c)) <= within : n.m === last.m;
       // Check both pieces whole: the detector sometimes carries a note's tail across a breath.
       const voiced = !contour || longestSilence(contour, last.t, n.t + n.d) < gap;
       if (touching && samePitch && voiced) {
-        run.parts.push(n); run.lo = Math.min(run.lo, c); run.hi = Math.max(run.hi, c); run.end = Math.max(run.end, n.t + n.d);
+        run.parts.push(n); run.end = Math.max(run.end, n.t + n.d);
         continue;
       }
       flush();
     }
-    run = { parts: [n], lo: c, hi: c, end: n.t + n.d };
+    run = { parts: [n], c, end: n.t + n.d };
   }
   flush();
   return out;

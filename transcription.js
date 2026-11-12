@@ -62,13 +62,21 @@ export async function resampleForBasicPitch(audioBuffer, OfflineContext = global
 
 let cachedModule;
 const loadBasicPitch = () => cachedModule ||= import(BASIC_PITCH_PACKAGE);
+// TRANS.1: inside one hummed note, room noise drops the sung line, and splits Basic Pitch's notes,
+// for up to about 140 ms; a breath between two notes of the same pitch is longer.
+export const MELODY_GAP = 0.15;
 /** Lazily fetch model and JS dependencies only when transcription is requested.
  * Defaults to PROJECT_MELODY_LIMITS; pass VOCAL_TARGET_LIMITS for pitch-correction targets.
+ * Pieces of one sung note that vibrato, drift or room noise split apart are merged back
+ * (contour.js mergeFragments), so a hummed note stays one sustained note.
  * `loadModule` is injectable so tests run without the browser bundle.
  */
 export async function transcribeWithBasicPitch(audioBuffer, progress = () => {}, { maxSeconds = PROJECT_MELODY_LIMITS.maxSeconds, maxNotes = PROJECT_MELODY_LIMITS.maxNotes, loadModule = loadBasicPitch } = {}) {
   const run = await runBasicPitch(audioBuffer, progress, maxSeconds, loadModule);
-  return run ? run.notes({ maxNotes }) : [];
+  if (!run) return [];
+  const contour = pitchContour(run.contours, { duration: audioBuffer.duration });
+  const merged = mergeFragments(run.notes({ maxNotes: Infinity }), contour, { gap: MELODY_GAP });
+  return Number.isFinite(maxNotes) ? merged.slice(0, maxNotes) : merged;
 }
 
 /** Vocal tuning targets for the pitch-contour editor (VOX.3): notes across the whole recording,
