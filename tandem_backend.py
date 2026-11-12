@@ -172,9 +172,30 @@ def limits_for(request: Request):
     return LOCAL_LIMITS if is_local(request.scope) else HOSTED_LIMITS
 @app.get("/api/health")
 def health(): return {"ok":True,"version":"0.2.0"}
+def env_llm_config():
+    """The server's own AI configuration (the hosted mode's operator key, or a developer's env)."""
+    return {"provider":os.getenv("TANDEM_PROVIDER","openai-compatible").lower(),"model":os.getenv("TANDEM_MODEL",""),
+            "key":os.getenv("TANDEM_API_KEY",""),"base_url":os.getenv("TANDEM_BASE_URL","").rstrip("/")}
+def llm_config(request: Request):
+    """AI.4: in the Mac app's own window, the person's saved provider, model and Keychain key
+    (scope["tandem_ai"], set only by tandem_desktop.guarded_app); otherwise, or when nothing is
+    saved there, the server's own configuration. A saved choice that cannot be used is an error,
+    never a silent switch to another provider."""
+    saved=request.scope.get("tandem_ai") if is_local(request.scope) else None
+    if saved is not None:
+        try: config=saved.llm_config()
+        except ValueError as exc: raise HTTPException(503,str(exc)[:300]) from exc
+        if config is not None: return {**config,"source":"your-settings"}
+        if not os.getenv("TANDEM_MODEL"): raise HTTPException(503,"Choose your AI provider and model in Your AI, under Compose together.")
+    return {**env_llm_config(),"source":"server"}
+@app.get("/api/health")
+def health(): return {"ok":True,"version":"0.2.0"}
 @app.get("/api/config")
 def config(request: Request):
-    return {"runtime":"desktop" if os.getenv("TANDEM_RUNTIME")=="desktop" else "web","limits":{k:v for k,v in limits_for(request).items() if k!="audio_bytes"},"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"ai_ready":bool(os.getenv("TANDEM_MODEL")),"requires_token":bool(os.getenv("TANDEM_ACCESS_TOKEN")),"capabilities":{"conversation":{"provider":os.getenv("TANDEM_PROVIDER","openai-compatible"),"model":os.getenv("TANDEM_MODEL",""),"enabled":bool(os.getenv("TANDEM_MODEL"))},"melody_transcription":{"provider":"browser-basic-pitch","model":"spotify/basic-pitch-1.0.1","enabled":True},"rhythm_transcription":{"provider":"local-dsp","model":"onset-detector-v1","enabled":True},"vocal_polish":{"provider":"browser-dsp","model":"filter-gate-compressor-v1","enabled":True},"vocal_pitch_correction":{"provider":"open-source-world","model":"pyworld-prebuilt-0.3.6","enabled":True},"music_generation":{"provider":os.getenv("TANDEM_MUSIC_PROVIDER","none"),"model":os.getenv("TANDEM_MUSIC_MODEL",""),"enabled":False}}}
+    try: llm=llm_config(request); ai_problem=""
+    except HTTPException as exc: llm={**env_llm_config(),"model":"","source":"your-settings"}; ai_problem=exc.detail
+    provider,model,ready=llm["provider"],llm["model"],bool(llm["model"])
+    return {"runtime":"desktop" if os.getenv("TANDEM_RUNTIME")=="desktop" else "web","limits":{k:v for k,v in limits_for(request).items() if k!="audio_bytes"},"provider":provider,"model":model,"ai_ready":ready,"ai_source":llm["source"],"ai_problem":ai_problem,"requires_token":bool(os.getenv("TANDEM_ACCESS_TOKEN")),"capabilities":{"conversation":{"provider":provider,"model":model,"enabled":ready},"melody_transcription":{"provider":"browser-basic-pitch","model":"spotify/basic-pitch-1.0.1","enabled":True},"rhythm_transcription":{"provider":"local-dsp","model":"onset-detector-v1","enabled":True},"vocal_polish":{"provider":"browser-dsp","model":"filter-gate-compressor-v1","enabled":True},"vocal_pitch_correction":{"provider":"open-source-world","model":"pyworld-prebuilt-0.3.6","enabled":True},"music_generation":{"provider":os.getenv("TANDEM_MUSIC_PROVIDER","none"),"model":os.getenv("TANDEM_MUSIC_MODEL",""),"enabled":False}}}
 
 # Melody instruments the browser can play; must match INSTRUMENTS in voices.js (checked by tests/voices.test.mjs).
 INSTRUMENTS = ("piano", "marimba", "strings", "bass", "chip", "organ", "guitar", "flute")
@@ -243,11 +264,9 @@ def extract_json(s):
         m=re.search(r"\{.*\}",s,re.S)
         if m:return json.loads(m.group())
         raise ValueError("Model did not return JSON")
-async def invoke_llm(messages):
-    provider=os.getenv("TANDEM_PROVIDER","openai-compatible").lower()
-    model=os.getenv("TANDEM_MODEL","")
-    key=os.getenv("TANDEM_API_KEY","")
-    base=os.getenv("TANDEM_BASE_URL","").rstrip("/")
+async def invoke_llm(messages,config=None):
+    config=config or env_llm_config()
+    provider=config["provider"]; model=config["model"]; key=config["key"]; base=config["base_url"].rstrip("/")
     if not model: raise HTTPException(503,"Set TANDEM_MODEL and the provider configuration on the server")
     timeout=httpx.Timeout(75.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -273,10 +292,10 @@ async def invoke_llm(messages):
         except (httpx.HTTPError,KeyError,IndexError) as exc:
             raise HTTPException(502,"AI provider request failed: "+str(exc)[:400])
 @app.post("/api/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
     project=req.project.model_dump()
     prior=[{"role":m.role,"content":m.content} for m in req.history[-10:]]
-    raw=await invoke_llm(prior+[{"role":"user","content":"Current project: "+json.dumps(project)[:18000]+"\nRequest: "+req.message}])
+    raw=await invoke_llm(prior+[{"role":"user","content":"Current project: "+json.dumps(project)[:18000]+"\nRequest: "+req.message}],llm_config(request))
     try: obj=extract_json(raw)
     except (ValueError,json.JSONDecodeError): raise HTTPException(502,"AI returned an invalid edit plan; retry or change model")
     actions=normalize_actions(obj.get("actions",[]))

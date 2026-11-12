@@ -63,12 +63,17 @@ def _any_free_port():
         return s.getsockname()[1]
 
 
+def desktop_home():
+    """The Mac app's settings folder: TANDEM_DESKTOP_HOME, else ~/Library/Application Support/Tandem."""
+    return Path(os.environ.get("TANDEM_DESKTOP_HOME") or DEFAULT_HOME)
+
+
 def load_port(home=None):
     """The app's port: read from <home>/desktop.json, or chosen and saved on the first launch.
 
-    <home> defaults to TANDEM_DESKTOP_HOME, else ~/Library/Application Support/Tandem."""
+    <home> defaults to desktop_home()."""
     if home is None:
-        home = os.environ.get("TANDEM_DESKTOP_HOME") or DEFAULT_HOME
+        home = desktop_home()
     home = Path(home)
     path = home / SETTINGS
     if path.exists():
@@ -120,7 +125,7 @@ def _is_api(path):
     return path == "/api" or path.startswith("/api/")
 
 
-def guarded_app(port, secret, inner=None, desktop_api=None):
+def guarded_app(port, secret, inner=None, desktop_api=None, ai_settings=None):
     """Wrap the ASGI app for the Mac app's local server.
 
     - Host must be exactly 127.0.0.1:<port> (421 otherwise). A web page in an ordinary browser can
@@ -133,7 +138,9 @@ def guarded_app(port, secret, inner=None, desktop_api=None):
       string or a cookie.
     Requests that pass are marked scope["tandem_local"] = True, which lifts the hosted limits.
     /api/desktop/ requests that pass go to `desktop_api` (DESK.3's project folders, projects.py)
-    and never reach the hosted app; without it they are answered 404.
+    and never reach the hosted app; without it they are answered 404. /api/desktop/ai requests go
+    to `ai_settings` (AI.4, ai_keys.py), which the hosted app also receives as scope["tandem_ai"]
+    so /api/chat uses the person's own provider, model and Keychain key.
     """
     if not isinstance(secret, str) or len(secret) < 32:
         raise ValueError("guarded_app needs the launch secret from new_launch_secret()")
@@ -169,13 +176,23 @@ def guarded_app(port, secret, inner=None, desktop_api=None):
             if len(given) != 1 or not hmac.compare_digest(given[0], secret_bytes):
                 await refuse(scope, send, 403, b"This server answers only the Tandem app's own window")
                 return
-        if scope.get("path", "").startswith("/api/desktop/"):
+        path = scope.get("path", "")
+        if path == "/api/desktop/ai" or path.startswith("/api/desktop/ai/"):
+            if ai_settings is None:
+                await refuse(scope, send, 404, b"Not found")
+                return
+            await ai_settings({**scope, "tandem_local": True}, receive, send)
+            return
+        if path.startswith("/api/desktop/"):
             if desktop_api is None:
                 await refuse(scope, send, 404, b"Not found")
                 return
             await desktop_api({**scope, "tandem_local": True}, receive, send)
             return
-        await inner({**scope, "tandem_local": True}, receive, send)
+        local = {**scope, "tandem_local": True}
+        if ai_settings is not None:
+            local["tandem_ai"] = ai_settings
+        await inner(local, receive, send)
 
     return app
 
@@ -195,10 +212,10 @@ def allow_media(scheme, host, port, kind, own_port):
     return kind == MEDIA_MICROPHONE and scheme == "http" and host == "127.0.0.1" and port == own_port
 
 
-def start_server(port, secret, desktop_api=None, timeout=30):
+def start_server(port, secret, desktop_api=None, ai_settings=None, timeout=30):
     """Start the studio on 127.0.0.1:<port> in a background thread; returns (server, thread)."""
     import uvicorn
-    app = guarded_app(port, secret, desktop_api=desktop_api)
+    app = guarded_app(port, secret, desktop_api=desktop_api, ai_settings=ai_settings)
     sock = bind(port)
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
     server._tandem_previous_runtime = os.environ.get("TANDEM_RUNTIME")

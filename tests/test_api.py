@@ -113,7 +113,7 @@ def test_json_parsing():
     assert server.extract_json(wrapped)["reply"] == "Done"
 
 def test_chat_action_filter(client,monkeypatch):
-    async def fake(messages):
+    async def fake(messages, config=None):
         assert "Current project:" in messages[-1]["content"]
         return json.dumps({"reply":"Raised melody","actions":[
             {"type":"transpose","semitones":2},
@@ -124,7 +124,7 @@ def test_chat_action_filter(client,monkeypatch):
     assert r.json()["actions"]==[{"type":"transpose","semitones":2}]
 
 def test_melody_lock_blocks_transcription_rewrites(client,monkeypatch):
-    async def fake(messages):
+    async def fake(messages, config=None):
         return json.dumps({"reply":"Added a rhythm", "actions":[
             {"type":"replace_notes","notes":[{"m":73,"t":0,"d":1}]},
             {"type":"add_hit","drum":"kick","start":0},
@@ -137,7 +137,7 @@ def test_melody_lock_blocks_transcription_rewrites(client,monkeypatch):
     assert response.json()["actions"]==[{"type":"add_hit","drum":"kick","start":0.0}]
 
 def test_chat_bad_model_reply(client,monkeypatch):
-    async def fake(messages): return "Not JSON"
+    async def fake(messages, config=None): return "Not JSON"
     monkeypatch.setattr(server,"invoke_llm",fake)
     assert run(client("POST","/api/chat",json={"message":"Edit it","project":{}})).status_code==502
 
@@ -396,7 +396,7 @@ def test_streamed_body_without_content_length_is_capped(client,monkeypatch):
     assert r.status_code==413
 
 def test_oversized_chat_body_refused(client,monkeypatch):
-    async def fake(messages): raise AssertionError("LLM must not be called")
+    async def fake(messages, config=None): raise AssertionError("LLM must not be called")
     monkeypatch.setattr(server,"invoke_llm",fake)
     r=run(client("POST","/api/chat",content=b'{"message":"'+b"a"*300_000+b'"}',headers={"content-type":"application/json"}))
     assert r.status_code==413
@@ -454,7 +454,7 @@ def test_analyze_rejects_unknown_mode(client):
     {"extra_field":{"deep":"x"*100}},
 ])
 def test_malformed_chat_project_gets_422(client,monkeypatch,project):
-    async def fake(messages): raise AssertionError("LLM must not be called")
+    async def fake(messages, config=None): raise AssertionError("LLM must not be called")
     monkeypatch.setattr(server,"invoke_llm",fake)
     body=json.dumps({"message":"edit","project":project})
     r=run(client("POST","/api/chat",content=body,headers={"content-type":"application/json"}))
@@ -466,13 +466,13 @@ def test_malformed_chat_project_gets_422(client,monkeypatch,project):
     [{"role":"user","content":"hi"}]*13,
 ])
 def test_malformed_chat_history_gets_422(client,monkeypatch,history):
-    async def fake(messages): raise AssertionError("LLM must not be called")
+    async def fake(messages, config=None): raise AssertionError("LLM must not be called")
     monkeypatch.setattr(server,"invoke_llm",fake)
     assert run(client("POST","/api/chat",json={"message":"edit","project":{},"history":history})).status_code==422
 
 def test_valid_browser_project_reaches_model(client,monkeypatch):
     seen={}
-    async def fake(messages):
+    async def fake(messages, config=None):
         seen["content"]=messages[-1]["content"]; seen["prior"]=messages[:-1]
         return json.dumps({"reply":"ok","actions":[{"type":"set_tempo","bpm":120}]})
     monkeypatch.setattr(server,"invoke_llm",fake)
@@ -486,7 +486,7 @@ def test_valid_browser_project_reaches_model(client,monkeypatch):
     assert seen["prior"]==[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]
 
 def test_long_message_can_be_sent_back_as_history(client,monkeypatch):
-    async def fake(messages): return json.dumps({"reply":"ok","actions":[]})
+    async def fake(messages, config=None): return json.dumps({"reply":"ok","actions":[]})
     monkeypatch.setattr(server,"invoke_llm",fake)
     long_text="x"*3000
     assert run(client("POST","/api/chat",json={"message":long_text,"project":{}})).status_code==200

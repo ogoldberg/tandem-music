@@ -14,6 +14,7 @@ import pytest
 from playwright.sync_api import expect
 
 import tandem_desktop as desk
+from tandem_desktop.ai_keys import AISettings
 from tandem_desktop.projects import ProjectFolders
 
 
@@ -28,6 +29,23 @@ class Dialogs:
         return self.folder
 
 
+class MemoryKeys:
+    """Stands in for the macOS Keychain (tests/test_desktop_ai.py checks the real one)."""
+
+    def __init__(self):
+        self.items = {}
+
+    def get(self, provider):
+        return self.items.get(provider)
+
+    def set(self, provider, key):
+        self.items[provider] = key
+
+    def delete(self, provider):
+        self.items.pop(provider, None)
+
+
+
 def free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -35,7 +53,7 @@ def free_port():
 
 
 @pytest.fixture
-def desktop(monkeypatch):
+def desktop(monkeypatch, tmp_path_factory):
     for key in list(os.environ):
         if key.startswith(("TANDEM_", "VERCEL", "UPSTASH_")):
             monkeypatch.delenv(key)
@@ -44,7 +62,8 @@ def desktop(monkeypatch):
     port = free_port()
     secret = desk.new_launch_secret()
     dialogs = Dialogs()
-    server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(dialogs))
+    server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(dialogs),
+                                       ai_settings=AISettings(tmp_path_factory.mktemp("ai"), MemoryKeys()))
     try:
         yield {"url": f"http://127.0.0.1:{port}", "port": port, "secret": secret, "dialogs": dialogs}
     finally:
@@ -143,7 +162,7 @@ def test_a_project_saved_to_a_folder_opens_with_its_audio_after_a_relaunch(page,
     assert not problems, "Browser reported errors:\n" + "\n".join(problems)
 
     port, secret, dialogs = free_port(), desk.new_launch_secret(), Dialogs()
-    server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(dialogs))
+    server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(dialogs), ai_settings=AISettings(tmp_path / "ai", MemoryKeys()))
     context = browser.new_context()
     try:
         again = context.new_page()
@@ -185,3 +204,89 @@ def test_the_folder_buttons_are_only_in_the_mac_app(page, server_url):
     page.wait_for_function("document.getElementById('notecount').textContent !== ''")
     expect(page.locator("#savefolder")).to_be_hidden()
     expect(page.locator("#openfolder")).to_be_hidden()
+    expect(page.locator("#yourai")).to_be_hidden()
+
+
+@pytest.fixture
+def stand_in_provider():
+    """An OpenAI-compatible server on loopback that records each request and answers one edit plan."""
+    import http.server
+    import threading
+    seen = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+            seen.append({"path": self.path, "authorization": self.headers.get("authorization"), "body": body})
+            plan = {"reply": "Faster, and the melody is left alone.",
+                    "actions": [{"type": "set_tempo", "bpm": 132}, {"type": "transpose", "semitones": 5}]}
+            out = json.dumps({"choices": [{"message": {"content": json.dumps(plan)}}]}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+
+        def log_message(self, *args):
+            pass
+
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield {"url": f"http://127.0.0.1:{httpd.server_address[1]}/v1", "seen": seen}
+    finally:
+        httpd.shutdown()
+
+
+def test_your_own_ai_key_is_kept_out_of_the_page_and_an_edit_uses_it(page, stand_in_provider, tmp_path, monkeypatch):
+    """AI.4: the person picks a provider, model and key in Your AI; the key goes to the key store, never
+    back to the page, and a chat edit goes to that provider with that key, melody lock still applied."""
+    for key in list(os.environ):
+        if key.startswith(("TANDEM_", "VERCEL", "UPSTASH_")):
+            monkeypatch.delenv(key)
+    key = "sk-e2e-" + "x" * 30
+    keys = MemoryKeys()
+    port, secret = free_port(), desk.new_launch_secret()
+    server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(Dialogs()), ai_settings=AISettings(tmp_path, keys))
+    responses = []
+    try:
+        page.on("response", lambda r: responses.append(r) if "/api/" in r.url else None)
+        problems = open_app(page, {"url": f"http://127.0.0.1:{port}", "port": port, "secret": secret})
+        expect(page.locator("#yourai")).to_be_visible()
+        expect(page.locator("#aistate")).to_have_text("Choose a provider and model.")
+        page.select_option("#aiprovider", "custom")
+        expect(page.locator("#aibaserow")).to_be_visible()
+        page.fill("#aibaseurl", stand_in_provider["url"])
+        page.fill("#aimodel", "stand-in-model")
+        page.fill("#aikey", key)
+        page.click("#aisave")
+        expect(page.locator("#aistate")).to_have_text("Ready: stand-in-model (key in the Keychain)")
+        expect(page.locator("#aikey")).to_have_value("")
+        assert keys.items == {"custom": key}
+        assert key not in (tmp_path / "ai.json").read_text()
+
+        page.click("#demo")
+        page.fill("#prompt", "Make it faster")
+        page.click("#chatform button[type=submit]")
+        expect(page.locator("#chat .bubble").last).to_have_text("Faster, and the melody is left alone.")
+        expect(page.locator("#bpm")).to_have_value("132")
+        sent = stand_in_provider["seen"]
+        assert len(sent) == 1 and sent[0]["path"] == "/v1/chat/completions"
+        assert sent[0]["authorization"] == "Bearer " + key and sent[0]["body"]["model"] == "stand-in-model"
+        # Melody lock (on by default) removed the transpose: the demo melody is unchanged.
+        titles = page.locator("#melodyroll .note").evaluate_all("els => els.map(e => e.title)")
+        assert [int(re.match(r"MIDI (\d+) at", t).group(1)) for t in titles] == [60, 64, 67, 69, 67, 64, 62, 60]
+
+        # No answer from the local server carried the key back to the page.
+        assert responses and all(key not in r.text() for r in responses)
+        # After a reload the page knows a key is saved but never sees it.
+        page.reload()
+        expect(page.locator("#aistate")).to_have_text("Ready: stand-in-model (key in the Keychain)")
+        assert key not in page.content()
+        page.click("#aiforget")
+        expect(page.locator("#aistate")).to_have_text("Ready: stand-in-model")
+        assert keys.items == {}
+        assert problems == []
+    finally:
+        desk.stop_server(server, thread)
