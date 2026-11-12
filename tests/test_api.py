@@ -695,6 +695,14 @@ def test_daw_module_is_served_and_precached(client):
     assert "from './daw.js'" in run(client("GET","/")).text
     assert "'./daw.js'" in run(client("GET","/sw.js")).text
 
+def test_notation_module_is_served_and_precached(client):
+    # EXP.2: the studio imports notation.js (MusicXML export) at start-up, so it is precached for offline use.
+    js=run(client("GET","/notation.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function musicXml" in js.text
+    assert "from './notation.js'" in run(client("GET","/")).text
+    assert "'./notation.js'" in run(client("GET","/sw.js")).text
+
 def test_capture_manifest_starts_at_the_capture_page(client):
     r=run(client("GET","/capture.webmanifest"))
     assert r.status_code==200 and "manifest+json" in r.headers["content-type"]

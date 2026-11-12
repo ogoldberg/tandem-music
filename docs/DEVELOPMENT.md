@@ -45,7 +45,7 @@ python -m tandem_desktop
 
 ```bash
 python -m pytest -q
-node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs tests/harmony.test.mjs tests/phrases.test.mjs tests/storage.test.mjs tests/recordings.test.mjs tests/samples.test.mjs tests/ideas.test.mjs tests/bundle.test.mjs tests/daw.test.mjs
+node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs tests/harmony.test.mjs tests/phrases.test.mjs tests/storage.test.mjs tests/recordings.test.mjs tests/samples.test.mjs tests/ideas.test.mjs tests/bundle.test.mjs tests/daw.test.mjs tests/notation.test.mjs
 # Browser end-to-end, once: pip install -r requirements-e2e.txt && python -m playwright install chromium
 python -m pytest e2e -q
 ```

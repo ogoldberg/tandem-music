@@ -138,6 +138,10 @@ def bundle_js():
 def daw_js():
     return FileResponse(Path(__file__).resolve().parent / "daw.js", media_type="text/javascript")
 
+@app.get("/notation.js", include_in_schema=False)
+def notation_js():
+    return FileResponse(Path(__file__).resolve().parent / "notation.js", media_type="text/javascript")
+
 @app.get("/ideas.js", include_in_schema=False)
 def ideas_js():
     return FileResponse(Path(__file__).resolve().parent / "ideas.js", media_type="text/javascript")

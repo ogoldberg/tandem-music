@@ -212,9 +212,10 @@ These models are too large and slow for Vercel's serverless functions, which is 
 
 ### 9. Hand work on to other music tools
 Tandem is where an idea starts; people finish it in their own DAW or notation app. Interchange is through standard files, not plugins or third-party cloud accounts (ADR-011). EXP.1 (stems and multi-track MIDI) moved up to section 6 because it is cheap and GarageBand and Logic are where the operator finishes work. Each export carries the tempo, key and part names where the format allows (a WAV stem cannot).
-- [ ] **EXP.2** Export the melody (and harmony) as MusicXML for notation apps
+- [x] **EXP.2** Export the melody (and harmony) as MusicXML for notation apps
   - Quantized to the project grid with the detected or chosen key, time signature 4/4, tempo, and a chord-symbol or second staff for the harmony. Notes are split into tied, notatable durations.
   - **Acceptance:** the file validates against the MusicXML 4.0 schema; a fixture melody round-trips (pitches and durations) through a MusicXML parser; opened in MuseScore and recorded as manual QA.
+  - Done: **Export MusicXML** writes `tandem.musicxml` (`notation.js`, pure): a Melody staff and a Harmony staff (bass clef when its notes sit below middle C on average), the harmony key chosen in the studio or else the detected key (flats in flat keys), 4/4, the tempo, and notes snapped to the sixteenth grid, split at barlines with ties into notatable lengths, with rests in the gaps and shared onsets as chords; drums are not written. Validated against the MusicXML 4.0 XSD and read back with music21 (`tests/test_notation.py`), plus `tests/notation.test.mjs` and a Chromium export test. Manual QA 2026-11-12: MuseScore 4.7.6 opened `tests/fixtures/notation.musicxml` and engraved it as intended (see docs/TESTING.md).
 - [ ] **EXP.3** Export a DAWproject file
   - **Depends:** EXP.1
   - The open DAWproject format (zip with `project.xml`, `metadata.xml` and audio) with one track per part, note clips for melody, harmony and drums, audio clips for the vocal, and the tempo.
