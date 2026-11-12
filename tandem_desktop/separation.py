@@ -159,8 +159,6 @@ class Separation:
 
     def start(self, data):
         x, rate = decode_wav(data)
-        if self.runtime.jobs.running(kind="run", model=MODEL_ID):
-            raise models.ModelBusy("A separation is already running; wait for it or cancel it.")
 
         def work(folder, job):
             job.report(0.02, "Loading the separation model")
@@ -174,7 +172,8 @@ class Separation:
                     self._results.popitem(last=False)
             return {"stems": list(STEMS), "seconds": round(len(x) / rate, 2)}
 
-        return self.runtime.run(MODEL_ID, "Separate the voice from the music", work)
+        return self.runtime.run(MODEL_ID, "Separate the voice from the music", work,
+                                busy="A separation is already running; wait for it or cancel it.")
 
     def stem(self, job_id, name):
         with self._lock:

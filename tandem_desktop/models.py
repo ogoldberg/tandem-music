@@ -394,13 +394,17 @@ class ModelRuntime:
             self.store.remove(spec)
         return self.describe(spec)
 
-    def run(self, model_id, label, work):
+    def run(self, model_id, label, work, busy=None):
         """Run `work(folder, job)` as a background job with the model's files, after checking its
-        packages and hashing every file again. `work` reports progress with job.report(...)."""
+        packages and hashing every file again. `work` reports progress with job.report(...).
+        With `busy` (a message), a run of this model that is still going refuses the new one with
+        ModelBusy(busy); the check and the new job's registration happen under one lock."""
         spec = self.spec(model_id)
         with self._lock:
             if self.jobs.running(kind="download", model=spec.id):
                 raise ModelBusy(f"{spec.label} is still downloading.")
+            if busy is not None and self.jobs.running(kind="run", model=spec.id):
+                raise ModelBusy(busy)
             if not self.store.installed(spec):
                 raise ModelError(f"Download {spec.label} first ({_mb(spec.size)}).")
 

@@ -150,6 +150,40 @@ def test_a_separation_reports_progress_and_can_be_cancelled(stand_in):
     assert call(sep, "GET", f"/api/desktop/separate/{job.id}/vocal.wav").status_code == 404
 
 
+def test_two_separations_started_at_once_run_one_at_a_time(stand_in, monkeypatch):
+    # Codex review of #67: the busy check and the job's registration must be one step, or two
+    # requests arriving together both pass the check and run the model at the same time.
+    import concurrent.futures
+    import threading
+    runtime, calls = stand_in
+    calls["release"] = threading.Event()
+    installed = runtime.store.installed
+
+    def slow_installed(spec):
+        time.sleep(0.1)  # the time between the check and the registration, made long
+        return installed(spec)
+    monkeypatch.setattr(runtime.store, "installed", slow_installed)
+    sep = separation.Separation(runtime)
+    data = wav_bytes(np.zeros(8000), 8000)
+    gate = threading.Barrier(2)
+
+    def start():
+        gate.wait(timeout=5)
+        try:
+            return sep.start(data)
+        except models.ModelBusy as e:
+            return e
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            got = [f.result(timeout=10) for f in [pool.submit(start) for _ in range(2)]]
+        busy = [g for g in got if isinstance(g, models.ModelBusy)]
+        assert len(busy) == 1 and "already running" in str(busy[0]), got
+    finally:
+        calls["release"].set()
+        for job in runtime.jobs.running():
+            runtime.jobs.wait(job.id, timeout=10)
+
+
 @pytest.mark.parametrize("data,status,words", [
     (b"not a wav", 400, "not a WAV"),
     (b"", 400, "not a WAV"),
