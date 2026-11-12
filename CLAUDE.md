@@ -45,5 +45,5 @@ There is no linter or formatter configured.
 
 - `tests/test_api.py` drives the ASGI app in-process with `httpx.ASGITransport` (no server needed), uses `monkeypatch` for env vars, and builds synthetic WAVs with `wav_bytes`. LLM providers are mocked — never call real paid APIs in tests.
 - Node tests mock `OfflineAudioContext`.
-- `e2e/` tests start uvicorn on a free port (TANDEM_/VERCEL/UPSTASH_ env stripped) and fail on any page error or `console.error`; they use the server fallback transcriber so they need no CDN.
+- `e2e/` tests start uvicorn on a free port (TANDEM_/VERCEL/UPSTASH_ env stripped) and fail on any page error or `console.error`; they use the server fallback transcriber, except the tests that run the self-hosted Basic Pitch model from `/vendor/` (detection, PERF.3, VOX.3 and TRANS.1's hummed melody), so they need no CDN.
 - Docs are deliberate about "implemented vs planned" and "unverified" device QA status; don't describe features as working or verified without real evidence (see `docs/TESTING.md` release gate).

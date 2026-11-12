@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeBasicPitchNotes, resampleForBasicPitch, transcribeWithBasicPitch, detectVocalTargets, BASIC_PITCH_SAMPLE_RATE, PROJECT_MELODY_LIMITS, VOCAL_TARGET_LIMITS } from "../transcription.js";
+import { frameTime } from "../contour.js";
 test("sorts and converts Basic Pitch notes into portable project schema",()=>{
   assert.deepEqual(normalizeBasicPitchNotes([
     {pitchMidi:72,startTimeSeconds:1.25,durationSeconds:.4},
@@ -92,6 +93,19 @@ test("vocal target detection clips a note that runs past the end of the recordin
     noteFramesToTime:()=>[{pitchMidi:67,startTimeSeconds:179.5,durationSeconds:3}],
   });
   assert.deepEqual(await transcribeWithBasicPitch(buffer22k(180),()=>{},{...VOCAL_TARGET_LIMITS,loadModule:load}),[{m:67,t:179.5,d:.5}]);
+});
+
+test("melody transcription merges the pieces of one hummed note back into one sustained note",async()=>{
+  // TRANS.1: Basic Pitch split a hummed C4 into pieces (one a semitone off, one after a 120 ms gap
+  // while the sung line stayed voiced); a real breath (250 ms without a sung line) separates the repeat.
+  const c4=Array.from({length:264},(_,b)=>b===118?.9:0),silent=new Array(264).fill(0);
+  const contours=Array.from({length:200},(_,r)=>{const t=frameTime(r);return t>=1.2&&t<1.45?silent:c4});
+  const load=async()=>({
+    BasicPitch:class{async evaluateModel(_b,onFrames,onProgress){onFrames(contours.map(()=>[0]),contours.map(()=>[0]),contours);onProgress(1)}},
+    outputToNotesPoly:()=>[],addPitchBendsToNoteEvents:(_c,raw)=>raw,
+    noteFramesToTime:()=>[[60,0,.3],[61,.3,.1],[60,.4,.3],[60,.82,.38],[60,1.45,.5]].map(([pitchMidi,startTimeSeconds,durationSeconds])=>({pitchMidi,startTimeSeconds,durationSeconds})),
+  });
+  assert.deepEqual(await transcribeWithBasicPitch(buffer22k(2.3),()=>{},{loadModule:load}),[{m:60,t:0,d:1.2},{m:60,t:1.45,d:.5}]);
 });
 
 test("vocal targets can carry a 0..1 confidence from the note's mean activation; project notes never do",()=>{

@@ -32,6 +32,38 @@ def tone_wav(path, rate=48000, seconds=0.6, gap=0.15):
     return path
 
 
+HUM = [57, 60, 62, 64, 62, 60]
+
+
+def hum_wav(path, rate=48000, each=1.4, gap=0.12, noise=0.15):
+    """TRANS.1: a hummed melody (HUM, 1.4 s notes with 40-cent vibrato at 5.5 Hz and 25 cents of
+    slow drift, a soft breath between notes) over fan-like room noise, as a mono 16-bit WAV."""
+    rng = np.random.default_rng(7)
+    n = int(rate * len(HUM) * (each + gap))
+    t = np.arange(n) / rate
+    k = np.minimum((t // (each + gap)).astype(int), len(HUM) - 1)
+    u = t - k * (each + gap)
+    sung = u < each
+    cents = 40 * np.sin(2 * np.pi * 5.5 * t) + 25 * np.sin(2 * np.pi * 0.7 * t)
+    hz = 440 * 2 ** ((np.array(HUM)[k] - 69 + cents / 100) / 12)
+    phase = np.cumsum(np.where(sung, 2 * np.pi * hz / rate, 0))
+    env = np.clip(np.minimum(u, each - u) / 0.05, 0, 1) * sung * (0.8 + 0.2 * np.sin(2 * np.pi * 3.1 * t))
+    voice = env * (0.5 * np.sin(phase) + 0.2 * np.sin(2 * phase) + 0.08 * np.sin(3 * phase))
+    white = rng.uniform(-0.5, 0.5, n)
+    brown = np.zeros(n)
+    for i in range(1, n):
+        brown[i] = 0.995 * brown[i - 1] + 0.2 * white[i]
+    x = 0.5 * voice + noise * (brown + 0.5 * rng.uniform(-0.5, 0.5, n))
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes((np.clip(x, -1, 1) * 32767).astype("<i2").tobytes())
+    path.write_bytes(out.getvalue())
+    return path
+
+
 def note_pitches(page):
     titles = page.locator("#melodyroll .note").evaluate_all("els => els.map(e => e.title)")
     return [int(re.match(r"MIDI (\d+) at", t).group(1)) for t in titles]
@@ -1108,6 +1140,20 @@ def wait_for_draft_audio(page, slots):
 def import_recording(page, path):
     page.set_input_files("#audiofile", str(path))
     expect(page.locator("#status")).to_contain_text("Recorded")
+
+
+def test_basic_pitch_transcribes_a_hummed_melody_as_sustained_notes(studio, tmp_path):
+    """TRANS.1: the on-device Basic Pitch engine (the self-hosted model) turns six hummed notes with
+    vibrato, drift and room noise into six notes, not the dozens of short pieces the model splits
+    them into."""
+    page = studio
+    page.select_option("#mode", "melody")
+    expect(page.locator("#transcriber")).to_have_value("basic-pitch")
+    import_recording(page, hum_wav(tmp_path / "hum.wav"))
+    page.click("#analyze")
+    expect(page.locator("#status")).to_have_text("Transcription complete", timeout=60000)
+    assert note_pitches(page) == HUM
+    assert count(page, "notecount") == len(HUM)
 
 
 def test_recording_and_polish_survive_a_reload(studio, tmp_path):
