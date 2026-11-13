@@ -135,8 +135,10 @@ def test_import_transcribe_edit_play_export_save_reload(studio, tmp_path):
     assert note_pitches(page) == [m for _, m in TONES]
     assert count(page, "notecount") == 3
 
-    # Edit a note (tapping removes it), then undo the edit.
+    # Edit a note (tap selects it, Delete removes it), then undo the edit.
     page.locator("#melodyroll .note").nth(1).click()
+    assert note_pitches(page) == [69, 72, 76]
+    page.keyboard.press("Delete")
     assert note_pitches(page) == [69, 76]
     page.click("#undo")
     assert note_pitches(page) == [69, 72, 76]
@@ -193,10 +195,11 @@ def test_undo_redo_across_manual_ai_load_and_vocal_target_edits(studio, tmp_path
     page = studio
     assert history_state(page) == {"undo": (False, "Nothing to undo"), "redo": (False, "Nothing to redo")}
 
-    # Load example, then a manual edit: tapping a note removes it.
+    # Load example, then a manual edit: select a note and delete it.
     page.click("#demo")
     assert count(page, "notecount") == 8 and count(page, "hitcount") == 16
     page.locator("#melodyroll .note").nth(0).click()
+    page.click("#melodydelete")
     assert note_pitches(page) == [64, 67, 69, 67, 64, 62, 60]
     page.select_option("#instrument", "strings")
     page.fill("#bpm", "140")
@@ -848,10 +851,12 @@ def test_generated_harmony_is_editable_undoable_exported_and_saved(studio, tmp_p
     n = min(len(no_harmony), len(with_harmony))
     assert np.abs(with_harmony[:n] - no_harmony[:n]).mean() > 50
 
-    # Tap a harmony note to remove it; that is an undoable edit.
+    # Select a harmony note and delete it; that is an undoable edit.
     page.locator("#harmonyroll .note").first.click()
+    expect(page.locator("#harmonycount")).to_have_text("6 notes")
+    page.click("#harmonydelete")
     expect(page.locator("#harmonycount")).to_have_text("5 notes")
-    assert page.get_attribute("#undo", "title") == "Undo: Remove harmony note"
+    assert page.get_attribute("#undo", "title") == "Undo: Delete harmony note"
     page.click("#undo")
     expect(page.locator("#harmonycount")).to_have_text("6 notes")
 
@@ -1642,3 +1647,166 @@ def test_piano_roll_draws_low_and_high_notes_on_their_own_rows(studio, tmp_path)
     page.set_input_files("#projectfile", str(usual))
     expect(page.locator("#status")).to_have_text("Project opened")
     assert roll_rows(page, "melodyroll") == [[60, pytest.approx(85 - 12 * 2.2)], [72, pytest.approx(85 - 24 * 2.2)]]
+
+
+def roll_notes(page, roll="melodyroll"):
+    """(pitch, start) of each note in a roll, from the note titles, in project order."""
+    return [(int(m), float(t)) for m, t in (re.match(r"MIDI (\d+) at ([\d.]+)s", s).groups()
+            for s in page.locator(f"#{roll} .note").evaluate_all("els => els.map(e => e.title)"))]
+
+
+def undo_label(page):
+    return page.get_attribute("#undo", "title")
+
+
+def test_roll_selects_moves_resizes_draws_and_shifts_notes(studio, tmp_path):
+    """EDIT.3: a tap selects a note (it no longer deletes it); notes are moved, resized, drawn, deleted
+    and shifted by octave and in key with the mouse and the keyboard, each as one undoable edit."""
+    page = studio
+    expect(page.locator("#status")).to_have_text("Ready")
+    project = tmp_path / "edit.json"
+    # 120 bpm: a beat is 0.5 s, a sixteenth 0.125 s. The roll spans 8 s.
+    project.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": 120, "instrument": "piano",
+                                   "notes": [{"m": 60, "t": 0, "d": 0.5}, {"m": 64, "t": 0.5, "d": 0.5}, {"m": 67, "t": 1, "d": 0.5}],
+                                   "drums": [], "harmony": [{"m": 48, "t": 0, "d": 2}, {"m": 52, "t": 0, "d": 2}, {"m": 55, "t": 0, "d": 2}]}))
+    page.set_input_files("#projectfile", str(project))
+    expect(page.locator("#status")).to_have_text("Project opened")
+    page.select_option("#harmonykey", "0:major")
+    roll = page.locator("#melodyroll")
+    box = {}
+
+    def place():
+        """Scroll the roll into view and measure it: mouse gestures use page coordinates."""
+        roll.scroll_into_view_if_needed()
+        box.update(roll.bounding_box())
+
+    x_of = lambda t: box["x"] + t / 8 * 0.97 * box["width"]
+    y_of = lambda pct: box["y"] + pct / 100 * box["height"]
+    notes = page.locator("#melodyroll .note")
+    original = [(60, 0.0), (64, 0.5), (67, 1.0)]
+
+    def undo_back(label):
+        assert undo_label(page) == "Undo: " + label
+        page.click("#undo")
+        assert roll_notes(page) == original
+
+    # A tap selects; nothing is deleted.
+    notes.nth(1).click()
+    assert roll_notes(page) == original
+    expect(notes.nth(1)).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#melodysel")).to_have_text("1 selected")
+
+    # Keyboard: a step up in C major, an octave down, a sixteenth later, a beat earlier, longer.
+    page.keyboard.press("ArrowUp")
+    assert roll_notes(page) == [(60, 0.0), (65, 0.5), (67, 1.0)]
+    expect(notes.nth(1)).to_have_attribute("aria-pressed", "true")
+    page.keyboard.press("ArrowUp")
+    assert roll_notes(page)[1] == (67, 0.5)
+    page.click("#undo")
+    undo_back("Move melody note up a step in C major")
+    notes.nth(1).click()
+    page.keyboard.press("Shift+ArrowDown")
+    assert roll_notes(page)[1] == (52, 0.5)
+    undo_back("Move melody note down an octave")
+    notes.nth(1).click()
+    page.keyboard.press("ArrowRight")
+    assert roll_notes(page)[1] == (64, 0.625)
+    undo_back("Move melody note later")
+    notes.nth(1).click()
+    page.keyboard.press("Shift+ArrowLeft")
+    assert roll_notes(page)[1] == (64, 0.0)
+    undo_back("Move melody note earlier")
+    notes.nth(1).click()
+    page.keyboard.press("Alt+ArrowRight")
+    assert draft(page)["notes"][1] == {"m": 64, "t": 0.5, "d": 0.625}
+    undo_back("Lengthen melody note")
+
+    # The whole melody: Ctrl+A, then the buttons and keys for octave and in-key steps.
+    page.locator("#melodyroll").focus()
+    page.keyboard.press("ControlOrMeta+a")
+    expect(page.locator("#melodysel")).to_have_text("3 selected")
+    page.click("#melodyoctup")
+    assert roll_notes(page) == [(72, 0.0), (76, 0.5), (79, 1.0)]
+    undo_back("Move 3 melody notes up an octave")
+    page.click("#melodyall")
+    page.click("#melodykeydown")
+    assert roll_notes(page) == [(59, 0.0), (62, 0.5), (65, 1.0)]
+    page.click("#melodykeyup")
+    page.click("#melodykeyup")
+    assert roll_notes(page) == [(62, 0.0), (65, 0.5), (69, 1.0)]
+    assert all(m % 12 in (0, 2, 4, 5, 7, 9, 11) for m, _ in roll_notes(page))
+    page.click("#undo")
+    page.click("#undo")
+    undo_back("Move 3 melody notes down a step in C major")
+
+    place()
+    # Mouse: drag the first note half a second later and two semitones up (2.2% of the roll a semitone).
+    first = notes.nth(0).bounding_box()
+    sx, sy = first["x"] + first["width"] / 2, first["y"] + first["height"] / 2
+    page.mouse.move(sx, sy)
+    page.mouse.down()
+    page.mouse.move(sx + (x_of(0.5) - x_of(0)), sy - 2 * 2.2 / 100 * box["height"], steps=6)
+    page.mouse.up()
+    assert roll_notes(page) == [(62, 0.5), (64, 0.5), (67, 1.0)]
+    undo_back("Move melody note")
+
+    place()
+    # Mouse: drag the last note's end half a second later.
+    last = notes.nth(2).bounding_box()
+    ex, ey = last["x"] + last["width"] - 2, last["y"] + last["height"] / 2
+    page.mouse.move(ex, ey)
+    page.mouse.down()
+    page.mouse.move(ex + (x_of(0.5) - x_of(0)), ey, steps=6)
+    page.mouse.up()
+    assert draft(page)["notes"][2] == {"m": 67, "t": 1, "d": 1}
+    undo_back("Resize melody note")
+
+    place()
+    # Mouse: draw C5 at 3 s (row top 85 - 24 * 2.2 %, centre 6 % lower); it is a beat long and selected.
+    page.click("#melodydraw")
+    expect(page.locator("#melodydraw")).to_have_attribute("aria-pressed", "true")
+    page.mouse.click(x_of(3), y_of(85 - 24 * 2.2 + 6))
+    assert roll_notes(page) == original + [(72, 3.0)]
+    assert draft(page)["notes"][3] == {"m": 72, "t": 3, "d": 0.5}
+    expect(page.locator("#melodysel")).to_have_text("1 selected")
+    undo_back("Draw melody note")
+    page.click("#melodydraw")
+
+    # Keyboard: N draws a beat-long note after the selection.
+    notes.nth(2).click()
+    page.keyboard.press("n")
+    assert roll_notes(page) == original + [(67, 1.5)]
+    undo_back("Draw melody note")
+
+    place()
+    # Mouse: a box around every note selects them all; Delete removes them as one edit.
+    page.mouse.move(x_of(7.5), y_of(97))
+    page.mouse.down()
+    page.mouse.move(x_of(0.02), y_of(3), steps=6)
+    page.mouse.up()
+    expect(page.locator("#melodysel")).to_have_text("3 selected")
+    page.keyboard.press("Delete")
+    assert roll_notes(page) == []
+    undo_back("Delete 3 melody notes")
+
+    place()
+    # A tap on empty space clears the selection.
+    notes.nth(0).click()
+    page.mouse.click(x_of(6), y_of(50))
+    expect(page.locator("#melodysel")).to_have_text("")
+    assert roll_notes(page) == original
+
+    # The harmony roll: select a chord note, step it in key, delete it, undo each.
+    chord = page.locator("#harmonyroll .note")
+    chord.nth(1).click()
+    page.keyboard.press("ArrowDown")
+    assert roll_notes(page, "harmonyroll") == [(48, 0.0), (50, 0.0), (55, 0.0)]
+    assert undo_label(page) == "Undo: Move harmony note down a step in C major"
+    page.click("#undo")
+    page.locator("#harmonyroll").focus()
+    page.keyboard.press("ControlOrMeta+a")
+    page.click("#harmonydelete")
+    expect(page.locator("#harmonycount")).to_have_text("0 notes")
+    page.click("#undo")
+    expect(page.locator("#harmonycount")).to_have_text("3 notes")
+    assert roll_notes(page) == original
