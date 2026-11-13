@@ -1,6 +1,6 @@
 # Roadmap and change history
 
-Last reviewed: 2026-11-10. This is a prioritized working plan, not a delivery promise.
+Last reviewed: 2026-11-13. This is a prioritized working plan, not a delivery promise.
 
 ## Milestones and status
 | Status | Milestone | Notes |
@@ -25,6 +25,7 @@ Last reviewed: 2026-11-10. This is a prioritized working plan, not a delivery pr
 | Implemented, needs device QA | Local-first storage | No accounts (ADR-011): the draft, versions and recordings in IndexedDB/OPFS (STORE.2a); in the Mac app projects are plain files (DESK.3); the browser folder and bucket options are parked |
 | Implemented, Web MIDI needs device QA | Hand-off to other music tools | Stems and multi-track MIDI, MusicXML, DAWproject, Web MIDI (EXP.1-EXP.4) |
 | Planned | Production QA | Android/Mac e2e recording and audio quality evaluations |
+| Planned (next) | Shape the song | Note selection and octave/in-key shifts, harmony voices and Create harmony, playhead and loop, guided steps, count-in, takes, mixer, sections, lyrics, chord symbols and an optional genre (section 9a, EDIT.3 first) |
 
 ## Task backlog
 
@@ -245,6 +246,53 @@ Tandem is where an idea starts; people finish it in their own DAW or notation ap
   - Only where the browser has Web MIDI (Chromium and Firefox on desktop, not Safari); hidden elsewhere. Input records notes into the melody as one undoable edit at the project tempo; output plays melody, harmony and drums to a chosen device and channel.
   - **Acceptance:** browser test with a mocked `MIDIAccess`; recording with a real keyboard and playing to a real synth recorded as manual QA.
   - Implemented, waiting on the real-device QA in the acceptance before it is checked off: the studio's **MIDI keyboard** track (`midi.js`, pure, plus the wiring in `index.html`) shows only where `navigator.requestMIDIAccess` exists and asks for devices only when **Connect MIDI** is pressed. Keys sound as they are played on the melody instrument (with the sustain pedal), or go through to the chosen output on the melody channel. **Record from keyboard** counts in one bar with a click at the project tempo, plays the song, and on Stop adds the take to the melody as one undoable edit (times from the end of the count-in, moved by the output latency; notes held over the count-in start at zero, key bounce under 20 ms dropped, the sustain pedal held). With a MIDI output chosen, Play sends the melody on the chosen channel, the harmony on the next (skipping 10) and the drums on channel 10 with the MIDI file's programs and drum keys, scheduled 200 ms ahead from a timer; Stop drops what the output still holds (`clear()`, and where a browser lacks it, a note-off for each queued song note at that note's time, so a key or song played right after Stop is not cut off) and silences every channel. Changing the output or channel while keys are held releases them where they were sent. Tests: `node --test tests/midi.test.mjs`, `python -m pytest e2e/test_midi.py -q` (mocked `MIDIAccess` in Chromium). Unverified by the operator: recording from a real keyboard and playing to a real synth (manual matrix in docs/TESTING.md).
+
+### 9a. Shape the song: editing, harmony and arrangement (operator ideas, 2026-11-13)
+Asked for by the operator on 2026-11-13, in this order: fixing how notes are edited first (it unblocks octave and harmony work), then the harmony tools, then the playhead and the guided redesign, then the recording and arrangement features. GENRE.1 changes what gets built: show the operator what it affects before starting it.
+
+- [ ] **EDIT.3** Select, move, resize and draw notes in the melody and harmony rolls, and shift them by octave or in key
+  - Tapping a note selects it instead of deleting it (a phone tap no longer loses a note); Delete removes the selection. Select one note, several (shift-click or a drag box) or all; drag to move in time and pitch, drag an edge to resize, and draw a new note where it is placed instead of appending it. Octave down / Octave up and step up / down in the detected or chosen key for the selection, each one undoable edit, with keyboard shortcuts.
+  - **Acceptance:** `node --test` tests of the pure selection and shift functions (octave, in-key steps keep every note in the scale); a Chromium test selects a note and the whole melody, shifts them by octave and in key, moves, resizes, draws and deletes with the mouse and the keyboard, and undoes each as one edit.
+- [ ] **HARM.1** Duplicate notes into a harmony voice and shift the copy
+  - **Depends:** EDIT.3
+  - Duplicate the selection (or the whole melody) into a harmony voice that plays alongside the melody, then shift it by octave, semitones or scale steps (a third above in key). Played, exported (MIDI, stems, MusicXML, DAWproject) and saved like the other parts.
+  - **Acceptance:** Node tests of the duplicate and in-key shift; a Chromium test duplicates the melody, shifts it a third up in key, hears it in Export WAV and finds it as its own track in the MIDI file; one undoable edit.
+- [ ] **HARM.2** Create harmony: a default harmony line with Try another
+  - **Depends:** HARM.1
+  - One button writes a harmony line that moves with the melody: by default thirds above in key, a sixth where a third clashes with the chord, with simple voice-leading rules. Try another steps through alternatives (a sixth below, an octave double, a simple counter-melody, a two-voice stack), each played at once to compare; keeping one is one undoable edit.
+  - **Acceptance:** Node tests: every generated note in the key, no parallel fifths or octaves with the melody in the default, each alternative distinct; a Chromium test creates, tries another, keeps and undoes. Listening judgement recorded as manual QA.
+- [ ] **HARM.3** Sing the harmony back in your own voice
+  - **Depends:** HARM.2, VOX.4
+  - Pitch-shift the recorded take with WORLD to the harmony line, so one take gives stacked vocal harmonies; a part stem from zero like the band.
+  - **Acceptance:** the shifted voice follows the harmony notes within 20 cents on a synthetic take (`tests/test_vocal_benchmark.py`-style check); listening QA by the operator.
+- [ ] **PLAY.1** Playhead, play from here and loop a section
+  - A line that moves across the rolls while playing, click a time to play from there, and drag a loop region that repeats until Stop.
+  - **Acceptance:** a Chromium test checks the playhead position against the audio clock, play-from-here start time and that a loop repeats; Node tests of the loop scheduling.
+- [ ] **UI.1** Guided steps: the Sing / Notes / Song / Share step rail and the "How it is done" settings
+  - From the design canvas the operator liked (https://claude.ai/artifact/Mp9K6NXitSKnQ6MmTMcp5A): a phone-first step rail with plain words, the automatic helpers with adjustable defaults on a settings screen, and an all-controls view that keeps every control there is today. Staged: the rail and the settings first, no control removed. Open wording choice: "Speed / beats a minute" or "BPM".
+  - **Acceptance:** a Chromium test walks the four steps on a phone viewport and finds every existing control in the all-controls view; screenshots at phone and desktop widths in the PR.
+- [ ] **REC.2** Count-in and click when recording the voice
+  - One bar of count-in and an optional click at the project tempo while recording a hum or a beatbox (the click is not in the recording), so takes come out in time and quantize cleanly. Reuses the EXP.4 click.
+  - **Acceptance:** a Chromium test with the fake microphone checks the count-in length and that the recording's zero is the end of the count-in.
+- [ ] **TAKE.1** Several takes of a part, and pick or combine the best
+  - Keep every take of a recording instead of replacing it; choose the take to use, or comp sections of different takes into one.
+  - **Acceptance:** Node tests of the comp edit list; a Chromium test records two takes, picks one, comps a section from the other and undoes; takes survive a reload.
+- [ ] **MIX.1** A mixer: volume, mute and solo for every part
+  - Melody, harmony, drums, band, voice as instrument and the vocal takes each get a level, mute and solo, used by Play, Export WAV and the stems and saved in the project.
+  - **Acceptance:** Node tests of the gain math; a Chromium test checks a muted part is silent and a level change scales its stem in Export WAV.
+- [ ] **SONG.1** Song sections: label verse and chorus, then repeat and reorder them
+  - **Depends:** EDIT.3
+  - Mark ranges of the song as named sections and repeat, move or delete a section across all parts at once.
+  - **Acceptance:** Node tests of section moves across parts; a Chromium test repeats a chorus and undoes it.
+- [ ] **LYR.1** Lyrics on melody notes
+  - Type lyrics that attach syllable by syllable to the melody notes, shown in the roll and written into the MusicXML export.
+  - **Acceptance:** Node tests of syllable assignment; the MusicXML fixture with lyrics validates against the schema and reads back with music21.
+- [ ] **CHORD.1** Chord symbols you can see and edit
+  - Show the harmony's chords as symbols above the roll; change a chord and the harmony part follows.
+  - **Acceptance:** Node tests of chord naming and regeneration from an edited chord; a Chromium test edits one chord and undoes.
+- [ ] **GENRE.1** Optional genre that sets better defaults
+  - A project genre (None by default, so nothing changes unless chosen): it picks the harmony progression and voicing, how a beatbox is read into a groove, swing and grid defaults, a likely tempo range for Detect tempo, starting instruments, the band's style text and context for the AI chat. Every choice it makes can still be changed. Confirm the list of effects with the operator before building.
+  - **Acceptance:** Node tests that each genre's defaults are applied and None leaves today's behaviour byte for byte; a Chromium test picks a genre and checks the generated harmony and drums differ as specified.
 
 ### 10. Later
 - [x] **ARR.1** Better arrangement: richer instruments, harmony, swing and phrase-aware editing
