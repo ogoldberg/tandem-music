@@ -219,9 +219,11 @@ def test_recording_a_beat_after_singing_keeps_the_sung_song_as_a_version_first(b
         expect(page.locator("#gbeatwarn")).to_be_hidden()
 
         page.click("#gbeat")
-        page.click("#gbeatyes")
+        expect(page.locator("#gbeatyes")).to_have_text("Keep a version and record a beat")
+        page.dblclick("#gbeatyes")  # a double tap keeps one version
         expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
         expect(page.locator('[data-mode="rhythm"]')).to_have_attribute("aria-pressed", "true")
+        expect(page.locator("#gversions")).to_have_text("1 version saved on this device.")
         expect(page.locator("#gstatus")).to_have_text('Your song is kept as the version "Before the beat". Record your beat.')
         record_take(page)
         assert page.evaluate("document.getElementById('playtuned').disabled") is True
@@ -232,3 +234,28 @@ def test_recording_a_beat_after_singing_keeps_the_sung_song_as_a_version_first(b
         page.click("#versionlist .version:has-text('Before the beat') >> text=Restore")
         page.wait_for_function("!document.getElementById('playtuned').disabled")
         assert page.evaluate("document.getElementById('polished').disabled") is False
+
+
+def test_without_recording_storage_record_a_beat_says_the_take_is_lost_and_saves_no_version(browser, server_url):
+    context = browser.new_context(**PHONE, is_mobile=True, permissions=["microphone"], base_url=server_url)
+    # No Origin Private File System: versions cannot keep recordings, so no version can keep the voice.
+    context.add_init_script("delete StorageManager.prototype.getDirectory;")
+    page = context.new_page()
+    page.goto("/")
+    page.wait_for_function("document.getElementById('notecount').textContent !== '' && !document.body.inert")
+    try:
+        use_server_transcriber(page)
+        page.click('[data-mode="vocal"]')
+        record_take(page)
+        page.click('#steps [data-step="song"]')
+        page.click("#gbeat")
+        expect(page.locator("#gbeatmsg")).to_have_text(
+            "A beat take replaces the recording you have now, with your voice, and this browser cannot keep recordings "
+            "in a version. Download your voice first if you want to keep it.")
+        expect(page.locator("#gbeatyes")).to_have_text("Record a beat anyway")
+        page.click("#gbeatyes")
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
+        expect(page.locator('[data-mode="rhythm"]')).to_have_attribute("aria-pressed", "true")
+        assert page.evaluate("document.getElementById('versionlist').textContent") == "No saved versions yet."
+    finally:
+        context.close()
