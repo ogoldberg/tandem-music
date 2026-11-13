@@ -210,13 +210,14 @@ def test_stop_leaves_no_note_sounding_on_the_synth(page, server_url, clearable):
       else setTimeout(look, 1); }; look(); })""")
     time.sleep(0.5)
     assert page.evaluate("window.__midiSounding()") == []
-    # What Stop does to the stopped song must not touch what comes after it: a key played at once keeps sounding.
-    page.evaluate("""new Promise(done => { document.getElementById('play').click(); const look = () => {
-      if (window.__midiSent.some(e => (e.data[0] & 0xf0) === 0x90 && e.due > performance.now())) {
-        document.getElementById('stop').click(); window.__midiKey([0x90, 72, 100]); done(); }
+    # What Stop does to the stopped song must not touch what comes after it: a key played at once keeps sounding,
+    # even one on the pitch and channel of a melody note the stopped song still had queued.
+    pitch = page.evaluate("""new Promise(done => { document.getElementById('play').click(); const look = () => {
+      const queued = window.__midiSent.find(e => e.data[0] === 0x90 && e.data[2] > 0 && e.due > performance.now());
+      if (queued) { document.getElementById('stop').click(); window.__midiKey([0x90, queued.data[1], 100]); done(queued.data[1]); }
       else setTimeout(look, 1); }; look(); })""")
     time.sleep(0.5)
-    assert page.evaluate("window.__midiSounding()") == ["0:72"]
+    assert page.evaluate("window.__midiSounding()") == [f"0:{pitch}"]
     assert not problems, problems
 
 
