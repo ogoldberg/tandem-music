@@ -58,14 +58,15 @@ export function moveNotes(notes, indices, { dt = 0, dm = 0 } = {}) {
 }
 
 // Drag one edge of note i to time `at`: the start edge keeps the note's end, the end edge keeps its
-// start. The note stays at least MIN_DURATION long and does not start before zero.
+// start. The note stays at least MIN_DURATION long and does not start before zero; a note that ends
+// before MIN_DURATION starts at zero and is lengthened to MIN_DURATION.
 export function resizeNote(notes, i, edge, at) {
   checked(notes, [i]);
   const n = notes[i], end = n.t + n.d;
   let out;
   if (edge === "start") {
-    const t = Math.min(Math.max(0, at), end - MIN_DURATION);
-    out = { ...n, t: ms(t), d: ms(end - t) };
+    const t = Math.max(0, Math.min(at, end - MIN_DURATION));
+    out = { ...n, t: ms(t), d: ms(Math.max(MIN_DURATION, end - t)) };
   } else if (edge === "end") {
     out = { ...n, d: ms(Math.max(MIN_DURATION, at - n.t)) };
   } else throw Error("Unknown edge: " + edge);

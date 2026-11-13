@@ -55,6 +55,11 @@ test("resizeNote moves one edge and keeps the other", () => {
   assert.deepEqual(resizeNote(MELODY, 1, "end", 0.1)[1], n(64, 0.5, MIN_DURATION));
   assert.deepEqual(resizeNote(MELODY, 1, "start", 5)[1], n(64, 0.95, MIN_DURATION));
   assert.deepEqual(resizeNote(MELODY, 1, "start", -1)[1], n(64, 0, 1));
+  // A note shorter than MIN_DURATION at zero (the MIDI recorder keeps 20 ms notes) never starts before zero.
+  for (const d of [0.02, 0.03]) for (const at of [0, -1, 0.01]) {
+    const out = resizeNote([n(60, 0, d)], 0, "start", at)[0];
+    assert.deepEqual(out, n(60, 0, MIN_DURATION));
+  }
   assert.throws(() => resizeNote(MELODY, 9, "end", 1), /out of date/);
 });
 

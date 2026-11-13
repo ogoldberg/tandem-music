@@ -1810,3 +1810,38 @@ def test_roll_selects_moves_resizes_draws_and_shifts_notes(studio, tmp_path):
     page.click("#undo")
     expect(page.locator("#harmonycount")).to_have_text("3 notes")
     assert roll_notes(page) == original
+
+
+def test_roll_resizes_a_narrow_note_by_its_handles(studio, tmp_path):
+    """EDIT.3: a note too narrow to grab by its edge is resized with the handles shown beside it
+    when it is the only one selected."""
+    page = studio
+    expect(page.locator("#status")).to_have_text("Ready")
+    project = tmp_path / "narrow.json"
+    # The roll spans 32 s, so a half-second note at zero is only a few pixels wide.
+    project.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": 120, "instrument": "piano",
+                                   "notes": [{"m": 60, "t": 0, "d": 0.5}, {"m": 62, "t": 31, "d": 1}], "drums": []}))
+    page.set_input_files("#projectfile", str(project))
+    expect(page.locator("#status")).to_have_text("Project opened")
+    roll = page.locator("#melodyroll")
+    expect(roll.locator(".handle")).to_have_count(0)
+    roll.locator(".note").nth(0).click()
+    expect(roll.locator(".handle")).to_have_count(2)
+    roll.scroll_into_view_if_needed()
+    width = roll.bounding_box()["width"]
+    assert roll.locator(".note").nth(0).bounding_box()["width"] < 14
+    end = roll.locator(".handle[data-edge=end]").bounding_box()
+    hx, hy = end["x"] + end["width"] / 2, end["y"] + end["height"] / 2
+    page.mouse.move(hx, hy)
+    page.mouse.down()
+    page.mouse.move(hx + 0.5 / 32 * 0.97 * width, hy, steps=6)
+    page.mouse.up()
+    assert draft(page)["notes"][0] == {"m": 60, "t": 0, "d": 1}
+    assert undo_label(page) == "Undo: Resize melody note"
+    expect(roll.locator(".handle")).to_have_count(2)
+    page.click("#undo")
+    assert draft(page)["notes"][0] == {"m": 60, "t": 0, "d": 0.5}
+    # More than one note selected: no handles.
+    roll.focus()
+    page.keyboard.press("ControlOrMeta+a")
+    expect(roll.locator(".handle")).to_have_count(0)
