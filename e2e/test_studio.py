@@ -1606,3 +1606,38 @@ def test_transcription_progress_is_shown_while_the_model_runs(studio, tmp_path):
     shown = {int(m.group(1)) for text in page.evaluate("window.drawn")
              if (m := re.fullmatch(r"Transcribing on device: (\d+)%", text))}
     assert len({p for p in shown if 0 < p < 100}) >= 3, f"progress drawn: {sorted(shown)}"
+
+
+def roll_rows(page, roll):
+    """Each note's pitch (from its title) and its row's top offset in percent, in drawing order."""
+    return page.locator(f"#{roll} .note").evaluate_all(
+        "els => els.map(e => [Number(e.title.split(' ')[1]), parseFloat(e.style.top)])")
+
+
+def test_piano_roll_draws_low_and_high_notes_on_their_own_rows(studio, tmp_path):
+    """ROLL.1: a low hum's notes (below MIDI 48) and very high notes each get their own row,
+    every row inside the roll, higher notes above lower ones, a semitone apart everywhere."""
+    page = studio
+    expect(page.locator("#status")).to_have_text("Ready")
+    pitches = [36, 40, 43, 44, 47, 50, 60, 96]
+    project = tmp_path / "wide.json"
+    project.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": 100, "instrument": "piano",
+                                   "notes": [{"m": m, "t": i * 0.5, "d": 0.4} for i, m in enumerate(pitches)],
+                                   "drums": [], "harmony": [{"m": m, "t": i * 0.5, "d": 0.4} for i, m in enumerate([28, 33, 84])]}))
+    page.set_input_files("#projectfile", str(project))
+    expect(page.locator("#status")).to_have_text("Project opened")
+    for roll, want in (("melodyroll", pitches), ("harmonyroll", [28, 33, 84])):
+        rows = roll_rows(page, roll)
+        assert [m for m, _ in rows] == want
+        tops = [top for _, top in rows]
+        assert all(2 <= top <= 92 for top in tops), (roll, tops)
+        per_semitone = [(a - b) / (n - m) for (m, a), (n, b) in zip(rows, rows[1:])]
+        assert min(per_semitone) > 0, (roll, tops)
+        assert max(per_semitone) - min(per_semitone) < 0.01, (roll, per_semitone)
+    # A melody inside the usual range keeps the usual rows (MIDI 60 at 85 - 12 * 2.2).
+    usual = tmp_path / "usual.json"
+    usual.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": 100, "instrument": "piano",
+                                 "notes": [{"m": 60, "t": 0, "d": 0.5}, {"m": 72, "t": 0.5, "d": 0.5}], "drums": []}))
+    page.set_input_files("#projectfile", str(usual))
+    expect(page.locator("#status")).to_have_text("Project opened")
+    assert roll_rows(page, "melodyroll") == [[60, pytest.approx(85 - 12 * 2.2)], [72, pytest.approx(85 - 24 * 2.2)]]
