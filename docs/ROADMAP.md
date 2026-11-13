@@ -316,6 +316,9 @@ Asked for by the operator on 2026-11-13, in this order: fixing how notes are edi
 - [ ] **SPEECH.1** Conversational speech: spoken chat and audio intent alongside text
   - **Depends:** AI.2
   - Speech-to-text on the device (Whisper in the browser) or with the user's own key for a hosted Whisper.
+- [ ] **FX.0** Spike (low priority): the MPC Plugin SDK's DSP compiled to WebAssembly for audio effects
+  - inMusic's MIT-licensed MPC Plugin SDK (https://github.com/inmusic-software/mpc-plugin-builder-sdk, Nov 2026) has 14 header-only C++ DSP files in `framework/dsp/` (oscillators, biquad/SVF filters, ADSR, delay lines, LFOs, voice allocation, smoothing; no reverb or pitch shifting). Its plugin format (VST2-style Linux `.so` for MPC hardware) does not fit Tandem, and Logic/GarageBand load neither VST2 nor VST3, so the idea is the DSP only: compile it with the VOX.4 Emscripten setup, run a port of its `StereoDelay` example on a vocal take in an AudioWorklet, and compare with a native build of the same code. If it holds up it could lead to an effects rack, richer synth voices and, once AI is on, AI-written effects sandboxed in WebAssembly instead of native plugins.
+  - **Acceptance:** a written verdict (keep, use a different DSP library, or drop) with the WebAssembly and native renders matching on a fixture; nothing user-facing.
 
 ## History of decisions and fixes (2026-11-08 to 2026-11-09)
 - Initial idea came from Akai MPC openness, but **no MPC hardware is needed** for Tandem.
