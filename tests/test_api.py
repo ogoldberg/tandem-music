@@ -703,6 +703,14 @@ def test_midi_module_is_served_and_precached(client):
     assert "from './midi.js'" in run(client("GET","/")).text
     assert "'./midi.js'" in run(client("GET","/sw.js")).text
 
+def test_noteedit_module_is_served_and_precached(client):
+    # EDIT.3: the studio imports noteedit.js (roll selection and note edits) at start-up, so it is precached for offline use.
+    js=run(client("GET","/noteedit.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function stepInKey" in js.text
+    assert "from './noteedit.js'" in run(client("GET","/")).text
+    assert "'./noteedit.js'" in run(client("GET","/sw.js")).text
+
 def test_dawproject_module_is_served_and_precached(client):
     # EXP.3: the studio imports dawproject.js (DAWproject export) at start-up, so it is precached for offline use.
     js=run(client("GET","/dawproject.js"))
