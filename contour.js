@@ -265,6 +265,8 @@ const median = values => {
 // to another, and a slide joins the note it settles on. `line` is pitchContour's {t, m};
 // `activation(frame, midi)` is the model's note activation (0..1) at that frame and pitch.
 //  1. Voiced runs of at least `minRun` s, joined across dropouts shorter than `gap` s into stretches.
+//     A stretch also ends at `gap` s or more of note activation under `minAct`: breath noise can read
+//     at the sung pitch, and only the activation shows nothing is sung there.
 //  2. Each stretch's pitch, median-smoothed over `smooth` frames each side (about one vibrato cycle).
 //  3. A piece ends where the smoothed pitch stays `step` semitones from the piece's centre (the
 //     median of its last `span` s) for `hold` s.
@@ -294,9 +296,27 @@ export function sungNotes(line, activation, options = {}) {
     i = j;
   }
   const notes = [], holdFrames = Math.max(1, Math.round(hold / dt)), spanFrames = Math.max(1, Math.round(span / dt));
+  const breathFrames = Math.max(1, Math.round(gap / dt));
+  const parts = [];
   for (const runs of stretches) {
-    const idx = runs.flatMap(([a, b]) => Array.from({ length: b - a }, (_, k) => a + k));
-    const s = idx.map((_, k) => median(idx.slice(Math.max(0, k - smooth), k + smooth + 1).map(i => m[i])));
+    const all = runs.flatMap(([a, b]) => Array.from({ length: b - a }, (_, k) => a + k));
+    const smoothed = all.map((_, k) => median(all.slice(Math.max(0, k - smooth), k + smooth + 1).map(i => m[i])));
+    const acts = all.map((i, k) => activation(i, Math.round(smoothed[k])));
+    // Noise in a breath can read at the sung pitch: `gap` s or more without note activation ends the stretch.
+    let from = 0;
+    for (let k = 0; k <= all.length; k++) {
+      if (k < all.length && acts[k] < minAct) continue;
+      let quiet = k;
+      while (quiet > from && acts[quiet - 1] < minAct) quiet--;
+      const breath = k - quiet >= breathFrames;
+      if (breath || k === all.length) {
+        const end = breath ? quiet : k;
+        if (end > from) parts.push([all.slice(from, end), smoothed.slice(from, end), acts.slice(from, end)]);
+        from = k;
+      }
+    }
+  }
+  for (const [idx, s, acts] of parts) {
     const pieces = [];
     let start = 0;
     for (let k = 1; k + holdFrames <= idx.length; k++) {
@@ -313,7 +333,7 @@ export function sungNotes(line, activation, options = {}) {
     for (const [a, b] of pieces) {
       const part = s.slice(a, b), third = Math.max(1, Math.floor(part.length / 3));
       let act = 0;
-      for (let k = a; k < b; k++) act += activation(idx[k], Math.round(s[k]));
+      for (let k = a; k < b; k++) act += acts[k];
       if (act / (b - a) < minAct) { settle(); prev = null; continue; }
       const change = Math.abs(median(part.slice(0, third)) - median(part.slice(-third)));
       const moving = change >= slide && change / Math.max(dt, (part.length - third) * dt) >= rate;

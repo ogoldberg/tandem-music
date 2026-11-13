@@ -282,6 +282,18 @@ test("a breath separates two notes of one pitch; a dropout shorter than `gap` do
   close(joined[0].d, 1.1, 0.02);
 });
 
+test("a breath whose noise reads at the sung pitch still separates two notes of that pitch", () => {
+  // The line stays at 60 through a 500 ms breath; only the activation shows nothing is sung there.
+  const line = sung(1.8, t => 60 + vibrato(t));
+  const quietFrom = (a, b) => r => (line.t[r] >= a && line.t[r] < b ? 0.1 : 0.6);
+  const notes = sungNotes(line, quietFrom(0.8, 1.3));
+  assert.deepEqual(notes.map(n => n.m), [60, 60]);
+  close(notes[0].t + notes[0].d, 0.8, 0.02);
+  close(notes[1].t, 1.3, 0.02);
+  // A dip in activation shorter than `gap` is not a breath.
+  assert.equal(sungNotes(line, quietFrom(0.8, 0.9)).length, 1);
+});
+
 test("the melody options of pitchContour ignore the noise bins and prefer a strong subharmonic", () => {
   // Room noise peaks in the lowest bins; a soft hum at MIDI 50 is below it.
   const noisy = frame(50, 0.2); noisy[0] = 0.25;
