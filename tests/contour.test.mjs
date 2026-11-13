@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   frameTime, pitchContour, noteCentre, scalePitchClasses, snapToScale, stepInScale, snapNotesToScale,
-  previewCorrection, contourRange, resizeNote, mergeFragments, SCALES, KEY_NAMES, CONTOUR_BINS, MIN_TARGET_SECONDS,
+  previewCorrection, contourRange, resizeNote, mergeFragments, sungNotes, SCALES, KEY_NAMES, CONTOUR_BINS, MIN_TARGET_SECONDS,
 } from "../contour.js";
 
 const close = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${a} != ${b}`);
@@ -216,4 +216,85 @@ test("merging never bridges a silence, even when the detector carried a note acr
   const m = Float32Array.from(t, x => (x < 0.8 ? 64.65 : x < 0.9 ? NaN : 64.1));
   const out = mergeFragments([{ m: 65, t: 0, d: 0.9 }, { m: 64, t: 0.9, d: 0.8 }], { t, m });
   assert.deepEqual(out.map(n => n.m), [65, 64]);
+});
+
+
+// TRANS.2: a sung line sampled on the model's frames for `seconds`, its pitch from `pitchAt(t)`
+// (NaN when nothing is sung), and the note activation it would carry (`actAt(t)`).
+function sung(seconds, pitchAt) {
+  const t = [], m = [];
+  for (let r = 0; frameTime(r) < seconds; r++) { t.push(frameTime(r)); m.push(pitchAt(frameTime(r))); }
+  return { t: Float64Array.from(t), m: Float32Array.from(m) };
+}
+const vibrato = (t, cents = 40) => cents / 100 * Math.sin(2 * Math.PI * 5.5 * t);
+const loud = () => 0.6;
+
+test("a held note with vibrato and drift is one note as long as it is held (TRANS.2)", () => {
+  const line = sung(2.5, t => (t >= 0.2 && t < 2.2 ? 57 + vibrato(t) + 0.25 * Math.sin(2 * Math.PI * 0.7 * t) : NaN));
+  const notes = sungNotes(line, loud);
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].m, 57);
+  close(notes[0].t, 0.2, 0.02);
+  close(notes[0].t + notes[0].d, 2.2, 0.02);
+});
+
+test("a legato line splits where its pitch steps to a new note, not on vibrato", () => {
+  const line = sung(1.7, t => (t < 1.5 ? [60, 62, 64][Math.floor(t / 0.5)] + vibrato(t) : NaN));
+  const notes = sungNotes(line, loud);
+  assert.deepEqual(notes.map(n => n.m), [60, 62, 64]);
+  close(notes[1].t, 0.5, 0.06);
+  close(notes[2].t, 1.0, 0.06);
+});
+
+test("a slide joins the note it settles on, whatever its length", () => {
+  for (const glide of [0.12, 0.25]) {
+    // 44 held, then a slide of `glide` s up to 49, held.
+    const line = sung(1.6, t => (t < 0.6 ? 44 : t < 0.6 + glide ? 44 + 5 * (t - 0.6) / glide : t < 1.4 ? 49 : NaN) + vibrato(t, 20));
+    const notes = sungNotes(line, loud);
+    assert.deepEqual(notes.map(n => n.m), [44, 49], `slide of ${glide} s`);
+    assert.ok(notes[1].t < 0.6 + glide / 2, `the slide is part of the note it reaches (${notes[1].t})`);
+    close(notes[1].t + notes[1].d, 1.4, 0.02);
+  }
+  // A fall at the end of a phrase stays with the note it falls from.
+  const fall = sungNotes(sung(1.2, t => (t < 0.7 ? 60 : t < 0.9 ? 60 - 6 * (t - 0.7) / 0.2 : NaN)), loud);
+  assert.deepEqual(fall.map(n => n.m), [60]);
+  close(fall[0].t + fall[0].d, 0.9, 0.02);
+});
+
+test("room noise in a breath is not a note, and does not stretch the notes around it", () => {
+  // Two hummed notes 120 ms apart; in the breath the line reads the fan noise at 45 with little activation.
+  const pitchAt = t => (t < 0.8 ? 57 + vibrato(t) : t < 0.92 ? 45 : t < 1.8 ? 60 + vibrato(t) : NaN);
+  const line = sung(2, pitchAt);
+  const activation = r => (line.t[r] >= 0.8 && line.t[r] < 0.92 ? 0.15 : 0.6);
+  const notes = sungNotes(line, activation);
+  assert.deepEqual(notes.map(n => n.m), [57, 60]);
+  close(notes[0].t + notes[0].d, 0.8, 0.02);
+  close(notes[1].t, 0.92, 0.02);
+  // Noise alone gives no notes.
+  assert.deepEqual(sungNotes(sung(1, () => 45), () => 0.15), []);
+});
+
+test("a breath separates two notes of one pitch; a dropout shorter than `gap` does not", () => {
+  const twice = breath => sung(1.6, t => (t < 0.5 || (t >= 0.5 + breath && t < 1 + breath) ? 60 + vibrato(t) : NaN));
+  assert.equal(sungNotes(twice(0.25), loud).length, 2);
+  const joined = sungNotes(twice(0.1), loud);
+  assert.equal(joined.length, 1);
+  close(joined[0].d, 1.1, 0.02);
+});
+
+test("the melody options of pitchContour ignore the noise bins and prefer a strong subharmonic", () => {
+  // Room noise peaks in the lowest bins; a soft hum at MIDI 50 is below it.
+  const noisy = frame(50, 0.2); noisy[0] = 0.25;
+  assert.ok(Number.isNaN(pitchContour([noisy]).m[0]), "below VOICED_SALIENCE the editor's line is unvoiced");
+  assert.ok(pitchContour([noisy], { threshold: 0.15 }).m[0] < 22, "without `lowest` the noise bin wins");
+  close(pitchContour([noisy], { threshold: 0.15, lowest: 36 }).m[0], 50, 0.1);
+  // The 3rd harmonic of MIDI 42 (19 semitones up) reads loudest, its fundamental nearly as loud.
+  const harmonic = frame(61, 0.24);
+  const fundamental = frame(42, 0.2);
+  const both = harmonic.map((v, b) => Math.max(v, fundamental[b]));
+  close(pitchContour([both], { threshold: 0.15, lowest: 36, subharmonics: true }).m[0], 42, 0.1);
+  close(pitchContour([both], { threshold: 0.15, lowest: 36 }).m[0], 61, 0.1);
+  // A weak bin below a strong note is not taken for its fundamental.
+  const clear = frame(61, 0.6).map((v, b) => Math.max(v, frame(42, 0.2)[b]));
+  close(pitchContour([clear], { threshold: 0.15, lowest: 36, subharmonics: true }).m[0], 61, 0.1);
 });

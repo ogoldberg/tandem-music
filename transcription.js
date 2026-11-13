@@ -4,7 +4,7 @@
 // tools/basic-pitch/build.sh, hashes in its SHA256SUMS), not by a CDN.
 export const BASIC_PITCH_PACKAGE = "/vendor/basic-pitch-1.0.1/basic-pitch.mjs";
 export const BASIC_PITCH_MODEL = "/vendor/basic-pitch-1.0.1/model/model.json";
-import { pitchContour, mergeFragments } from "./contour.js";
+import { pitchContour, mergeFragments, sungNotes, MIN_MIDI } from "./contour.js";
 
 // Melody transcribed into the project stays within what /api/chat and its prompt accept
 // (arrangements under 60 s, at most 128 events per track).
@@ -39,6 +39,8 @@ export function normalizeBasicPitchNotes(events, { maxSeconds = PROJECT_MELODY_L
 }
 
 export const BASIC_PITCH_SAMPLE_RATE = 22050;
+// Basic Pitch's note outputs (frames, onsets) have one column per piano key, A0 (MIDI 21) upward.
+export const BASIC_PITCH_LOWEST_MIDI = 21;
 
 /** Render recordings at the exact sample rate expected by Basic Pitch.
  * OfflineAudioContext performs the resampling, without changing pitch or duration.
@@ -65,18 +67,34 @@ const loadBasicPitch = () => cachedModule ||= import(BASIC_PITCH_PACKAGE);
 // TRANS.1: inside one hummed note, room noise drops the sung line, and splits Basic Pitch's notes,
 // for up to about 140 ms; a breath between two notes of the same pitch is longer.
 export const MELODY_GAP = 0.15;
+// TRANS.2: the melody's sung line is voiced from this contour salience (below VOICED_SALIENCE, which
+// misses much of a soft low hum); unsung frames peak in the bins below MIN_MIDI, which are ignored.
+export const MELODY_SALIENCE = 0.15;
 /** Lazily fetch model and JS dependencies only when transcription is requested.
- * Defaults to PROJECT_MELODY_LIMITS; pass VOCAL_TARGET_LIMITS for pitch-correction targets.
- * Pieces of one sung note that vibrato, drift or room noise split apart are merged back
- * (contour.js mergeFragments), so a hummed note stays one sustained note.
+ * Defaults to PROJECT_MELODY_LIMITS. The melody is built from the sung pitch line (contour.js
+ * sungNotes, TRANS.2): a note lasts as long as its pitch is held, a new note starts where the pitch
+ * steps to another, and a slide joins the note it settles on. Notes are clipped to `maxSeconds`
+ * and the earliest `maxNotes` are kept.
  * `loadModule` is injectable so tests run without the browser bundle.
  */
 export async function transcribeWithBasicPitch(audioBuffer, progress = () => {}, { maxSeconds = PROJECT_MELODY_LIMITS.maxSeconds, maxNotes = PROJECT_MELODY_LIMITS.maxNotes, loadModule = loadBasicPitch } = {}) {
   const run = await runBasicPitch(audioBuffer, progress, maxSeconds, loadModule);
   if (!run) return [];
-  const contour = pitchContour(run.contours, { duration: audioBuffer.duration });
-  const merged = mergeFragments(run.notes({ maxNotes: Infinity }), contour, { gap: MELODY_GAP });
-  return Number.isFinite(maxNotes) ? merged.slice(0, maxNotes) : merged;
+  const line = pitchContour(run.contours, { duration: audioBuffer.duration, threshold: MELODY_SALIENCE, lowest: MIN_MIDI, subharmonics: true });
+  const activation = (r, midi) => {
+    const row = run.frames[r];
+    if (!row) return 0;
+    let a = 0;
+    for (let p = midi - 1; p <= midi + 1; p++) a = Math.max(a, row[p - BASIC_PITCH_LOWEST_MIDI] ?? 0);
+    return a;
+  };
+  const end = Math.min(maxSeconds, audioBuffer.duration), notes = [];
+  for (const note of sungNotes(line, activation, { gap: MELODY_GAP })) {
+    if (note.t >= end) break;
+    const d = Math.round(Math.min(note.d, end - note.t) * 1000) / 1000;
+    if (d > 0) notes.push({ ...note, d });
+  }
+  return Number.isFinite(maxNotes) ? notes.slice(0, maxNotes) : notes;
 }
 
 /** Vocal tuning targets for the pitch-contour editor (VOX.3): notes across the whole recording,
@@ -118,6 +136,7 @@ async function runBasicPitch(audioBuffer, progress, maxSeconds, loadModule) {
   const timed = noteFramesToTime(addPitchBendsToNoteEvents(contours,raw));
   return {
     contours,
+    frames,
     notes: opts => normalizeBasicPitchNotes(timed, { maxSeconds: Math.min(maxSeconds, audioBuffer.duration), ...opts }),
   };
 }
