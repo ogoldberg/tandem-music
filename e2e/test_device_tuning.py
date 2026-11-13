@@ -11,6 +11,7 @@ import numpy as np
 from playwright.sync_api import expect
 
 from test_capture import assert_server_down, wait_for_service_worker
+from conftest import ALL_CONTROLS
 
 RATE = 22050
 SCALE = [60, 62, 64, 65, 67, 69, 71, 72]
@@ -47,6 +48,7 @@ def note_cents(x, rate, seconds):
 
 def test_a_long_take_is_tuned_on_the_device_with_no_network(browser, own_server, tmp_path):
     context = browser.new_context(base_url=own_server.url, accept_downloads=True)
+    context.add_init_script(ALL_CONTROLS)
     page = context.new_page()
     problems, requests = [], []
     page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))

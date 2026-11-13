@@ -13,6 +13,7 @@ from playwright.sync_api import expect
 
 from test_capture import PHONE, open_capture, phone_page, record
 from test_studio import IDB_GET, OPFS_FILES, count
+from conftest import ALL_CONTROLS
 
 # navigator.share with files, as on iOS Safari and Android Chrome: the shared file is kept for the test.
 SHARE_STUB = """(() => {
@@ -55,6 +56,7 @@ def wait_for_draft_audio(page, slots):
 def studio_page(browser, server_url, problems):
     """The studio in a fresh browser profile (a new context: its own IndexedDB and OPFS)."""
     context = browser.new_context(base_url=server_url)
+    context.add_init_script(ALL_CONTROLS)
     page = context.new_page()
     page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
     page.on("console", lambda msg: problems.append(f"console.{msg.type}: {msg.text}") if msg.type == "error" else None)

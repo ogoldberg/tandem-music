@@ -59,6 +59,18 @@ class Server:
         self.log.close()
 
 
+# UI.1: the studio opens in the guided steps for a new person. The tests written for the studio's controls open it with
+# every control shown instead, as a person who chose "Show every control" would; e2e/test_guided.py starts fresh contexts
+# without this to test the guided view. It only sets the view when the page has no saved choice, so a test can still switch.
+ALL_CONTROLS = """try{if(!localStorage.getItem('tandem-guide'))localStorage.setItem('tandem-guide',JSON.stringify({view:'all'}))}catch(e){}"""
+
+
+@pytest.fixture
+def context(context):
+    context.add_init_script(ALL_CONTROLS)
+    return context
+
+
 @pytest.fixture(scope="session")
 def server_url(tmp_path_factory):
     # Server output goes to a file: an unread pipe would block uvicorn once it filled.

@@ -16,6 +16,7 @@ from playwright.sync_api import expect
 import tandem_desktop as desk
 from tandem_desktop.ai_keys import AISettings
 from tandem_desktop.projects import ProjectFolders
+from conftest import ALL_CONTROLS
 
 
 class Dialogs:
@@ -164,6 +165,7 @@ def test_a_project_saved_to_a_folder_opens_with_its_audio_after_a_relaunch(page,
     port, secret, dialogs = free_port(), desk.new_launch_secret(), Dialogs()
     server, thread = desk.start_server(port, secret, desktop_api=ProjectFolders(dialogs), ai_settings=AISettings(tmp_path / "ai", MemoryKeys()))
     context = browser.new_context()
+    context.add_init_script(ALL_CONTROLS)
     try:
         again = context.new_page()
         problems = open_app(again, {"url": f"http://127.0.0.1:{port}", "port": port, "secret": secret})
