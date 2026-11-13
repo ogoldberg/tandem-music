@@ -13,6 +13,28 @@ export const AUDIO_SLOTS = ["original", "polished", "tuned", "vocal", "accompani
 const LOCK = "tandem-recordings";
 const ID = /^[0-9a-f]{64}$/;
 
+// REC.1: some microphones fill one side of a stereo recording and leave the other all zero (the Mac
+// app's WebKit recorder writes the voice on the left and silence on the right). Such a silent side is
+// not part of the take: a channel 60 dB or more below the loudest is left out, so the take plays in
+// both ears and is analysed at the level of the voice rather than averaged with silence. Real stereo,
+// and a take that is silent throughout, keep every channel.
+const SILENT_SIDE = 1e-3;
+const rms = data => { let sum = 0; for (let i = 0; i < data.length; i++) sum += data[i] * data[i]; return Math.sqrt(sum / Math.max(1, data.length)); };
+
+export function liveChannels(buffer) {
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+  const levels = channels.map(rms), loudest = Math.max(0, ...levels);
+  if (!loudest) return channels;
+  return channels.filter((_, c) => levels[c] > loudest * SILENT_SIDE);
+}
+
+// The take as one channel: the average of its live channels.
+export function monoSamples(buffer) {
+  const channels = liveChannels(buffer), out = new Float32Array(buffer.length);
+  for (const data of channels) for (let i = 0; i < out.length; i++) out[i] += data[i] / channels.length;
+  return out;
+}
+
 export async function recordingId(blob) {
   const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
   return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");

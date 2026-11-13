@@ -127,3 +127,22 @@ test("detectVocalTargets returns confident notes and the sung pitch contour acro
   assert.ok(Math.abs(contour.m[0]-69)<1e-6 && Math.abs(contour.m[1]-69)<1e-6);
   assert.ok(Number.isNaN(contour.m[2]));
 });
+
+test("the page gets a task between the model's windows, so it can draw the progress (REC.1)",async()=>{
+  // Like Basic Pitch 1.0.1: evaluateModel reports progress, then awaits evaluateSingleFrame, per window.
+  // Each window here resolves at once, so without a task between them nothing else could run until the end.
+  const seen=[];let ticks=0;
+  const load=async()=>({
+    BasicPitch:class{
+      async evaluateSingleFrame(){return [[0]]}
+      async evaluateModel(_b,onFrames,onProgress){
+        for(let i=0;i<4;i++){onProgress(i/4);seen.push(ticks);await this.evaluateSingleFrame();onFrames([[0]],[[0]],[[0]])}
+        onProgress(1);
+      }
+    },
+    outputToNotesPoly:()=>[],addPitchBendsToNoteEvents:(_c,raw)=>raw,noteFramesToTime:()=>[],
+  });
+  const timer=setInterval(()=>ticks++,0);
+  try{await transcribeWithBasicPitch(buffer22k(4),()=>{},{loadModule:load})}finally{clearInterval(timer)}
+  assert.ok(seen.at(-1)>seen[0], `timer ticks seen at each window: ${seen}`);
+});

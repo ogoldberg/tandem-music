@@ -1473,3 +1473,81 @@ def test_an_edit_during_the_stem_export_does_not_change_what_is_exported(studio,
                 assert np.abs(np.frombuffer(w.readframes(w.getnframes()), "<i2")).max() > 1000, stem
         data = z.read("tandem.mid")
     assert [p for _, p in midi_note_ons(data, 0)] == [60, 64, 67, 69, 67, 64, 62, 60]
+
+
+def stereo_wav(path, left, rate=48000):
+    """16-bit stereo WAV with `left` on the left and silence on the right, as the Mac app's WebKit
+    recorder writes a one-sided microphone."""
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        frames = np.zeros((len(left), 2))
+        frames[:, 0] = left
+        w.writeframes((frames * 32767).astype("<i2").tobytes())
+    path.write_bytes(out.getvalue())
+    return path
+
+
+def wav_mono(path):
+    with wave.open(str(path)) as w:
+        data = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float) / 32767
+        return data.reshape(-1, w.getnchannels()).mean(axis=1)
+
+
+def test_a_take_with_a_silent_side_is_read_as_its_live_side(studio, tmp_path):
+    """REC.1: a recording whose right side is silent is the voice on the left at its own level, not
+    averaged with the silence (which also played it in the left ear only). Checked where the studio
+    reads a take (the audio sent for server transcription) and where it exports one (the vocal stem)."""
+    page = studio
+    page.select_option("#mode", "melody")
+    page.select_option("#transcriber", "heuristic")
+    mono = tone_wav(tmp_path / "voice.wav")
+    one_sided = stereo_wav(tmp_path / "one-sided.wav", wav_mono(mono))
+    sent, stems = [], []
+    for take in [mono, one_sided]:
+        page.set_input_files("#audiofile", str(take))
+        expect(page.locator("#analyze")).to_be_enabled()
+        page.evaluate("""() => { const send = window.fetch; window.realFetch ||= send; window.fetch = async (url, opts) => {
+          if (String(url).includes('/api/analyze')) window.sentWav = [...new Uint8Array(await opts.body.get('file').arrayBuffer())];
+          return send(url, opts); }; }""")
+        page.click("#analyze")
+        expect(page.locator("#status")).to_have_text("Transcription complete")
+        upload = tmp_path / "upload.wav"
+        upload.write_bytes(bytes(page.evaluate("window.sentWav")))
+        page.evaluate("() => { window.fetch = window.realFetch; }")
+        sent.append(wav_mono(upload))
+        with zipfile.ZipFile(download(page, "#exportstems", tmp_path)) as z:
+            stem = tmp_path / "vocal-original.wav"
+            stem.write_bytes(z.read("vocal-original.wav"))
+            stems.append(wav_mono(stem))
+    for a, b in [sent, stems]:
+        assert np.sqrt(np.mean(a ** 2)) > 0.1
+        assert len(a) == len(b) and np.max(np.abs(a - b)) <= 1 / 32767
+
+
+def test_transcription_progress_is_shown_while_the_model_runs(studio, tmp_path):
+    """The page redraws while Basic Pitch transcribes, so the progress counts up rather than sitting
+    at 0% until the end. Records the status text at every frame the page actually draws."""
+    page = studio
+    rate, seconds = 22050, 20
+    t = np.arange(rate * seconds) / rate
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes((0.4 * np.sin(2 * np.pi * 220 * t) * 32767).astype("<i2").tobytes())
+    (tmp_path / "long.wav").write_bytes(out.getvalue())
+    page.set_input_files("#audiofile", str(tmp_path / "long.wav"))
+    expect(page.locator("#analyze")).to_be_enabled()
+    page.select_option("#mode", "melody")
+    page.select_option("#transcriber", "basic-pitch")
+    page.evaluate("""() => { window.drawn = []; const s = document.getElementById('status');
+      const frame = () => { window.drawn.push(s.textContent); requestAnimationFrame(frame); }; requestAnimationFrame(frame); }""")
+    page.click("#analyze")
+    expect(page.locator("#status")).to_have_text("Transcription complete", timeout=120_000)
+    shown = {int(m.group(1)) for text in page.evaluate("window.drawn")
+             if (m := re.fullmatch(r"Transcribing on device: (\d+)%", text))}
+    assert len({p for p in shown if 0 < p < 100}) >= 3, f"progress drawn: {sorted(shown)}"

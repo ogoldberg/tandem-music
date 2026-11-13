@@ -170,6 +170,9 @@ test("monoOf averages the channels of a decoded buffer", () => {
   const left = Float32Array.of(1, 0.5), right = Float32Array.of(0, 0.5);
   const buffer = { numberOfChannels: 2, length: 2, getChannelData: c => (c ? right : left) };
   assert.deepEqual([...monoOf(buffer)], [0.5, 0.5]);
+  // A take whose right side is silent is the left side, not half of it.
+  const silent = { numberOfChannels: 2, length: 2, getChannelData: c => (c ? Float32Array.of(0, 0) : left) };
+  assert.deepEqual([...monoOf(silent)], [1, 0.5]);
 });
 
 test("the stems zip holds same-length WAVs from zero, the mix of the parts, the vocals and the MIDI", async () => {
