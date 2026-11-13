@@ -695,6 +695,14 @@ def test_daw_module_is_served_and_precached(client):
     assert "from './daw.js'" in run(client("GET","/")).text
     assert "'./daw.js'" in run(client("GET","/sw.js")).text
 
+def test_midi_module_is_served_and_precached(client):
+    # EXP.4: the studio imports midi.js (Web MIDI) at start-up, so it is precached for offline use.
+    js=run(client("GET","/midi.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function songEvents" in js.text
+    assert "from './midi.js'" in run(client("GET","/")).text
+    assert "'./midi.js'" in run(client("GET","/sw.js")).text
+
 def test_dawproject_module_is_served_and_precached(client):
     # EXP.3: the studio imports dawproject.js (DAWproject export) at start-up, so it is precached for offline use.
     js=run(client("GET","/dawproject.js"))

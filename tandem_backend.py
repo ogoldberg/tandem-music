@@ -159,6 +159,10 @@ def notation_js():
 def dawproject_js():
     return FileResponse(Path(__file__).resolve().parent / "dawproject.js", media_type="text/javascript")
 
+@app.get("/midi.js", include_in_schema=False)
+def midi_js():
+    return FileResponse(Path(__file__).resolve().parent / "midi.js", media_type="text/javascript")
+
 @app.get("/worldtune.js", include_in_schema=False)
 def worldtune_js():
     return FileResponse(Path(__file__).resolve().parent / "worldtune.js", media_type="text/javascript")
