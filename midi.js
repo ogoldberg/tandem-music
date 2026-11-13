@@ -129,7 +129,7 @@ export function silence(channels) {
 // Sends timed events a little ahead of time. now() is the song's clock in seconds (the song starts at
 // zero); each call of pump() sends, through send(data, t), what falls before now() + lookahead.
 // The studio calls pump() from a timer, so at Stop the browser's MIDI output holds at most lookahead seconds
-// of messages: the studio drops them with clear() and silences the device again after the last one queued.
+// of messages: the studio drops them with clear(), or, where there is none, ends each queued note at its own time.
 export function createSender(events, { lookahead = 0.2 } = {}) {
   let next = 0;
   return {

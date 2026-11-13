@@ -210,6 +210,13 @@ def test_stop_leaves_no_note_sounding_on_the_synth(page, server_url, clearable):
       else setTimeout(look, 1); }; look(); })""")
     time.sleep(0.5)
     assert page.evaluate("window.__midiSounding()") == []
+    # What Stop does to the stopped song must not touch what comes after it: a key played at once keeps sounding.
+    page.evaluate("""new Promise(done => { document.getElementById('play').click(); const look = () => {
+      if (window.__midiSent.some(e => (e.data[0] & 0xf0) === 0x90 && e.due > performance.now())) {
+        document.getElementById('stop').click(); window.__midiKey([0x90, 72, 100]); done(); }
+      else setTimeout(look, 1); }; look(); })""")
+    time.sleep(0.5)
+    assert page.evaluate("window.__midiSounding()") == ["0:72"]
     assert not problems, problems
 
 
