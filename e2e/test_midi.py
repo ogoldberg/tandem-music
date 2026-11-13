@@ -2,6 +2,9 @@
 
 The mock is installed before the page loads: one input ("Test Keys") whose onmidimessage handler the
 test calls with real MIDI bytes, and one output ("Test Synth") that keeps every message it is sent.
+Like a real output it delivers a timed message at its timestamp, and clear() drops what is still
+queued; window.__midiSounding() replays what has been delivered and lists the notes still sounding.
+Setting window.__midiNoClear first gives an output without clear(), as some browsers have.
 """
 import time
 
@@ -13,7 +16,19 @@ MOCK_MIDI = """(() => {
   window.__midiRequests = 0;
   const input = {id: 'in-1', name: 'Test Keys', manufacturer: 'Tandem', state: 'connected', type: 'input', onmidimessage: null};
   const output = {id: 'out-1', name: 'Test Synth', manufacturer: 'Tandem', state: 'connected', type: 'output',
-    send(data, ts) { window.__midiSent.push({data: Array.from(data), ts: ts == null ? null : ts, at: performance.now()}); }};
+    send(data, ts) { const at = performance.now(); window.__midiSent.push({data: Array.from(data), ts: ts == null ? null : ts, at, due: ts == null || ts < at ? at : ts}); }};
+  if (!window.__midiNoClear) output.clear = () => { const now = performance.now(); for (const e of window.__midiSent) if (e.due > now) e.cleared = true; };
+  window.__midiSounding = () => {
+    const now = performance.now(), on = new Set();
+    const due = window.__midiSent.map((e, i) => ({...e, i})).filter(e => !e.cleared && e.due <= now).sort((a, b) => a.due - b.due || a.i - b.i);
+    for (const {data: [s, a, b]} of due) {
+      const type = s & 0xf0, c = s & 15;
+      if (type === 0x90 && b > 0) on.add(c + ':' + a);
+      else if (type === 0x80 || type === 0x90) on.delete(c + ':' + a);
+      else if (type === 0xb0 && (a === 120 || a === 123)) for (const k of [...on]) if (k.startsWith(c + ':')) on.delete(k);
+    }
+    return [...on];
+  };
   window.__midiKey = bytes => input.onmidimessage && input.onmidimessage({data: new Uint8Array(bytes), timeStamp: performance.now()});
   const access = {inputs: new Map([[input.id, input]]), outputs: new Map([[output.id, output]]), onstatechange: null, sysexEnabled: false};
   Object.defineProperty(Navigator.prototype, 'requestMIDIAccess', {configurable: true, value: async () => { window.__midiRequests++; return access; }});
@@ -178,3 +193,38 @@ def test_keys_sound_on_the_melody_instrument_without_an_output(midi_studio):
     page.evaluate("window.__midiKey([0x80, 60, 0])")
     assert sent(page) == []
     expect(page.locator("#notecount")).to_have_text("0 notes")
+
+
+@pytest.mark.parametrize("clearable", [True, False], ids=["output-with-clear", "output-without-clear"])
+def test_stop_leaves_no_note_sounding_on_the_synth(page, server_url, clearable):
+    # Play queues timed messages up to 200 ms ahead; Stop right after the first are queued must still
+    # leave the synth silent once everything queued has been delivered, whether or not clear() exists.
+    problems = open_studio(page, server_url, ("" if clearable else "window.__midiNoClear = true;") + MOCK_MIDI)
+    page.click("#demo")
+    connect(page)
+    page.select_option("#midioutput", "out-1")
+    page.click("#play")
+    # Press Stop in the page the moment a note-on is queued but not yet due, so the test does not race it.
+    page.evaluate("""new Promise(done => { const look = () => {
+      if (window.__midiSent.some(e => (e.data[0] & 0xf0) === 0x90 && e.due > performance.now())) { document.getElementById('stop').click(); done(); }
+      else setTimeout(look, 1); }; look(); })""")
+    time.sleep(0.5)
+    assert page.evaluate("window.__midiSounding()") == []
+    assert not problems, problems
+
+
+def test_changing_output_or_channel_while_keys_are_held_releases_them_where_they_sound(midi_studio):
+    page = midi_studio
+    connect(page)
+    page.select_option("#midioutput", "out-1")
+    page.select_option("#midichannel", label="5")
+    page.evaluate("window.__midiKey([0x90, 61, 99])")
+    page.evaluate("window.__midiKey([0xb0, 64, 127])")
+    page.select_option("#midichannel", label="6")  # the held key and pedal were on channel 5
+    assert [0xB4, 123, 0] in [e["data"] for e in sent(page)]
+    assert [0xB4, 64, 0] in [e["data"] for e in sent(page)]
+    page.evaluate("window.__midiKey([0x90, 62, 99])")
+    assert page.evaluate("window.__midiSounding()") == ["5:62"]
+    page.select_option("#midioutput", "")  # This device: the note on channel 6 of Test Synth is released
+    assert [0xB5, 123, 0] in [e["data"] for e in sent(page)]
+    assert page.evaluate("window.__midiSounding()") == []
