@@ -41,16 +41,30 @@ export function noteName(midi) {
 // The sung pitch line: {t, m} Float32Arrays, m in fractional MIDI or NaN when unvoiced. A frame is
 // voiced when its strongest bin passes VOICED_SALIENCE; its pitch is the salience-weighted mean
 // of the bins around that peak, for sub-semitone precision. Frames past `duration` are dropped.
-export function pitchContour(contours, { duration = Infinity, threshold = VOICED_SALIENCE } = {}) {
+// TRANS.2 options for the hummed melody: `lowest` (MIDI) ignores the bins below it, where room
+// noise peaks when nothing is sung, and `subharmonics` takes the bin an octave, or an octave and
+// a fifth, below the peak when that bin holds SUBHARMONIC_SHARE of the peak's salience (a soft low
+// hum can read loudest at its 2nd or 3rd harmonic).
+export const SUBHARMONIC_SHARE = 0.75;
+const SUBHARMONIC_BINS = [12 * BINS_PER_SEMITONE, 19 * BINS_PER_SEMITONE];
+export function pitchContour(contours, { duration = Infinity, threshold = VOICED_SALIENCE, lowest = null, subharmonics = false } = {}) {
   const t = [], m = [];
+  const first = lowest == null ? 0 : Math.max(0, Math.round((lowest - 0.5 - CONTOUR_BASE_MIDI) * BINS_PER_SEMITONE + CONTOUR_BIN_OFFSET));
   for (let r = 0; r < contours.length; r++) {
     const time = frameTime(r);
     if (time > duration) break;
     const bins = contours[r];
-    let peak = 0;
-    for (let b = 1; b < bins.length; b++) if (bins[b] > bins[peak]) peak = b;
+    let peak = first;
+    for (let b = first + 1; b < bins.length; b++) if (bins[b] > bins[peak]) peak = b;
     let midi = NaN;
     if (bins[peak] >= threshold) {
+      if (subharmonics) {
+        for (const below of SUBHARMONIC_BINS) {
+          let best = -1;
+          for (let b = Math.max(first, peak - below - 2); b <= peak - below + 2; b++) if (best < 0 || bins[b] > bins[best]) best = b;
+          if (best >= 0 && bins[best] >= SUBHARMONIC_SHARE * bins[peak]) { peak = best; break; }
+        }
+      }
       let w = 0, sum = 0;
       for (let b = Math.max(0, peak - 2); b <= Math.min(bins.length - 1, peak + 2); b++) { w += bins[b]; sum += bins[b] * b; }
       midi = CONTOUR_BASE_MIDI + (sum / w - CONTOUR_BIN_OFFSET) / BINS_PER_SEMITONE;
@@ -239,4 +253,99 @@ export function mergeFragments(notes, contour, { gap = 0.08, within = 0.6 } = {}
   }
   flush();
   return out;
+}
+
+const median = values => {
+  const s = [...values].sort((a, b) => a - b), k = s.length >> 1;
+  return s.length % 2 ? s[k] : (s[k - 1] + s[k]) / 2;
+};
+
+// TRANS.2: a hummed melody as notes, built from the sung pitch line rather than from Basic Pitch's
+// note events, so a note lasts as long as its pitch is held, a new note starts where the pitch steps
+// to another, and a slide joins the note it settles on. `line` is pitchContour's {t, m};
+// `activation(frame, midi)` is the model's note activation (0..1) at that frame and pitch.
+//  1. Voiced runs of at least `minRun` s, joined across dropouts shorter than `gap` s into stretches.
+//     A stretch also ends at `gap` s or more of note activation under `minAct`: breath noise can read
+//     at the sung pitch, and only the activation shows nothing is sung there.
+//  2. Each stretch's pitch, median-smoothed over `smooth` frames each side (about one vibrato cycle).
+//  3. A piece ends where the smoothed pitch stays `step` semitones from the piece's centre (the
+//     median of its last `span` s) for `hold` s.
+//  4. A piece whose note activation averages under `minAct` is not sung (fan noise in a breath) and
+//     breaks the stretch. A piece shorter than `minNote` s, or one whose pitch keeps moving (`slide`
+//     semitones or more between its first and last thirds, at `rate` semitones per second or faster),
+//     is a slide: it joins the note after it, or the note before it at the end of a stretch.
+//  5. Each remaining piece is a note at its rounded median pitch; touching notes of one pitch join.
+export const SUNG_NOTE_OPTIONS = Object.freeze({
+  gap: 0.15, minRun: 0.05, smooth: 7, step: 0.7, span: 0.5, hold: 0.05, minAct: 0.25, minNote: 0.1, slide: 0.35, rate: 3,
+});
+export function sungNotes(line, activation, options = {}) {
+  const { gap, minRun, smooth, step, span, hold, minAct, minNote, slide, rate } = { ...SUNG_NOTE_OPTIONS, ...options };
+  const { t } = line, n = t.length;
+  if (n < 2) return [];
+  const dt = (t[n - 1] - t[0]) / (n - 1);
+  const m = Array.from(line.m, v => (Number.isFinite(v) && v >= MIN_MIDI - 0.5 && v <= MAX_MIDI + 0.5 ? v : NaN));
+  const stretches = [];
+  for (let i = 0; i < n;) {
+    if (!Number.isFinite(m[i])) { i++; continue; }
+    let j = i;
+    while (j < n && Number.isFinite(m[j])) j++;
+    if ((j - i) * dt >= minRun) {
+      const last = stretches.at(-1);
+      if (last && (i - last.at(-1)[1]) * dt < gap) last.push([i, j]); else stretches.push([[i, j]]);
+    }
+    i = j;
+  }
+  const notes = [], holdFrames = Math.max(1, Math.round(hold / dt)), spanFrames = Math.max(1, Math.round(span / dt));
+  const breathFrames = Math.max(1, Math.round(gap / dt));
+  const parts = [];
+  for (const runs of stretches) {
+    const all = runs.flatMap(([a, b]) => Array.from({ length: b - a }, (_, k) => a + k));
+    const smoothed = all.map((_, k) => median(all.slice(Math.max(0, k - smooth), k + smooth + 1).map(i => m[i])));
+    const acts = all.map((i, k) => activation(i, Math.round(smoothed[k])));
+    // Noise in a breath can read at the sung pitch: `gap` s or more without note activation ends the stretch.
+    let from = 0;
+    for (let k = 0; k <= all.length; k++) {
+      if (k < all.length && acts[k] < minAct) continue;
+      let quiet = k;
+      while (quiet > from && acts[quiet - 1] < minAct) quiet--;
+      const breath = k - quiet >= breathFrames;
+      if (breath || k === all.length) {
+        const end = breath ? quiet : k;
+        if (end > from) parts.push([all.slice(from, end), smoothed.slice(from, end), acts.slice(from, end)]);
+        from = k;
+      }
+    }
+  }
+  for (const [idx, s, acts] of parts) {
+    const pieces = [];
+    let start = 0;
+    for (let k = 1; k + holdFrames <= idx.length; k++) {
+      const centre = median(s.slice(Math.max(start, k - spanFrames), k));
+      let away = true;
+      for (let q = k; away && q < k + holdFrames; q++) if (Math.abs(s[q] - centre) <= step) away = false;
+      if (away) { pieces.push([start, k]); start = k; }
+    }
+    pieces.push([start, idx.length]);
+    const from = k => t[idx[k]], to = k => t[idx[k - 1]] + dt;
+    let slideFrom = null, prev = null;
+    const extend = (note, end) => { note.d = round3(to(end) - note.t); };
+    const settle = () => { if (slideFrom && prev && prev.end === slideFrom.a) { extend(prev.note, slideFrom.b); prev.end = slideFrom.b; } slideFrom = null; };
+    for (const [a, b] of pieces) {
+      const part = s.slice(a, b), third = Math.max(1, Math.floor(part.length / 3));
+      let act = 0;
+      for (let k = a; k < b; k++) act += acts[k];
+      if (act / (b - a) < minAct) { settle(); prev = null; continue; }
+      const change = Math.abs(median(part.slice(0, third)) - median(part.slice(-third)));
+      const moving = change >= slide && change / Math.max(dt, (part.length - third) * dt) >= rate;
+      if (to(b) - from(a) < minNote || moving) { slideFrom = slideFrom ? { a: slideFrom.a, b } : { a, b }; continue; }
+      const pitch = clamp(Math.round(median(part)), MIN_MIDI, MAX_MIDI), begin = slideFrom ? slideFrom.a : a;
+      slideFrom = null;
+      if (prev && prev.note.m === pitch && prev.end === begin) { extend(prev.note, b); prev.end = b; continue; }
+      const note = { m: pitch, t: round3(from(begin)), d: 0 };
+      extend(note, b);
+      notes.push(note); prev = { note, end: b };
+    }
+    settle();
+  }
+  return notes;
 }

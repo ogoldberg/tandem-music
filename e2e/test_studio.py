@@ -64,6 +64,41 @@ def hum_wav(path, rate=48000, each=1.4, gap=0.12, noise=0.15):
     return path
 
 
+LOW_HUM = [44, 49, 53, 48, 43, 49, 52]
+
+
+def slide_hum_wav(path, rate=48000, each=0.7, slide=0.25, noise=0.1):
+    """TRANS.2: a low legato hum like a real recorded one (around G#2-E3), each note reached by a
+    250 ms slide from the one before with no breath between, with vibrato, drift and room noise."""
+    rng = np.random.default_rng(11)
+    n = int(rate * (len(LOW_HUM) * each + 0.4))
+    t = np.arange(n) / rate
+    k = np.minimum((t // each).astype(int), len(LOW_HUM) - 1)
+    u = t - k * each
+    target = np.array(LOW_HUM, float)[k]
+    before = np.array([LOW_HUM[0]] + LOW_HUM[:-1], float)[k]
+    midi = np.where((k > 0) & (u < slide), before + (target - before) * u / slide, target)
+    sung = t < len(LOW_HUM) * each
+    cents = 20 * np.sin(2 * np.pi * 5.5 * t) + 25 * np.sin(2 * np.pi * 0.7 * t)
+    phase = np.cumsum(np.where(sung, 2 * np.pi * 440 * 2 ** ((midi - 69 + cents / 100) / 12) / rate, 0))
+    end = len(LOW_HUM) * each
+    env = np.clip(np.minimum(t, end - t) / 0.05, 0, 1) * sung * (0.8 + 0.2 * np.sin(2 * np.pi * 3.1 * t))
+    voice = env * (0.5 * np.sin(phase) + 0.2 * np.sin(2 * phase) + 0.08 * np.sin(3 * phase))
+    white = rng.uniform(-0.5, 0.5, n)
+    brown = np.zeros(n)
+    for i in range(1, n):
+        brown[i] = 0.995 * brown[i - 1] + 0.2 * white[i]
+    x = 0.5 * voice + noise * (brown + 0.5 * rng.uniform(-0.5, 0.5, n))
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes((np.clip(x, -1, 1) * 32767).astype("<i2").tobytes())
+    path.write_bytes(out.getvalue())
+    return path
+
+
 def note_pitches(page):
     titles = page.locator("#melodyroll .note").evaluate_all("els => els.map(e => e.title)")
     return [int(re.match(r"MIDI (\d+) at", t).group(1)) for t in titles]
@@ -1154,6 +1189,26 @@ def test_basic_pitch_transcribes_a_hummed_melody_as_sustained_notes(studio, tmp_
     expect(page.locator("#status")).to_have_text("Transcription complete", timeout=60000)
     assert note_pitches(page) == HUM
     assert count(page, "notecount") == len(HUM)
+
+
+def test_basic_pitch_follows_a_low_hum_with_slides_and_sustains_its_notes(studio, tmp_path):
+    """TRANS.2: the melody is built from the sung pitch line: a low legato hum whose notes are joined
+    by 250 ms slides comes out as its seven notes, each lasting about as long as it is sung, with each
+    slide part of the note it reaches (Basic Pitch's own notes break such a hum into pieces and
+    in-between pitches)."""
+    page = studio
+    page.select_option("#mode", "melody")
+    import_recording(page, slide_hum_wav(tmp_path / "slides.wav"))
+    page.click("#analyze")
+    expect(page.locator("#status")).to_have_text("Transcription complete", timeout=60000)
+    assert note_pitches(page) == LOW_HUM
+    notes = json.loads(download(page, "#save", tmp_path).read_text())["notes"]
+    sung = len(LOW_HUM) * 0.7
+    assert sum(n["d"] for n in notes) > 0.85 * sung, notes
+    for i, n in enumerate(notes):
+        # Each note starts within its slide (or at the first note) and ends near where the next starts.
+        assert abs(n["t"] - i * 0.7) < 0.2, (i, n)
+        assert n["d"] > 0.45, (i, n)
 
 
 def test_recording_and_polish_survive_a_reload(studio, tmp_path):
