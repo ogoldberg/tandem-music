@@ -82,6 +82,15 @@ This is the working task list, in strategic order: protect the deployment, prove
   - Find each cause from failed CI logs before changing a wait or an assertion: a longer timeout only where the work is known to be slow on CI, and an ordering check that matches what the scheduler promises.
   - **Acceptance:** each cause written down in the PR; the three tests pass in 20 consecutive CI runs of their jobs (or locally under the same CPU limit) with no rerun.
 
+- [ ] **FIX.1** Small follow-ups from reviews (P3), fixed together
+  <!-- gh-issue: 18 --> <!-- gh-issue: 46 --> <!-- gh-issue: 52 --> <!-- gh-issue: 55 --> <!-- gh-issue: 58 --> <!-- gh-issue: 59 --> <!-- gh-issue: 61 --> <!-- gh-issue: 64 -->
+  - Capture page (#52, #58): ignore Record taps while the microphone prompt is open; put a full stop between a raw error and its hint; show the private-window advice only when opening the database did not fail because another tab holds it; an automatic "Before <idea>" version is not saved when the draft is unchanged since its last save.
+  - Tandem files and folders (#55, #61, #64): refuse a Tandem file with a polished or tuned recording but no original, saying why; opening a project without a recording clears the loaded recordings as one step the person can undo or after keeping the draft as a version; the Mac app's folder reads open each file with `O_NOFOLLOW` and check it on the open descriptor, refusing a symlink.
+  - Sound (#46): the export status names the voices that were ready before the render; a recording that ends during a key's release fades out instead of being cut.
+  - Long work (#18, #59): Basic Pitch on TensorFlow.js's CPU backend says so and shows progress (or the server transcriber is offered); the Mac app tunes a long take in sections of a few minutes so its memory stays bounded.
+  - Guided view (from the review of #82): without the Origin Private File System, Record a beat's warning points to a control the guided view has (a Download your voice button next to it, or Share's Stems + MIDI) instead of "Download your voice first"; the no-OPFS test in `e2e/test_guided.py` fails on page errors and `console.error` like the other guided tests.
+  - **Acceptance:** each issue closed by the PR with a test that fails before its fix (Node, pytest or e2e), or with a reason where it cannot be tested; the long-take memory measured before and after on a 10-minute take.
+
 ### 5. Vocal quality and editing
 - [x] **VOX.1** Build an automated vocal pitch-correction benchmark
   - Generate fixtures with known MIDI pitches and timing at several sample rates, with vibrato, noise and transitions; measure pitch error, duration and loudness change of `/api/tune`, and 0%-strength equivalence.
