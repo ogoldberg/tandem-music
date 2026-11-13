@@ -429,6 +429,7 @@ def test_pitch_contour_editor_edits_drive_tuning_through_history(studio, tmp_pat
     # The edited targets and the Keep vibrato amount are what /api/tune receives.
     page.evaluate("v => { const e = document.getElementById('vibrato'); e.value = v; e.dispatchEvent(new Event('input')); }", "40")
     expect(page.locator("#vibratolevel")).to_have_text("40%")
+    page.select_option("#tuneengine", "server")  # VOX.4: the default tunes on the device, with no request
     sent = record_tune_requests(page)
     page.click("#tune")
     expect(page.locator("#status")).to_have_text("Pitch correction complete", timeout=60_000)

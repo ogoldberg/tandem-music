@@ -1,11 +1,14 @@
 // The app shell is precached on install, so the studio and the capture page open with no network (MOB.2).
 // Bump CACHE when a precached file changes in a way that matters before the network copy is fetched.
-const CACHE='tandem-v33';
+const CACHE='tandem-v34';
 // Self-hosted vendor files (Basic Pitch, instrument samples) never change at a given path, so they are
 // cached the first time they are used, served from the cache first, and kept when CACHE is bumped.
 const VENDOR='tandem-vendor-1';
-const ASSETS=['./','./history.js','./versions.js','./groove.js','./voices.js','./contour.js','./harmony.js','./phrases.js','./storage.js','./recordings.js','./samples.js','./manifest.webmanifest','./capture','./ideas.js','./bundle.js','./daw.js','./notation.js','./dawproject.js','./capture.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-maskable-512.png','./icons/apple-touch-icon.png'];
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
+const ASSETS=['./','./history.js','./versions.js','./groove.js','./voices.js','./contour.js','./harmony.js','./phrases.js','./storage.js','./recordings.js','./samples.js','./manifest.webmanifest','./capture','./ideas.js','./bundle.js','./daw.js','./notation.js','./dawproject.js','./tuning.js','./worldtune.js','./tuneworker.js','./capture.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-maskable-512.png','./icons/apple-touch-icon.png'];
+// VOX.4: the WORLD WebAssembly build is small (about 100 KB) and tuning on the device is what works
+// with no network, so it goes into the vendor cache at install instead of on first use.
+const VENDOR_ASSETS=['./vendor/world-d625e76-1/world.mjs','./vendor/world-d625e76-1/world.wasm'];
+self.addEventListener('install',e=>e.waitUntil(Promise.all([caches.open(CACHE).then(c=>c.addAll(ASSETS)),caches.open(VENDOR).then(c=>c.addAll(VENDOR_ASSETS))])));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE&&k!==VENDOR).map(k=>caches.delete(k))))));
 // Only whole responses can be cached (a 206 range response cannot).
 // A page is stored under its address without the query, so ?idea= links do not each add a copy.
