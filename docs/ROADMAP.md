@@ -77,6 +77,11 @@ This is the working task list, in strategic order: protect the deployment, prove
   - `transcription.js` already pins `basic-pitch@1.0.1`; what is missing is integrity verification, so a changed or unavailable CDN file can silently break or tamper with transcription.
   - **Acceptance:** assets verified by hash or served from this app; transcription still works; supply-chain note in `docs/SECURITY.md` updated.
 
+- [ ] **CI.3** Make the three flaky CI tests reliable
+  - They fail now and then on CI and pass on a rerun of the failed jobs, so a red run is not trusted: `e2e/test_separation.py::test_a_song_is_separated_and_transcribed_from_its_voice` (server transcription of the separated voice outlasts the 60 s wait in `transcribe_on_server`), `e2e/test_midi.py::test_play_sends_melody_harmony_and_drums_to_the_chosen_output_and_channel` (the check that MIDI messages are timed in song order) and `e2e/test_studio.py::test_vocal_note_targets_cover_a_three_minute_recording`.
+  - Find each cause from failed CI logs before changing a wait or an assertion: a longer timeout only where the work is known to be slow on CI, and an ordering check that matches what the scheduler promises.
+  - **Acceptance:** each cause written down in the PR; the three tests pass in 20 consecutive CI runs of their jobs (or locally under the same CPU limit) with no rerun.
+
 ### 5. Vocal quality and editing
 - [x] **VOX.1** Build an automated vocal pitch-correction benchmark
   - Generate fixtures with known MIDI pitches and timing at several sample rates, with vibrato, noise and transitions; measure pitch error, duration and loudness change of `/api/tune`, and 0%-strength equivalence.
@@ -139,6 +144,7 @@ The phone catches ideas; the studio (the Mac app or a desktop browser) develops 
   - Install to the home screen, grant the microphone, record ideas, quit and reopen, use it offline (airplane mode), come back after several days and check the ideas are still there, share one to the Mac and open it. Check what happens when the screen locks or another app comes to the front during a take.
   - **Depends:** MOB.1, MOB.2, MOB.3
   - **Acceptance:** results recorded in `docs/TESTING.md` for iOS Safari and Android Chrome.
+  - Android Chrome done (operator, 2026-11-13, Pixel 9 Pro XL, production): install, record, play, rename, keep after closing, offline, a take kept through a screen lock or app switch, persistent storage granted, Share downloads the `.tandem.zip`; details in `docs/TESTING.md`. Open: ideas still there after several days, opening the shared file in the studio and the Mac app, and iPhone Safari entirely.
 
 ### 6. Biggest boost for least effort: sampled instruments and the Mac app (ADR-012)
 Ordered by gain per unit of effort. SND.1 helps the web app and the Mac app alike and depends on nothing. DESK.1 reuses `index.html` and `tandem_backend.py` unchanged. Every later item builds on it.
@@ -270,7 +276,7 @@ Asked for by the operator on 2026-11-13, in this order: fixing how notes are edi
   - A line that moves across the rolls while playing, click a time to play from there, and drag a loop region that repeats until Stop.
   - **Acceptance:** a Chromium test checks the playhead position against the audio clock, play-from-here start time and that a loop repeats; Node tests of the loop scheduling.
 - [ ] **UI.1** Guided steps: the Sing / Notes / Song / Share step rail and the "How it is done" settings
-  - From the design canvas the operator liked (https://claude.ai/artifact/Mp9K6NXitSKnQ6MmTMcp5A): a phone-first step rail with plain words, the automatic helpers with adjustable defaults on a settings screen, and an all-controls view that keeps every control there is today. Staged: the rail and the settings first, no control removed. Open wording choice: "Speed / beats a minute" or "BPM".
+  - From the design canvas the operator liked (`docs/design/tandem-guided-studio.html`, open it in a browser): a phone-first step rail with plain words, the automatic helpers with adjustable defaults on a settings screen, and an all-controls view that keeps every control there is today. Staged: the rail and the settings first, no control removed. Open wording choice: "Speed / beats a minute" or "BPM".
   - **Acceptance:** a Chromium test walks the four steps on a phone viewport and finds every existing control in the all-controls view; screenshots at phone and desktop widths in the PR.
 - [ ] **REC.2** Count-in and click when recording the voice
   - One bar of count-in and an optional click at the project tempo while recording a hum or a beatbox (the click is not in the recording), so takes come out in time and quantize cleanly. Reuses the EXP.4 click.
