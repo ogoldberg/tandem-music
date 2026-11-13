@@ -218,6 +218,16 @@ def test_stop_leaves_no_note_sounding_on_the_synth(page, server_url, clearable):
       else setTimeout(look, 1); }; look(); })""")
     time.sleep(0.5)
     assert page.evaluate("window.__midiSounding()") == [f"0:{pitch}"]
+    # Nor a key on the pitch of a melody note that was already sounding with its note-off still queued.
+    page.evaluate("window.__midiKey([0x80, %d, 0])" % pitch)
+    pitch = page.evaluate("""new Promise(done => { document.getElementById('play').click(); const look = () => {
+      const now = performance.now(), sent = window.__midiSent;
+      const off = sent.find(e => (e.data[0] === 0x80 || (e.data[0] === 0x90 && e.data[2] === 0)) && e.due > now
+        && sent.some(o => o.data[0] === 0x90 && o.data[2] > 0 && o.data[1] === e.data[1] && o.due <= now && o.at < e.at));
+      if (off) { document.getElementById('stop').click(); window.__midiKey([0x90, off.data[1], 100]); done(off.data[1]); }
+      else setTimeout(look, 1); }; look(); })""")
+    time.sleep(0.5)
+    assert page.evaluate("window.__midiSounding()") == [f"0:{pitch}"]
     assert not problems, problems
 
 
