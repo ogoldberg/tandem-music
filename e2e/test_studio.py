@@ -10,6 +10,7 @@ import mido
 import pytest
 import numpy as np
 from playwright.sync_api import expect
+from conftest import ALL_CONTROLS
 
 # A4, C5, E5: what the server melody analyzer must find in the imported recording.
 TONES = [(440.0, 69), (523.25, 72), (659.25, 76)]
@@ -738,6 +739,7 @@ def test_instruments_play_from_samples_and_fall_back_to_oscillators(browser, ser
     def studio_page(block_samples):
         # Service workers are blocked so page.route sees every sample request.
         context = browser.new_context(service_workers="block")
+        context.add_init_script(ALL_CONTROLS)
         page = context.new_page()
         problems = []
         page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
@@ -782,6 +784,7 @@ def test_export_wav_does_not_hang_when_sample_requests_stall(browser, server_url
     """Issue #44: Export WAV waits for the samples for a limited time, then exports with the
     oscillator voices and says so, instead of waiting for a request that never answers."""
     context = browser.new_context(service_workers="block")
+    context.add_init_script(ALL_CONTROLS)
     page = context.new_page()
     problems = []
     page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
@@ -1070,6 +1073,7 @@ def test_work_survives_a_browser_restart(browser_type, browser_type_launch_args,
 
     def open_studio():
         context = browser_type.launch_persistent_context(str(profile), **browser_type_launch_args)
+        context.add_init_script(ALL_CONTROLS)
         page = context.pages[0] if context.pages else context.new_page()
         page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
         page.on("console", lambda msg: problems.append(f"console.error: {msg.text}") if msg.type == "error" else None)

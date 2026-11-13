@@ -167,6 +167,10 @@ def midi_js():
 def noteedit_js():
     return FileResponse(Path(__file__).resolve().parent / "noteedit.js", media_type="text/javascript")
 
+@app.get("/guide.js", include_in_schema=False)
+def guide_js():
+    return FileResponse(Path(__file__).resolve().parent / "guide.js", media_type="text/javascript")
+
 @app.get("/worldtune.js", include_in_schema=False)
 def worldtune_js():
     return FileResponse(Path(__file__).resolve().parent / "worldtune.js", media_type="text/javascript")

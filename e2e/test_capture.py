@@ -8,6 +8,7 @@ import pytest
 from playwright.sync_api import expect
 
 from test_studio import IDB_GET, OPFS_FILES, count
+from conftest import ALL_CONTROLS
 
 PHONE = {"viewport": {"width": 390, "height": 844}, "device_scale_factor": 3, "has_touch": True}
 
@@ -19,6 +20,7 @@ def phone_page(browser, browser_name, base_url):
     if browser_name == "chromium":
         options.update(is_mobile=True, permissions=["microphone"])
     context = browser.new_context(base_url=base_url, **options)
+    context.add_init_script(ALL_CONTROLS)
     page = context.new_page()
     problems = []
     page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
