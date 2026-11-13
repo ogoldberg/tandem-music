@@ -1853,6 +1853,21 @@ def test_roll_resizes_a_narrow_note_by_its_handles(studio, tmp_path):
     page.mouse.up()
     assert draft(page)["notes"][0] == {"m": 60, "t": 0.375, "d": 0.125}
     page.click("#undo")
+    # Neither handle covers the selected note: dragging its body still moves it.
+    roll.locator(".note").nth(0).click()
+    nb = roll.locator(".note").nth(0).bounding_box()
+    for edge in ("start", "end"):
+        hb = roll.locator(f".handle[data-edge={edge}]").bounding_box()
+        assert hb["x"] >= nb["x"] + nb["width"] or hb["x"] + hb["width"] <= nb["x"] \
+            or hb["y"] >= nb["y"] + nb["height"] or hb["y"] + hb["height"] <= nb["y"], edge
+    cx, cy = nb["x"] + nb["width"] / 2, nb["y"] + nb["height"] / 2
+    page.mouse.move(cx, cy)
+    page.mouse.down()
+    page.mouse.move(cx + 1 / 32 * 0.97 * width, cy, steps=6)
+    page.mouse.up()
+    assert draft(page)["notes"][0] == {"m": 60, "t": 1, "d": 0.5}
+    assert undo_label(page) == "Undo: Move melody note"
+    page.click("#undo")
     # The end handle of a note at the end of the song stays inside the roll too.
     roll.locator(".note").nth(1).click()
     rb, eb = roll.bounding_box(), roll.locator(".handle[data-edge=end]").bounding_box()
