@@ -1841,6 +1841,22 @@ def test_roll_resizes_a_narrow_note_by_its_handles(studio, tmp_path):
     expect(roll.locator(".handle")).to_have_count(2)
     page.click("#undo")
     assert draft(page)["notes"][0] == {"m": 60, "t": 0, "d": 0.5}
+    # The start handle stays inside the roll at the start of the song: dragging it trims the note.
+    roll.locator(".note").nth(0).click()
+    start = roll.locator(".handle[data-edge=start]").bounding_box()
+    assert start["x"] >= roll.bounding_box()["x"]
+    sx, sy = start["x"] + start["width"] / 2, start["y"] + start["height"] / 2
+    assert page.evaluate("([x, y]) => document.elementFromPoint(x, y).dataset.edge", [sx, sy]) == "start"
+    page.mouse.move(sx, sy)
+    page.mouse.down()
+    page.mouse.move(sx + 0.375 / 32 * 0.97 * width, sy, steps=6)
+    page.mouse.up()
+    assert draft(page)["notes"][0] == {"m": 60, "t": 0.375, "d": 0.125}
+    page.click("#undo")
+    # The end handle of a note at the end of the song stays inside the roll too.
+    roll.locator(".note").nth(1).click()
+    rb, eb = roll.bounding_box(), roll.locator(".handle[data-edge=end]").bounding_box()
+    assert eb["x"] + eb["width"] <= rb["x"] + rb["width"]
     # More than one note selected: no handles.
     roll.focus()
     page.keyboard.press("ControlOrMeta+a")
