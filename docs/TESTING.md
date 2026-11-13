@@ -58,6 +58,9 @@ DESK.3 tests: `tests/test_desktop_projects.py` covers the project folder format 
 ## Manual acceptance matrix
 
 Web MIDI (EXP.4), unverified by the operator: in desktop Chrome with a real USB or Bluetooth MIDI keyboard, Connect MIDI, play a few keys and hear them on the melody instrument, record a phrase with the count-in and check the notes land on the beat in the melody and Undo removes them; then choose a hardware or software synth (for example macOS IAC Driver into GarageBand) as the output and check Play sounds the melody, harmony and drums on their channels and Stop silences it.
+
+Phone capture (MOB.4), Android Chrome, checked by the operator on 2026-11-13 on a Pixel 9 Pro XL against production (https://tandem-music.vercel.app/capture): installed to the home screen; recorded, played and renamed ideas; ideas were still there after fully closing and reopening the app; with no connection it opened, recorded and played; a take was kept when the screen locked and when another app came to the front during it; persistent storage was granted (the page said "This browser will keep saved work until you clear it."); Share downloaded a `.tandem.zip`. Not yet checked on Android: ideas still there after several days, and opening the shared file in the studio and in the Mac app. iPhone Safari: not yet checked. Operator note: the storage line sits at the bottom of the capture page and is easy to miss.
+
 | Journey | macOS Chrome | macOS Safari | Android Chrome |
 |---|---|---|---|
 | Grant microphone permission and record/import | Unverified | Unverified | Unverified |

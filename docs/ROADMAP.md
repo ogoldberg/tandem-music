@@ -25,7 +25,7 @@ Last reviewed: 2026-11-13. This is a prioritized working plan, not a delivery pr
 | Implemented, needs device QA | Local-first storage | No accounts (ADR-011): the draft, versions and recordings in IndexedDB/OPFS (STORE.2a); in the Mac app projects are plain files (DESK.3); the browser folder and bucket options are parked |
 | Implemented, Web MIDI needs device QA | Hand-off to other music tools | Stems and multi-track MIDI, MusicXML, DAWproject, Web MIDI (EXP.1-EXP.4) |
 | Planned | Production QA | Android/Mac e2e recording and audio quality evaluations |
-| Planned (next) | Shape the song | Note selection and octave/in-key shifts, harmony voices and Create harmony, playhead and loop, guided steps, count-in, takes, mixer, sections, lyrics, chord symbols and an optional genre (section 9a, EDIT.3 first) |
+| Planned (next) | Shape the song | Note selection and octave/in-key shifts, guided steps, harmony voices and Create harmony, playhead and loop, count-in, takes, mixer, sections, lyrics, chord symbols and an optional genre (section 9a, EDIT.3 first) |
 
 ## Task backlog
 
@@ -76,6 +76,11 @@ This is the working task list, in strategic order: protect the deployment, prove
 - [x] **SEC.3** Add integrity checks to, or self-host, the Basic Pitch JS and model
   - `transcription.js` already pins `basic-pitch@1.0.1`; what is missing is integrity verification, so a changed or unavailable CDN file can silently break or tamper with transcription.
   - **Acceptance:** assets verified by hash or served from this app; transcription still works; supply-chain note in `docs/SECURITY.md` updated.
+
+- [ ] **CI.3** Make the three flaky CI tests reliable
+  - They fail now and then on CI and pass on a rerun of the failed jobs, so a red run is not trusted: `e2e/test_separation.py::test_a_song_is_separated_and_transcribed_from_its_voice` (server transcription of the separated voice outlasts the 60 s wait in `transcribe_on_server`), `e2e/test_midi.py::test_play_sends_melody_harmony_and_drums_to_the_chosen_output_and_channel` (the check that MIDI messages are timed in song order) and `e2e/test_studio.py::test_vocal_note_targets_cover_a_three_minute_recording`.
+  - Find each cause from failed CI logs before changing a wait or an assertion: a longer timeout only where the work is known to be slow on CI, and an ordering check that matches what the scheduler promises.
+  - **Acceptance:** each cause written down in the PR; the three tests pass in 20 consecutive CI runs of their jobs (or locally under the same CPU limit) with no rerun.
 
 ### 5. Vocal quality and editing
 - [x] **VOX.1** Build an automated vocal pitch-correction benchmark
@@ -139,6 +144,7 @@ The phone catches ideas; the studio (the Mac app or a desktop browser) develops 
   - Install to the home screen, grant the microphone, record ideas, quit and reopen, use it offline (airplane mode), come back after several days and check the ideas are still there, share one to the Mac and open it. Check what happens when the screen locks or another app comes to the front during a take.
   - **Depends:** MOB.1, MOB.2, MOB.3
   - **Acceptance:** results recorded in `docs/TESTING.md` for iOS Safari and Android Chrome.
+  - Android Chrome done (operator, 2026-11-13, Pixel 9 Pro XL, production): install, record, play, rename, keep after closing, offline, a take kept through a screen lock or app switch, persistent storage granted, Share downloads the `.tandem.zip`; details in `docs/TESTING.md`. Open: ideas still there after several days, opening the shared file in the studio and the Mac app, and iPhone Safari entirely.
 
 ### 6. Biggest boost for least effort: sampled instruments and the Mac app (ADR-012)
 Ordered by gain per unit of effort. SND.1 helps the web app and the Mac app alike and depends on nothing. DESK.1 reuses `index.html` and `tandem_backend.py` unchanged. Every later item builds on it.
@@ -248,12 +254,16 @@ Tandem is where an idea starts; people finish it in their own DAW or notation ap
   - Implemented, waiting on the real-device QA in the acceptance before it is checked off: the studio's **MIDI keyboard** track (`midi.js`, pure, plus the wiring in `index.html`) shows only where `navigator.requestMIDIAccess` exists and asks for devices only when **Connect MIDI** is pressed. Keys sound as they are played on the melody instrument (with the sustain pedal), or go through to the chosen output on the melody channel. **Record from keyboard** counts in one bar with a click at the project tempo, plays the song, and on Stop adds the take to the melody as one undoable edit (times from the end of the count-in, moved by the output latency; notes held over the count-in start at zero, key bounce under 20 ms dropped, the sustain pedal held). With a MIDI output chosen, Play sends the melody on the chosen channel, the harmony on the next (skipping 10) and the drums on channel 10 with the MIDI file's programs and drum keys, scheduled 200 ms ahead from a timer; Stop drops what the output still holds (`clear()`, and where a browser lacks it, a note-off for each queued song note at that note's time, so a key or song played right after Stop is not cut off) and silences every channel. Changing the output or channel while keys are held releases them where they were sent. Tests: `node --test tests/midi.test.mjs`, `python -m pytest e2e/test_midi.py -q` (mocked `MIDIAccess` in Chromium). Unverified by the operator: recording from a real keyboard and playing to a real synth (manual matrix in docs/TESTING.md).
 
 ### 9a. Shape the song: editing, harmony and arrangement (operator ideas, 2026-11-13)
-Asked for by the operator on 2026-11-13, in this order: fixing how notes are edited first (it unblocks octave and harmony work), then the harmony tools, then the playhead and the guided redesign, then the recording and arrangement features. GENRE.1 changes what gets built: show the operator what it affects before starting it.
+Asked for by the operator on 2026-11-13, in this order: fixing how notes are edited first (it unblocks octave and harmony work), then the guided redesign, then the harmony tools and the playhead, then the recording and arrangement features. UI.1 was moved ahead of HARM.1-3 and PLAY.1 by the operator on 2026-11-13: the person Tandem is for has a song idea, does not know the advanced tools and has little time, so the guided Sing / Notes / Song / Share flow matters more than new features now. GENRE.1 changes what gets built: show the operator what it affects before starting it.
 
 - [x] **EDIT.3** Select, move, resize and draw notes in the melody and harmony rolls, and shift them by octave or in key
   - Done: `noteedit.js` (pure, `tests/noteedit.test.mjs`) and the rolls in `index.html`: a tap selects, Delete (key or button) removes the selection; shift-click, a drag box, Select all or Ctrl+A select more; dragging moves the selection in time (snapped to the sixteenth) and pitch, dragging a note's edge, or the handles shown beside a single selected note (so a note too narrow to grab by its edge can be resized, also by touch), resizes it, and a start edge never goes before zero; Draw (or N) adds a note a beat long where it is placed; the octave and key buttons and Up/Down, Shift+Up/Down, Left/Right, Alt+Left/Right do the shifts. The key is the harmony key menu's choice, else the key detected from the melody. `+ Note` still appends a note after the last one. Chromium: `e2e/test_studio.py::test_roll_selects_moves_resizes_draws_and_shifts_notes` and `::test_roll_resizes_a_narrow_note_by_its_handles`; a touch tap selecting and drawing was checked in Chromium's touch emulation, not yet on a phone.
   - Tapping a note selects it instead of deleting it (a phone tap no longer loses a note); Delete removes the selection. Select one note, several (shift-click or a drag box) or all; drag to move in time and pitch, drag an edge to resize, and draw a new note where it is placed instead of appending it. Octave down / Octave up and step up / down in the detected or chosen key for the selection, each one undoable edit, with keyboard shortcuts.
   - **Acceptance:** `node --test` tests of the pure selection and shift functions (octave, in-key steps keep every note in the scale); a Chromium test selects a note and the whole melody, shifts them by octave and in key, moves, resizes, draws and deletes with the mouse and the keyboard, and undoes each as one edit.
+- [ ] **UI.1** Guided steps: the Sing / Notes / Song / Share step rail and the "How it is done" settings
+  - **Depends:** EDIT.3
+  - From the design canvas the operator liked (`docs/design/tandem-guided-studio.html`, open it in a browser): a phone-first step rail with plain words, the automatic helpers with adjustable defaults on a settings screen, and an all-controls view that keeps every control there is today. Staged: the rail and the settings first, no control removed. Open wording choice: "Speed / beats a minute" or "BPM".
+  - **Acceptance:** a Chromium test walks the four steps on a phone viewport and finds every existing control in the all-controls view; screenshots at phone and desktop widths in the PR.
 - [ ] **HARM.1** Duplicate notes into a harmony voice and shift the copy
   - **Depends:** EDIT.3
   - Duplicate the selection (or the whole melody) into a harmony voice that plays alongside the melody, then shift it by octave, semitones or scale steps (a third above in key). Played, exported (MIDI, stems, MusicXML, DAWproject) and saved like the other parts.
@@ -269,9 +279,6 @@ Asked for by the operator on 2026-11-13, in this order: fixing how notes are edi
 - [ ] **PLAY.1** Playhead, play from here and loop a section
   - A line that moves across the rolls while playing, click a time to play from there, and drag a loop region that repeats until Stop.
   - **Acceptance:** a Chromium test checks the playhead position against the audio clock, play-from-here start time and that a loop repeats; Node tests of the loop scheduling.
-- [ ] **UI.1** Guided steps: the Sing / Notes / Song / Share step rail and the "How it is done" settings
-  - From the design canvas the operator liked (https://claude.ai/artifact/Mp9K6NXitSKnQ6MmTMcp5A): a phone-first step rail with plain words, the automatic helpers with adjustable defaults on a settings screen, and an all-controls view that keeps every control there is today. Staged: the rail and the settings first, no control removed. Open wording choice: "Speed / beats a minute" or "BPM".
-  - **Acceptance:** a Chromium test walks the four steps on a phone viewport and finds every existing control in the all-controls view; screenshots at phone and desktop widths in the PR.
 - [ ] **REC.2** Count-in and click when recording the voice
   - One bar of count-in and an optional click at the project tempo while recording a hum or a beatbox (the click is not in the recording), so takes come out in time and quantize cleanly. Reuses the EXP.4 click.
   - **Acceptance:** a Chromium test with the fake microphone checks the count-in length and that the recording's zero is the end of the count-in.

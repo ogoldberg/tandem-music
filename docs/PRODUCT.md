@@ -1,9 +1,12 @@
 # Tandem — Product vision
 
-Last reviewed: 2026-11-10. Status: living specification.
+Last reviewed: 2026-11-13. Status: living specification.
 
 ## Vision
 Tandem is a conversational musical collaborator. Hum a melody, sing imperfectly, beatbox a rhythm, or describe an idea; Tandem helps turn it into editable, playable music. Unlike one-shot prompt-to-song generation, **the person's original musical idea stays central**.
+
+## Who it is for
+Someone with a song idea who does not know the advanced tools and has little time (operator, 2026-11-13). The guided Sing / Notes / Song / Share flow (UI.1) comes before new features; every advanced control stays reachable but is not in the way.
 
 ## Principles
 - Human idea first. Never silently overwrite a recording or the intended melody.
