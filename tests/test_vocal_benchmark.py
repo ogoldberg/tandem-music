@@ -13,6 +13,9 @@ import asyncio
 import io
 import json
 import os
+import shutil
+import subprocess
+import tempfile
 import wave
 from pathlib import Path
 
@@ -23,6 +26,7 @@ import pytest
 pytest.importorskip("pyworld")
 import request_guards as guards  # noqa: E402
 import tandem_backend as server  # noqa: E402
+import world_tuning  # noqa: E402
 
 RATES = [16000, 22050, 44100, 48000]
 # (MIDI target, how far off it is sung in cents). A short phrase: C4 E4 G4 F4.
@@ -179,9 +183,38 @@ def wav_samples(data):
         return np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(np.float64) / 32767, w.getframerate()
 
 
-@pytest.fixture(scope="module")
-def tune():
-    """POST a clip to the real /api/tune route in process, with the rate limit out of the way."""
+ENGINES = ["server", "device"]
+REPO = Path(__file__).resolve().parent.parent
+NODE = shutil.which("node")
+
+
+def device_tune(x, rate, strength, notes=None, vibrato=None):
+    """VOX.4: tune on the device engine (worldtune.js and the WORLD WebAssembly build, run by Node).
+
+    It gets the same 16-bit samples the server gets, and its float output is written as a WAV the
+    same way, so every metric compares the two engines on equal terms.
+    """
+    if NODE is None:
+        pytest.fail("Node is needed to run the on-device tuning engine")
+    sent = np.round(np.clip(x, -1, 1) * 32767) / 32767
+    with tempfile.TemporaryDirectory() as tmp:
+        src, dst = Path(tmp) / "in.f32", Path(tmp) / "out.f32"
+        sent.astype("<f4").tofile(src)
+        args = {"rate": rate, "strength": strength, "notes": notes, "vibrato": vibrato or 0}
+        done = subprocess.run([NODE, str(REPO / "tests" / "world_device.mjs"), str(src), str(dst), json.dumps(args)],
+                              capture_output=True, text=True, timeout=300)
+        assert done.returncode == 0, done.stderr
+        return wav_bytes(np.fromfile(dst, "<f4").astype(np.float64), rate)
+
+
+@pytest.fixture(scope="module", params=ENGINES)
+def tune(request):
+    """Tune a clip with the real /api/tune route in process (rate limit out of the way), or on the
+    device engine (VOX.4). Every benchmark test runs on both."""
+    if request.param == "device":
+        device_tune.engine = "device"
+        yield device_tune
+        return
     with pytest.MonkeyPatch.context() as mp:
         for name in ("TANDEM_ACCESS_TOKEN", "VERCEL", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN",
                      "KV_REST_API_URL", "KV_REST_API_TOKEN"):
@@ -199,13 +232,18 @@ def tune():
             r = asyncio.run(go())
             assert r.status_code == 200, r.text
             return r.content
+        call.engine = "server"
         yield call
 
 
+METRICS = {}
+
+
 @pytest.fixture(scope="module")
-def report(request):
-    metrics = {}
-    yield metrics
+def report(request, tune):
+    """The metrics of one engine; all engines' metrics are written together."""
+    yield METRICS.setdefault(tune.engine, {})
+    metrics = METRICS
     target = os.getenv("TANDEM_VOX_REPORT")
     cache = getattr(request.config, "cache", None)  # absent under -p no:cacheprovider
     if target:
@@ -325,3 +363,27 @@ def test_zero_strength_returns_the_input_unchanged(rate, with_targets, tune, rep
     report[f"zero_strength/{'targets' if with_targets else 'snap'}/{rate}"] = {"max_lsb_diff": int(diff.max()), "samples_changed": int(np.count_nonzero(diff))}
     assert len(got_pcm) == len(sent_pcm)
     assert diff.max() == 0, "0% strength changed the audio"
+
+
+# VOX.4: the device engine is the server's WORLD compiled to WebAssembly, with the same options and
+# the same F0 correction, so it must give the server's audio up to floating-point rounding.
+MIN_DEVICE_SNR_DB = 70.0
+MAX_DEVICE_DIFF_LSB = 32
+
+
+@pytest.mark.parametrize("rate", RATES)
+@pytest.mark.parametrize("case", list(CASES))
+def test_device_engine_matches_the_server(case, rate):
+    x, notes = render(case, rate)
+    sent = np.round(np.clip(x, -1, 1) * 32767) / 32767
+    for kwargs in ({"notes": notes}, {}):
+        expected, _ = world_tuning.world_tune(sent, rate, strength=1.0, **kwargs)
+        expected = np.round(np.clip(expected, -1, 1) * 32767) / 32767
+        got, _ = wav_samples(device_tune(x, rate, 1.0, kwargs.get("notes")))
+        diff = got - expected
+        snr = 10 * np.log10(np.sum(expected ** 2) / max(np.sum(diff ** 2), 1e-30))
+        METRICS.setdefault("device_vs_server", {})[f"{'targets' if kwargs else 'snap'}/{case}/{rate}"] = {
+            "snr_db": round(float(snr), 1), "max_diff_lsb": int(round(np.max(np.abs(diff)) * 32767))}
+        assert len(got) == len(expected)
+        assert snr >= MIN_DEVICE_SNR_DB, (case, rate, kwargs.keys(), snr)
+        assert np.max(np.abs(diff)) * 32767 <= MAX_DEVICE_DIFF_LSB, (case, rate, kwargs.keys())

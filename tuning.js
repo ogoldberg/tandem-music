@@ -124,18 +124,28 @@ export function decodeWav16(arrayBuffer) {
 // Tune a whole recording. `send({wav, notes, strength})` posts one chunk and resolves to
 // {wav: ArrayBuffer, corrected: number}; it rejects with an error carrying `retryAfter`
 // (seconds) when the server rate-limits, and the chunk is retried after that wait.
+// VOX.4: `tune({samples, sampleRate, notes, strength})` tunes one chunk on the device instead,
+// resolving to {samples: Float32Array, corrected: number}; the chunk is never encoded as a WAV.
 // With note targets set, a chunk that has none keeps its original audio: the server snaps
 // every voiced frame of a request without targets, but leaves audio outside the targets of a
 // request that has them alone, so sending it would tune one take two different ways.
-export async function tuneInChunks(samples, sampleRate, { strength, notes, send, sleep = ms => new Promise(r => setTimeout(r, ms)), onProgress = () => {}, maxRetries = 4, chunkSeconds = CHUNK_SECONDS, maxNotes = MAX_NOTES_PER_REQUEST }) {
+export async function tuneInChunks(samples, sampleRate, { strength, notes, send, tune = null, sleep = ms => new Promise(r => setTimeout(r, ms)), onProgress = () => {}, maxRetries = 4, chunkSeconds = CHUNK_SECONDS, maxNotes = MAX_NOTES_PER_REQUEST }) {
   const plan = planChunks(samples.length, sampleRate, chunkSeconds), outputs = [];
   let corrected = 0;
   for (let k = 0; k < plan.length; k++) {
     const { start, end } = plan[k];
     const chunkNotes = notes?.length ? notesForChunk(notes, start / sampleRate, end / sampleRate, maxNotes) : null;
     if (chunkNotes && !chunkNotes.length) { outputs.push(samples.slice(start, end)); continue; }
-    const wav = encodeWav16(samples.subarray(start, end), sampleRate);
     onProgress({ index: k, count: plan.length });
+    const own = (k < plan.length - 1 ? plan[k + 1].start : end) - start;
+    if (tune) {
+      const res = await tune({ samples: samples.slice(start, end), sampleRate, notes: chunkNotes, strength });
+      if (res.samples.length !== end - start) throw Error(`Chunk ${k + 1} came back with ${res.samples.length} samples, expected ${end - start}`);
+      outputs.push(res.samples);
+      corrected += (res.corrected || 0) * own / (end - start);
+      continue;
+    }
+    const wav = encodeWav16(samples.subarray(start, end), sampleRate);
     for (let attempt = 0; ; attempt++) {
       try {
         const res = await send({ wav, notes: chunkNotes, strength });
@@ -143,7 +153,6 @@ export async function tuneInChunks(samples, sampleRate, { strength, notes, send,
         if (decoded.sampleRate !== sampleRate) throw Error(`Chunk ${k + 1} came back at ${decoded.sampleRate} Hz, expected ${sampleRate} Hz`);
         outputs.push(decoded.samples);
         // Count each overlap once: credit a chunk only with the part before the next chunk starts.
-        const own = (k < plan.length - 1 ? plan[k + 1].start : end) - start;
         corrected += (res.corrected || 0) * own / (end - start);
         break;
       } catch (e) {

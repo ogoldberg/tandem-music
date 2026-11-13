@@ -20,7 +20,7 @@ The melody, harmony and drums play recorded General MIDI samples (`samples.js`, 
 ## Vocal polish vs vocal tuning
 Polish (`polish.js`, on device since PERF.1): band-pass EQ, soft gating, compression and makeup gain (Natural/Studio), run in the browser on the decoded recording, so audio is not uploaded and there is no length cap beyond the device's memory. It is a sample-exact port of the former `/api/polish` SciPy DSP (`tests/fixtures/make_polish_fixture.py` keeps that reference). It can affect tone/level but does not fix singing pitch.
 
-Tune (`/api/tune`): **WORLD/PyWorld** vocoder. Separate F0 estimation, spectral envelope and aperiodicity enable resynthesis with changed F0 while approximately retaining vowel/formant character. Corrected audio is a new WAV; the original is unchanged. Analysis and synthesis share one 10 ms frame period (`FRAME_PERIOD_MS`); before November 2026 synthesis used pyworld's 5 ms default, so tuned clips played at double speed and the second half was silent.
+Tune (on this device by default, VOX.4, or `/api/tune`): **WORLD/PyWorld** vocoder, the same code compiled to WebAssembly for the device. Separate F0 estimation, spectral envelope and aperiodicity enable resynthesis with changed F0 while approximately retaining vowel/formant character. Corrected audio is a new WAV; the original is unchanged. Analysis and synthesis share one 10 ms frame period (`FRAME_PERIOD_MS`); before November 2026 synthesis used pyworld's 5 ms default, so tuned clips played at double speed and the second half was silent.
 
 The browser calls Basic Pitch to detect vocal note targets and shows them in the pitch-contour editor (VOX.3, below). Vocal target detection has no length or note-count cap (PERF.3; `VOCAL_TARGET_LIMITS` in `transcription.js`); melody transcribed into the project keeps the 60 s / 128-note cap that `/api/chat` expects (`PROJECT_MELODY_LIMITS`).
 
@@ -60,6 +60,9 @@ Keep vibrato defaults to 100% in the editor, so by default a target moves the no
 | Note targets beat snapping when sung 55-70 cents off (steady): median / 90th percentile | ≤ 3 / ≤ 6 cents | 0.2-0.3 / 0.5-0.6 cents (snapping without targets lands about 100 cents off, on the neighbouring semitone) |
 | Strength 0, with and without targets | output PCM identical to input | identical |
 | Keep vibrato 1 (vibrato case): each note's mean pitch / vibrato spread (std) kept | ≤ 5 cents from target / 80-120% of the input's | 1.3-3.0 cents / 98-103% |
+| On-device engine (VOX.4) against the server, every case and rate, with and without targets: SNR of the difference / largest difference | ≥ 70 dB / ≤ 32 16-bit steps | 84-117 dB / 1-12 steps |
+
+Every check above runs twice: on the server (`/api/tune`) and on the on-device engine (VOX.4: `worldtune.js` with the WORLD WebAssembly build, run by Node from `tests/world_device.mjs` on the same 16-bit samples). Both pass every threshold. The device engine is the same WORLD source (the commit pyworld 0.3.6 is built from) with the same options and the same F0 correction, so the two differ only by floating-point rounding between the compilers and their maths libraries.
 
 The measured metrics for every case are written to `.pytest_cache/d/vox1/metrics.json` (or `$TANDEM_VOX_REPORT`). The benchmark found that `encode_wav` truncated with a 32767 scale while `decode_wav` divides by 32768, so every pass through the server lowered most samples by one 16-bit step; it now rounds on the 32768 scale and round-trips exactly.
 

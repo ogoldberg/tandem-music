@@ -115,6 +115,19 @@ def gm_sample(name: str):
     return FileResponse(GM_SAMPLES_DIR / name, media_type=media_type,
                         headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
+# VOX.4: the WORLD vocoder compiled to WebAssembly by tools/world-wasm/build.sh, for tuning on the
+# device. Only the files listed in SHA256SUMS are served; the versioned path never changes content.
+WORLD_WASM_DIR = Path(__file__).resolve().parent / "vendor" / "world-d625e76-1"
+WORLD_WASM_FILES = {"world.mjs": "text/javascript", "world.wasm": "application/wasm", "LICENSES.txt": "text/plain; charset=utf-8"}
+
+@app.get("/vendor/world-d625e76-1/{name}", include_in_schema=False)
+def world_wasm_asset(name: str):
+    media_type = WORLD_WASM_FILES.get(name)
+    if media_type is None:
+        return Response(status_code=404)
+    return FileResponse(WORLD_WASM_DIR / name, media_type=media_type,
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
 # MOB.2: the app icons, rendered from icons/*.svg by tools/icons/build.py. Only the built PNGs are served.
 ICONS_DIR = Path(__file__).resolve().parent / "icons"
 ICON_FILES = {"icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"}
@@ -145,6 +158,14 @@ def notation_js():
 @app.get("/dawproject.js", include_in_schema=False)
 def dawproject_js():
     return FileResponse(Path(__file__).resolve().parent / "dawproject.js", media_type="text/javascript")
+
+@app.get("/worldtune.js", include_in_schema=False)
+def worldtune_js():
+    return FileResponse(Path(__file__).resolve().parent / "worldtune.js", media_type="text/javascript")
+
+@app.get("/tuneworker.js", include_in_schema=False)
+def tuneworker_js():
+    return FileResponse(Path(__file__).resolve().parent / "tuneworker.js", media_type="text/javascript")
 
 @app.get("/ideas.js", include_in_schema=False)
 def ideas_js():

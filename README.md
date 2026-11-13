@@ -82,7 +82,7 @@ See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for deployment and configuration, and 
 
 ## Repository layout
 
-`index.html` (UI), `transcription.js` (Basic Pitch), `polish.js` (on-device polish), `tuning.js` (chunked pitch correction), `history.js` (undo/redo), `versions.js` (named versions), `groove.js` (tempo detection and quantize), `tandem_backend.py` (FastAPI/LLM/DSP), `world_tuning.py` (active vocal pitch correction), `api/index.py` (Vercel), `tests/` (automated checks).
+`index.html` (UI), `transcription.js` (Basic Pitch), `polish.js` (on-device polish), `tuning.js` (chunked pitch correction), `worldtune.js`/`tuneworker.js` (WORLD as WebAssembly, pitch correction on the device), `history.js` (undo/redo), `versions.js` (named versions), `groove.js` (tempo detection and quantize), `tandem_backend.py` (FastAPI/LLM/DSP), `world_tuning.py` (active vocal pitch correction), `api/index.py` (Vercel), `tests/` (automated checks).
 
 ## Contributions
 

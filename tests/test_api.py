@@ -768,3 +768,26 @@ def test_every_precached_asset_is_served(client):
     assert "./" in assets and "./capture" in assets
     for asset in assets:
         assert run(client("GET",asset[1:] or "/")).status_code==200, asset
+
+WORLD_WASM_DIR = server.Path(server.__file__).resolve().parent / "vendor" / "world-d625e76-1"
+
+def test_world_wasm_assets_are_served_with_recorded_hashes(client):
+    """VOX.4: the WORLD WebAssembly build is served from this app, byte for byte as recorded."""
+    import hashlib
+    lines = (WORLD_WASM_DIR / "SHA256SUMS").read_text().splitlines()
+    hashes = {name.strip(): digest for digest, name in (line.split(None, 1) for line in lines if line.strip())}
+    assert set(hashes) == {"world.mjs", "world.wasm", "LICENSES.txt"}
+    types = {"world.mjs": "text/javascript", "world.wasm": "application/wasm", "LICENSES.txt": "text/plain"}
+    for name, digest in hashes.items():
+        r = run(client("GET", f"/vendor/world-d625e76-1/{name}"))
+        assert r.status_code == 200, name
+        assert hashlib.sha256(r.content).hexdigest() == digest, name
+        assert r.headers["content-type"].split(";")[0] == types[name]
+        assert "immutable" in r.headers["cache-control"]
+    for path in ("/vendor/world-d625e76-1/SHA256SUMS", "/vendor/world-d625e76-1/%2e%2e/tandem_backend.py",
+                 "/vendor/world-d625e76-1/", "/vendor/world-d625e76-2/world.wasm"):
+        assert run(client("GET", path)).status_code == 404, path
+    assert "Copyright" in (WORLD_WASM_DIR / "LICENSES.txt").read_text()
+    for name in ("worldtune.js", "tuneworker.js"):
+        r = run(client("GET", f"/{name}"))
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/javascript"), name
