@@ -711,6 +711,14 @@ def test_noteedit_module_is_served_and_precached(client):
     assert "from './noteedit.js'" in run(client("GET","/")).text
     assert "'./noteedit.js'" in run(client("GET","/sw.js")).text
 
+def test_guide_module_is_served_and_precached(client):
+    # UI.1: the studio imports guide.js (the guided steps and automatic helpers) at start-up, so it is precached for offline use.
+    js=run(client("GET","/guide.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function afterTake" in js.text
+    assert "from './guide.js'" in run(client("GET","/")).text
+    assert "'./guide.js'" in run(client("GET","/sw.js")).text
+
 def test_dawproject_module_is_served_and_precached(client):
     # EXP.3: the studio imports dawproject.js (DAWproject export) at start-up, so it is precached for offline use.
     js=run(client("GET","/dawproject.js"))
