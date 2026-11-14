@@ -4,6 +4,7 @@
 // same shape as the melody, so the studio stores them as the project's optional `harmony` part.
 
 import { KEY_NAMES } from "./contour.js";
+import { keyPitchClasses, nextInScale } from "./noteedit.js";
 
 export const MODES = Object.freeze(["major", "minor"]);
 export const STYLES = Object.freeze(["chords", "bass"]);
@@ -189,4 +190,140 @@ export function generateHarmony(project, { style = "chords", key = null } = {}) 
     throw new Error(`The melody is too long for a harmony part: ${bars} bars would need ${notes.length} notes, over the ${MAX_HARMONY_NOTES}-note limit.`);
   }
   return { key: { tonic: useKey.tonic, mode: useKey.mode }, chords: chordList, notes };
+}
+
+// HARM.2: harmony lines for the harmony voice (ADR-014). The first is the default; Try another steps
+// through the rest. Each is a plain note list the studio keeps in `voice2` as one edit.
+export const HARMONY_LINES = Object.freeze([
+  Object.freeze({ id: "thirds", label: "Thirds above" }),
+  Object.freeze({ id: "sixth_below", label: "A sixth below" }),
+  Object.freeze({ id: "octave", label: "The tune an octave lower" }),
+  Object.freeze({ id: "counter", label: "A counter-melody" }),
+  Object.freeze({ id: "stack", label: "Two voices: thirds above and below" }),
+]);
+
+// `steps` steps of the key away from m (up when > 0), or null outside the MIDI range. A note
+// outside the key takes the nearest key note in that direction as its first step.
+function stepsInKey(m, pcs, steps) {
+  let p = m;
+  for (let k = 0; k < Math.abs(steps) && p !== null; k++) p = nextInScale(p, pcs, Math.sign(steps));
+  return p;
+}
+
+// Pitch classes of the chord notes sounding at time t.
+function chordAt(chords, t) {
+  const at = t + 1e-6;
+  return new Set(chords.filter(n => n.t <= at && n.t + n.d > at).map(n => pc(n.m)));
+}
+
+// How many times the line moves into a fifth or an octave (or unison) with the melody from the same
+// perfect interval, both voices moving the same way. Each line note is paired with the melody note
+// that starts with it.
+export function parallelPerfects(melody, line) {
+  const mel = validNotes(melody), pairs = [];
+  for (const n of validNotes(line).sort((a, b) => a.t - b.t)) {
+    const m = mel.find(x => Math.abs(x.t - n.t) < 1e-3);
+    if (m) pairs.push([m.m, n.m]);
+  }
+  let count = 0;
+  for (let i = 1; i < pairs.length; i++) {
+    const [a0, b0] = pairs[i - 1], [a1, b1] = pairs[i], iv0 = pc(b0 - a0), iv1 = pc(b1 - a1);
+    if ((iv0 === 0 || iv0 === 7) && iv0 === iv1 && a1 !== a0 && Math.sign(a1 - a0) === Math.sign(b1 - b0)) count++;
+  }
+  return count;
+}
+
+// The default: a third above each melody note in the key, or a sixth above when the third is not a
+// tone of the chord sounding then and the sixth is. When both or neither are, the one nearer the
+// previous harmony note wins, with a small preference for the third. Thirds and sixths are never
+// fifths or octaves, so the line has no parallel fifths or octaves with the melody.
+function thirdsAbove(melody, pcs, chords) {
+  const out = [];
+  let prev = null;
+  for (const n of melody) {
+    const chord = chordAt(chords, n.t);
+    let best = null, bestCost = Infinity;
+    for (const [steps, bias] of [[2, 0], [5, 0.5]]) {
+      const m = stepsInKey(n.m, pcs, steps);
+      if (m === null) continue;
+      const cost = (chord.size && !chord.has(pc(m)) ? 10 : 0) + bias + (prev === null ? 0 : Math.abs(m - prev) * 0.1);
+      if (cost < bestCost - 1e-9) { best = m; bestCost = cost; }
+    }
+    if (best === null) continue;
+    out.push({ m: best, t: n.t, d: n.d });
+    prev = best;
+  }
+  return out;
+}
+
+// A counter-melody below the tune: a chord tone every two beats (fewer where the chord changes
+// sooner), each the in-key chord tone nearest the last. A repeated note costs more than a small
+// move and moving the same way as the melody costs a little, so the line moves, mostly against the
+// tune; a fifth or octave with the melody reached from the same interval is avoided. Where no
+// melody sounds there is a rest.
+function counterMelody(melody, pcs, chords, bpm) {
+  const low = Math.min(...melody.map(n => n.m)), lo = Math.max(MIN_LINE, low - 12), hi = low - 1;
+  const half = (60 / bpm) * 2, onsets = [...new Set(chords.map(n => round3(n.t)))].sort((a, b) => a - b);
+  const pieces = [];
+  onsets.forEach((t, i) => {
+    const end = Math.min(onsets[i + 1] ?? Infinity, Math.max(...chords.filter(n => round3(n.t) === t).map(n => n.t + n.d)));
+    for (let s = t; s < end - 1e-6; s += half) pieces.push([s, Math.min(end, s + half)]);
+  });
+  const out = [];
+  let prev = null, prevMel = null;
+  for (const [t, end] of pieces) {
+    const under = melody.filter(n => n.t < end - 1e-6 && n.t + n.d > t + 1e-6);
+    if (!under.length) continue;
+    const chord = [...chordAt(chords, t)], keyed = chord.filter(p => pcs.includes(p)), allowed = keyed.length ? keyed : pcs;
+    const mel = under[0].m;
+    let best = null, bestCost = Infinity;
+    for (let m = lo; m <= hi; m++) {
+      if (!allowed.includes(pc(m))) continue;
+      let cost = prev === null ? Math.abs(m - (lo + hi) / 2) : m === prev ? 3.5 : Math.abs(m - prev);
+      if (prev !== null && prevMel !== null && mel !== prevMel && Math.sign(mel - prevMel) === Math.sign(m - prev)) {
+        cost += 1;
+        const iv0 = pc(prevMel - prev), iv1 = pc(mel - m);
+        if ((iv1 === 0 || iv1 === 7) && iv0 === iv1) cost += 100;
+      }
+      if (cost < bestCost - 1e-9) { best = m; bestCost = cost; }
+    }
+    if (best === null) continue;
+    out.push({ m: best, t, d: round3((end - t) * RELEASE) });
+    prev = best;
+    prevMel = mel;
+  }
+  return out;
+}
+const MIN_LINE = 36;
+
+// Every harmony line for the melody in `key`, against `chords` (the harmony part's notes; when there
+// are none, the chords generateHarmony works out from the melody). Lines that come out the same as
+// an earlier one, empty, or over the part's note limit are left out. Returns [{id, label, notes}].
+export function harmonyLines(project, { key = null, chords = null } = {}) {
+  const melody = validNotes(project?.notes).sort((a, b) => a.t - b.t || a.m - b.m);
+  if (!melody.length) throw new Error("Add or transcribe a melody before creating a harmony line.");
+  const pcs = keyPitchClasses(key);
+  const context = validNotes(chords).length ? validNotes(chords) : generateHarmony({ bpm: project.bpm, notes: melody }, { style: "chords", key }).notes;
+  const thirds = thirdsAbove(melody, pcs, context);
+  const shifted = steps => melody.flatMap(n => { const m = stepsInKey(n.m, pcs, steps); return m === null ? [] : [{ m, t: n.t, d: n.d }]; });
+  const build = {
+    thirds: () => thirds,
+    sixth_below: () => shifted(-5),
+    octave: () => melody.filter(n => pcs.includes(pc(n.m))).map(n => ({ m: n.m - 12 >= MIN_LINE ? n.m - 12 : n.m + 12, t: n.t, d: n.d })),
+    counter: () => counterMelody(melody, pcs, context, Number(project.bpm) || 100),
+    stack: () => [...thirds, ...shifted(-2)].sort((a, b) => a.t - b.t || a.m - b.m),
+  };
+  const seen = new Set(), out = [];
+  for (const { id, label } of HARMONY_LINES) {
+    const held = new Set(), notes = [];
+    for (const n of build[id]()) {
+      const k = n.m + "@" + n.t;
+      if (!held.has(k)) { held.add(k); notes.push({ m: n.m, t: round3(n.t), d: round3(n.d) }); }
+    }
+    const shape = JSON.stringify(notes);
+    if (!notes.length || notes.length > MAX_HARMONY_NOTES || seen.has(shape)) continue;
+    seen.add(shape);
+    out.push({ id, label, notes });
+  }
+  return out;
 }
