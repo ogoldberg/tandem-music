@@ -234,6 +234,16 @@ test("the alternatives: a sixth below, an octave below, a counter-melody and a t
   assert.deepEqual(lines.stack.filter(n => n.t === 0).map(n => n.m).sort((a, b) => a - b), [57, 64]);
 });
 
+test("the counter-melody leaves the nearest chord tone for another when it would move in octaves or fifths with the tune", () => {
+  // G A G over A minor, F, C: from A under the tune's A, the nearest C-chord tone is G, an octave
+  // below the tune's G reached in the same direction; the line goes up to C instead.
+  const tune = [67, 69, 67].map((m, t) => ({ m, t, d: 1 }));
+  const chords = [[57, 60, 64], [53, 57, 60], [48, 52, 55]].flatMap((c, t) => c.map(m => ({ m, t, d: 1 })));
+  const counter = harmonyLines({ bpm: 120, notes: tune }, { key: C_MAJOR, chords }).find(l => l.id === "counter").notes;
+  assert.deepEqual(counter.map(n => n.m), [60, 57, 60]);
+  assert.equal(parallelPerfects(tune, counter), 0);
+});
+
 test("harmonyLines needs a melody and a key, and leaves the project unchanged", () => {
   assert.throws(() => harmonyLines({ bpm: 120, notes: [] }, { key: C_MAJOR }), /melody/);
   assert.throws(() => harmonyLines({ bpm: 120, notes: TUNE }, { key: null }), /key/);
