@@ -271,6 +271,15 @@ class ProjectTimbre(BaseModel):
     seconds: float = Field(gt=0,le=600,allow_inf_nan=False)
     muted: bool = False
     model: Literal["rave"] = "rave"
+class ProjectSungHarmony(BaseModel):
+    """HARM.3: the take sung back on the harmony voice's notes with WORLD, in the studio. Its audio is a
+    recording kept beside the project (the voice2_sung slot), never in it; line names the harmony line it
+    was sung on (tuning.js harmonyFingerprint). No AI action edits it."""
+    model_config=ConfigDict(extra="forbid")
+    id: str = Field(pattern=r"^[A-Za-z0-9-]{1,64}$")
+    seconds: float = Field(gt=0,le=600,allow_inf_nan=False)
+    muted: bool = False
+    line: str = Field(pattern=r"^[0-9a-f]{8}$")
 class ChatProject(BaseModel):
     """The project fields the browser sends to /api/chat; mirrors the tandem-project schema."""
     model_config=ConfigDict(extra="forbid")
@@ -283,6 +292,8 @@ class ChatProject(BaseModel):
     band: ProjectBand | None = None
     # TIMBRE.1: the voice played as an instrument, when there is one.
     timbre: ProjectTimbre | None = None
+    # HARM.3: the take sung on the harmony voice, when there is one.
+    voice2_sung: ProjectSungHarmony | None = None
     # HARM.1: the harmony voice, a copy of the melody shifted (ADR-014). Before the harmony, since it
     # follows the melody note for note. No AI action edits it.
     voice2: list[ProjectNote] = Field(default_factory=list,max_length=1024)

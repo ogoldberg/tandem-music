@@ -7,6 +7,7 @@ A project folder holds exactly the files of a Tandem file (bundle.js, MOB.3), un
     original.wav  the recording; polished.wav and tuned.wav when the studio made them; vocal.wav and
                   accompaniment.wav when it was separated (SEP.1); band.wav when a band was generated (GEN.2);
                   timbre.wav when the voice was played as an instrument (TIMBRE.1)
+                  harmony-voice-sung.wav when the take was sung on the harmony voice (HARM.3)
 
 The page and the local server pass a project as that zip, so the studio reuses bundle.js both ways:
 Save to folder sends the zip it would share, the server unpacks it into the folder the person picks in
@@ -29,8 +30,10 @@ import anyio
 
 FILES = {"meta": "tandem.json", "project": "project.json", "original": "original.wav",
          "polished": "polished.wav", "tuned": "tuned.wav", "vocal": "vocal.wav", "accompaniment": "accompaniment.wav",
-         "band": "band.wav", "timbre": "timbre.wav"}
-RECORDINGS = ("original.wav", "polished.wav", "tuned.wav", "vocal.wav", "accompaniment.wav", "band.wav", "timbre.wav")
+         "band": "band.wav", "timbre": "timbre.wav",
+         "voice2_sung": "harmony-voice-sung.wav"}
+RECORDINGS = ("original.wav", "polished.wav", "tuned.wav", "vocal.wav", "accompaniment.wav", "band.wav", "timbre.wav",
+              "harmony-voice-sung.wav")
 NAMES = frozenset(FILES.values())
 # The same cap as bundle.js MAX_BUNDLE_BYTES: more than any recording the studio handles.
 MAX_BYTES = 512 * 1024 * 1024

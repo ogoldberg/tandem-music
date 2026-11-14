@@ -26,6 +26,7 @@ const DRUMS = { name: "Drums", channel: 9, vel: 90 / 127, color: "#f97316" };
 export const AUDIO_TRACKS = Object.freeze([
   { slot: "band", name: "Band", color: "#22c55e" },
   { slot: "timbre", name: "Voice as instrument", color: "#14b8a6" },
+  { slot: "voice2_sung", name: "Harmony voice (sung)", color: "#0d9488" },
   { slot: "tuned", name: "Vocal (tuned)", color: "#ef4444" },
   { slot: "polished", name: "Vocal (polished)", color: "#f43f5e" },
   { slot: "vocal", name: "Vocal (separated)", color: "#ec4899" },

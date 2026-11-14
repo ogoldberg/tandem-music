@@ -172,6 +172,10 @@ test("the arrangement length covers every note and drum with a tail, at least fo
   const timbre = { id: "t", instrument: "guitar", source: "take", seconds: 33.5, muted: false, model: "rave" };
   assert.equal(arrangementSeconds({ notes: [], drums: [], band, timbre }), 34.5);
   assert.equal(arrangementSeconds({ notes: [], drums: [], band, timbre: { ...timbre, muted: true } }), 21);
+  // HARM.3: and the take sung on the harmony voice.
+  const voice2_sung = { id: "s", seconds: 40, muted: false, line: "0123abcd" };
+  assert.equal(arrangementSeconds({ notes: [], drums: [], band, timbre, voice2_sung }), 41);
+  assert.equal(arrangementSeconds({ notes: [], drums: [], band, timbre, voice2_sung: { ...voice2_sung, muted: true } }), 34.5);
 });
 
 test("stems are summed sample by sample into the mix", () => {
@@ -222,6 +226,14 @@ test("a generated band is a part: in the mix, after the drums, before the takes 
   assert.deepEqual([0, 1, 2].map(i => s.getInt16(i * 2, true)), [Math.round(0.75 * 32767), Math.round(0.25 * 32767), Math.round(0.25 * 32767)]);
 });
 
+test("the sung harmony is a part: in the mix, after the voice as instrument, before the takes (HARM.3)", async () => {
+  const files = await unzipFiles(stemsZip({ parts: { voice2_sung: Float32Array.of(0.25, 0.25), timbre: Float32Array.of(0.25), voice2: Float32Array.of(0.25) },
+    vocals: { original: Float32Array.of(0.1) }, rate: 8000, midi: midiFile(song()) }));
+  assert.deepEqual([...files.keys()], ["mix.wav", "harmony-voice.wav", "timbre.wav", "harmony-voice-sung.wav", "vocal-original.wav", "tandem.mid"]);
+  const mix = files.get("mix.wav"), s = new DataView(mix.buffer, mix.byteOffset + 44);
+  assert.deepEqual([0, 1].map(i => s.getInt16(i * 2, true)), [Math.round(0.75 * 32767), Math.round(0.25 * 32767)]);
+});
+
 test("the voice played as an instrument is a part: in the mix, after the band, before the takes (TIMBRE.1)", async () => {
   const files = await unzipFiles(stemsZip({ parts: { timbre: Float32Array.of(0.25, 0.25), band: Float32Array.of(0.25), melody: Float32Array.of(0.25) },
     vocals: { tuned: Float32Array.of(0.1) }, rate: 8000, midi: midiFile(song()) }));
@@ -248,6 +260,7 @@ test("the file names", () => {
   assert.equal(STEM_RATE, 44100);
   assert.deepEqual(STEM_FILES, {
     mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", voice2: "harmony-voice.wav", drums: "drums.wav", band: "band.wav", timbre: "timbre.wav",
+    voice2_sung: "harmony-voice-sung.wav",
     original: "vocal-original.wav", polished: "vocal-polished.wav", tuned: "vocal-tuned.wav",
     vocal: "vocal-separated.wav", accompaniment: "accompaniment.wav", midi: "tandem.mid",
   });

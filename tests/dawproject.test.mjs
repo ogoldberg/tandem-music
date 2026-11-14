@@ -110,6 +110,17 @@ test("the file is a zip of project.xml, metadata.xml and one WAV per recording",
   assert.match(meta, /<Comment>Key: A minor<\/Comment>/);
 });
 
+test("the sung harmony is an audio track after the voice as instrument, muted when the part is (HARM.3)", async () => {
+  const rate = 8000, samples = n => Float32Array.from({ length: n }, (_, i) => Math.sin(i / 10) / 2);
+  const files = await unzipFiles(dawProject({
+    project: { bpm: 100, notes: [], drums: [], voice2: [{ m: 64, t: 0, d: 1 }] }, rate,
+    audio: { original: { samples: samples(rate) }, voice2_sung: { samples: samples(rate), gain: 0.7, muted: true }, timbre: { samples: samples(rate), gain: 1, muted: false } },
+  }));
+  assert.ok(files.has("audio/harmony-voice-sung.wav"));
+  const p = readProject(new TextDecoder().decode(files.get(DAWPROJECT_FILES.project)));
+  assert.deepEqual(p.tracks.map(t => [t.name, t.mute]), [["Harmony voice", false], ["Voice as instrument", false], ["Harmony voice (sung)", true], ["Vocal (original)", false], ["Master", false]]);
+});
+
 test("each audio track's file is the stem of the same name", () => {
   for (const { slot } of AUDIO_TRACKS) assert.equal(audioPath(slot), "audio/" + STEM_FILES[slot]);
 });

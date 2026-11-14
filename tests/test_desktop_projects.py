@@ -80,6 +80,17 @@ def test_a_separated_recording_keeps_its_vocal_and_music_in_the_folder(tmp_path)
     assert {k: v for k, v in back.items() if k.endswith(".wav")} == recs
 
 
+def test_a_sung_harmony_is_a_recording_of_the_folder_too(tmp_path):
+    """HARM.3: the take sung on the harmony voice is kept as harmony-voice-sung.wav."""
+    recs = {"original.wav": wav_bytes(0.2), "harmony-voice-sung.wav": wav_bytes(0.3)}
+    folder = tmp_path / "Thirds"
+    folder.mkdir()
+    pj.write_folder(folder, pj.files_from_bundle(bundle(recs)))
+    assert sorted(p.name for p in folder.iterdir()) == ["harmony-voice-sung.wav", "original.wav", "project.json", "tandem.json"]
+    back = zip_names(pj.bundle_from_files(pj.read_folder(folder)))
+    assert {k: v for k, v in back.items() if k.endswith(".wav")} == recs
+
+
 def test_the_folder_is_plain_files_a_person_can_read(tmp_path):
     folder = tmp_path / "Plain"
     folder.mkdir()

@@ -9,7 +9,7 @@ import { storageError } from "./storage.js";
 export const RECORDINGS_DIR = "recordings";
 // The draft's recordings, kept next to the draft in the IndexedDB key-value store.
 export const DRAFT_AUDIO_KEY = "draft-audio";
-export const AUDIO_SLOTS = ["original", "polished", "tuned", "vocal", "accompaniment", "band", "timbre"];
+export const AUDIO_SLOTS = ["original", "polished", "tuned", "vocal", "accompaniment", "band", "timbre", "voice2_sung"];
 const LOCK = "tandem-recordings";
 const ID = /^[0-9a-f]{64}$/;
 
