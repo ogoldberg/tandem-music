@@ -205,10 +205,13 @@ def test_every_control_of_the_studio_is_in_the_all_controls_view(browser, server
         page.click("#gsettings")
         page.click("#gshowall")
         expect(page.locator("#guide")).to_be_hidden()
+        # UI.2: the side panel shows one part's settings at a time, so each control is checked with its part picked.
         report = page.evaluate("""ids => ids.map(id => {
             const el = document.getElementById(id);
             if (!el) return [id, 'missing'];
             if (!el.closest('#allcontrols')) return [id, 'outside'];
+            const panel = el.closest('#partpanel [data-panel-part]');
+            if (panel) document.querySelector('#allcontrols [data-part="' + panel.dataset.panelPart + '"]').click();
             // Controls a feature hides where it is not available (the Mac app's, Web MIDI's) and the file pickers.
             if (el.closest('[hidden]') || el.classList.contains('hide')) return [id, 'feature'];
             const r = el.getBoundingClientRect();
@@ -220,7 +223,8 @@ def test_every_control_of_the_studio_is_in_the_all_controls_view(browser, server
         # (shown after Connect MIDI), the harmony line trial (shown after Create harmony) and the file pickers behind their buttons.
         assert sorted(r[0] for r in report if r[1] == "feature") == sorted(MAC_APP + MIDI_PORTS + LINE_TRIAL + ["audiofile", "projectfile"])
         # The guided view's own controls are not in the studio's layout, and the roll is back in its place.
-        assert page.evaluate("document.getElementById('melodyroll').closest('.track').contains(document.getElementById('addnote'))")
+        assert page.evaluate("document.getElementById('melodyroll').closest('.lane').dataset.lane === 'melody'")
+        assert page.evaluate("document.getElementById('melodytools').closest('[data-panel-part]').dataset.panelPart === 'melody'")
         # And back again, from the studio's header.
         page.click("#showguide")
         expect(page.locator("#guide")).to_be_visible()

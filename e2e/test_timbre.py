@@ -18,6 +18,7 @@ import zipfile
 import numpy as np
 import pytest
 from playwright.sync_api import expect
+from conftest import show_part
 
 import tandem_desktop as desk
 from tandem_desktop import models, timbre
@@ -137,13 +138,17 @@ def played(page):
 
 
 def test_the_instrument_voice_is_offered_only_in_the_mac_app(studio):
+    show_part(studio, "timbre")
+    expect(studio.locator("#timbrenote")).to_be_visible()
     expect(studio.locator("#timbretrack")).to_be_hidden()
 
 
 def test_the_voice_is_played_as_an_instrument_kept_played_undone_and_exported(page, app, tmp_path):
     desktop = app()
     problems = open_app(page, desktop)
+    show_part(page, "timbre")
     expect(page.locator("#timbretrack")).to_be_visible()
+    expect(page.locator("#timbrenote")).to_be_hidden()
     expect(page.locator("#playtimbretrack")).to_be_disabled()
     page.click("#gentimbre")
     expect(page.locator("#timbrestatus")).to_have_text("Record or import your voice first, then play it on the instrument.")

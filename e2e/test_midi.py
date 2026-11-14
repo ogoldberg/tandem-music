@@ -10,6 +10,7 @@ import time
 
 import pytest
 from playwright.sync_api import expect
+from conftest import show_part
 
 MOCK_MIDI = """(() => {
   window.__midiSent = [];
@@ -82,12 +83,15 @@ def sent(page):
 
 def test_midi_is_hidden_where_the_browser_has_no_web_midi(page, server_url):
     problems = open_studio(page, server_url, NO_MIDI)
+    show_part(page, "melody")
+    expect(page.locator("#addnote")).to_be_visible()
     expect(page.locator("#miditrack")).to_be_hidden()
     assert not problems, problems
 
 
 def test_devices_are_asked_for_only_when_connect_is_pressed(midi_studio):
     page = midi_studio
+    show_part(page, "melody")
     expect(page.locator("#miditrack")).to_be_visible()
     expect(page.locator("#midiports")).to_be_hidden()
     assert page.evaluate("window.__midiRequests") == 0

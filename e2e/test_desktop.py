@@ -16,7 +16,7 @@ from playwright.sync_api import expect
 import tandem_desktop as desk
 from tandem_desktop.ai_keys import AISettings
 from tandem_desktop.projects import ProjectFolders
-from conftest import ALL_CONTROLS
+from conftest import ALL_CONTROLS, show_part
 
 
 class Dialogs:
@@ -255,6 +255,7 @@ def test_your_own_ai_key_is_kept_out_of_the_page_and_an_edit_uses_it(page, stand
     try:
         page.on("response", lambda r: responses.append(r) if "/api/" in r.url else None)
         problems = open_app(page, {"url": f"http://127.0.0.1:{port}", "port": port, "secret": secret})
+        show_part(page, "song")
         expect(page.locator("#yourai")).to_be_visible()
         expect(page.locator("#aistate")).to_have_text("Choose a provider and model.")
         page.select_option("#aiprovider", "custom")

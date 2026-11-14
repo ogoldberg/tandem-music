@@ -237,7 +237,7 @@ def test_undo_redo_across_manual_ai_load_and_vocal_target_edits(studio, tmp_path
     expect(page.locator("#bpm")).to_have_value("90")
     assert count(page, "hitcount") == 17
     assert history_state(page) == {"undo": (True, "Undo: AI edit"), "redo": (True, "Redo: Open project")}
-    page.click("h1")  # leave the text field so the shortcut reaches the studio
+    page.click("#lanes .lanestop h2")  # leave the text field so the shortcut reaches the studio
     page.keyboard.press("Control+z")  # AI edit
     expect(page.locator("#bpm")).to_have_value("140")
     assert count(page, "hitcount") == 16
