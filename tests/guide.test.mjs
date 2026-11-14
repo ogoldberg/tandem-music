@@ -129,4 +129,6 @@ test("stepSummaries describe what each step holds", () => {
   assert.deepEqual(one, { sing: "Recorded 0:07", notes: "1 note", song: "A harmony line added", share: "1 version saved" });
   assert.equal(stepSummaries({ duration: 0, notes: 0, drums: 3, harmony: [], versions: 0 }).song, "Drums added");
   assert.equal(stepSummaries({ duration: 0, notes: 0, drums: 3, versions: null }).share, "Versions not available");
+  assert.equal(stepSummaries({ duration: 0, notes: 4, drums: 0, harmony: [], voice2: 4, versions: 0 }).song, "A second voice added");
+  assert.equal(stepSummaries({ duration: 0, notes: 4, drums: 2, harmony: chords, voice2: 4, versions: 0 }).song, "Chords, a second voice and drums added");
 });

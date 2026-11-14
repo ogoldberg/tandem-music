@@ -155,6 +155,7 @@ test("the export key is the harmony's chosen key, else the one detected from the
   assert.equal(exportKey({ notes: [], harmony: [] }, "auto"), null);
   assert.deepEqual(exportKey({ notes: melody, harmony: [] }, "13:major"), { tonic: 0, mode: "major" }, "a bad choice falls back to detection");
   assert.deepEqual(exportKey({ notes: [], harmony: melody }, "auto"), { tonic: 0, mode: "major" }, "else from the harmony");
+  assert.deepEqual(exportKey({ notes: [], harmony: [], voice2: melody }, "auto"), { tonic: 0, mode: "major" }, "else from the harmony voice");
 });
 
 test("the arrangement length covers every note and drum with a tail, at least four seconds", () => {

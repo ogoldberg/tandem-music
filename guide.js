@@ -117,13 +117,15 @@ const clock = s => { const t = Math.round(s); return Math.floor(t / 60) + ":" + 
 
 // One line under each step in the rail. versions is null when versions cannot be stored on this device.
 // harmony is the harmony part's notes: it reads as chords when two of them start together, else as a harmony line.
-export function stepSummaries({ duration = 0, notes = 0, drums = 0, harmony = [], versions = 0, tuned = false, polished = false }) {
+// voice2 is how many notes the second voice in harmony holds.
+export function stepSummaries({ duration = 0, notes = 0, drums = 0, harmony = [], voice2 = 0, versions = 0, tuned = false, polished = false }) {
   const sing = duration > 0 ? "Recorded " + clock(duration) + (polished ? ", cleaned up" : "") : "Nothing recorded yet";
   const notesLine = notes > 0 ? plural(notes, "note") + (tuned ? ", pitch fixed" : "") : "No notes yet";
   const parts = [];
   if (harmony.length) parts.push(isChords(harmony) ? "Chords" : "A harmony line");
+  if (voice2 > 0) parts.push(parts.length ? "a second voice" : "A second voice");
   if (drums > 0) parts.push(parts.length ? "drums" : "Drums");
-  const song = parts.length ? parts.join(" and ") + " added" : "Melody only";
+  const song = parts.length ? parts.slice(0, -1).join(", ") + (parts.length > 1 ? " and " : "") + parts.at(-1) + " added" : "Melody only";
   const share = versions === null ? "Versions not available" : versions > 0 ? plural(versions, "version") + " saved" : "No versions saved";
   return { sing, notes: notesLine, song, share };
 }

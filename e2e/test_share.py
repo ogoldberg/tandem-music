@@ -12,7 +12,7 @@ import numpy as np
 from playwright.sync_api import expect
 
 from test_capture import PHONE, open_capture, phone_page, record
-from test_studio import IDB_GET, OPFS_FILES, count
+from test_studio import IDB_GET, OPFS_FILES, count, download
 from conftest import ALL_CONTROLS
 
 # navigator.share with files, as on iOS Safari and Android Chrome: the shared file is kept for the test.
@@ -189,6 +189,33 @@ def test_a_project_file_without_a_recording_opens_like_a_project(studio):
     expect(page.locator("#status")).to_have_text("Project opened")
     assert count(page, "notecount") == 1
     expect(page.locator("#versionlist")).to_have_text("No saved versions yet.")
+
+
+def test_a_project_with_only_a_harmony_voice_exports_stems_and_is_kept_as_a_version(studio, tmp_path):
+    """HARM.1: notes only in the harmony voice are something to export and a draft worth keeping: Export
+    stems names the harmony voice, the MIDI key is detected from it, and opening another project keeps it."""
+    import mido
+    page = studio
+    page.wait_for_function("!document.body.inert")
+    scale = [{"m": m, "t": i * 0.5, "d": 0.45} for i, m in enumerate([60, 62, 64, 65, 67, 69, 71, 72])]
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        z.writestr("project.json", json.dumps({"format": "tandem-project", "version": 1, "bpm": 120, "notes": [],
+                                               "drums": [], "voice2": scale, "voice2_instrument": "piano"}))
+    open_bundle(page, "voice.tandem.zip", out.getvalue())
+    expect(page.locator("#status")).to_have_text("Project opened")
+    expect(page.locator("#voice2count")).to_have_text("8 notes")
+
+    path = download(page, "#exportstems", tmp_path)
+    expect(page.locator("#status")).to_have_text("Exported 1 stem (harmony voice) and the MIDI file")
+    with zipfile.ZipFile(path) as z:
+        assert "harmony-voice.wav" in z.namelist()
+        mid = mido.MidiFile(file=io.BytesIO(z.read("tandem.mid")))
+    keys = [m.key for t in mid.tracks for m in t if m.type == "key_signature"]
+    assert keys == ["C"]
+
+    open_bundle(page, "Night drive.tandem.zip", finished_project_bundle())
+    expect(page.locator("#status")).to_have_text('Opened Night drive with its recordings. Your previous draft was saved as the version "Before Night drive".')
 
 
 def test_a_file_that_is_not_a_tandem_project_is_refused(studio):

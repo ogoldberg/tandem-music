@@ -137,7 +137,7 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         # The rail (shown at desktop widths) sums up each step.
         sums = page.eval_on_selector_all("#steps .gsum", "els => els.map(e => e.textContent)")
         assert re.fullmatch(r"Recorded 0:0\d, cleaned up", sums[0]), sums
-        assert sums[1:] == [f"{notes} notes, pitch fixed", "Chords added", "1 version saved"]
+        assert sums[1:] == [f"{notes} notes, pitch fixed", "Chords and a second voice added", "1 version saved"]
 
 
 def test_helpers_turned_off_are_not_run_and_the_settings_are_kept(browser, server_url):

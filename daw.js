@@ -57,12 +57,12 @@ export function keySignature(key) {
 }
 
 // The key written into the MIDI file: the harmony key chosen in the studio ("tonic:mode"), else the
-// key detected from the melody, else from the harmony; null when none can be told.
+// key detected from the melody, else from the harmony, else from the harmony voice; null when none can be told.
 export function exportKey(project, choice) {
   const [tonic, mode] = String(choice || "").split(":");
   const t = Number(tonic);
   if (Number.isInteger(t) && t >= 0 && t < 12 && MODES.includes(mode)) return { tonic: t, mode };
-  const found = detectKey(project.notes) || detectKey(project.harmony);
+  const found = detectKey(project.notes) || detectKey(project.harmony) || detectKey(project.voice2 || []);
   return found && { tonic: found.tonic, mode: found.mode };
 }
 
