@@ -767,6 +767,14 @@ def test_pitch_module_is_served_and_precached(client):
     assert "from './pitch.js'" in run(client("GET","/capture")).text
     assert "'./pitch.js'" in run(client("GET","/sw.js")).text
 
+def test_beats_module_is_served_and_precached(client):
+    # BEAT.1: the studio imports beats.js (the starter beats) at start-up, so it is precached for offline use.
+    js=run(client("GET","/beats.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function grooveHits" in js.text
+    assert "from './beats.js'" in run(client("GET","/")).text
+    assert "'./beats.js'" in run(client("GET","/sw.js")).text
+
 def test_playhead_module_is_served_and_precached(client):
     # PLAY.1: the studio imports playhead.js (play from here and loops) at start-up, so it is precached for offline use.
     js=run(client("GET","/playhead.js"))
