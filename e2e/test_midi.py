@@ -166,8 +166,9 @@ def test_play_sends_melody_harmony_and_drums_to_the_chosen_output_and_channel(mi
     assert all(b["ts"] >= a["ts"] - 1 for a, b in zip(timed, timed[1:]))
     assert all(e["ts"] >= e["at"] - 30 for e in timed)
     # Stop silences every channel the song used, and nothing more is sent after it.
-    tail = datas[-9:]
-    for c in (2, 3, 9):
+    # HARM.1: that includes the harmony voice's channel, the one after the harmony's.
+    tail = datas[-12:]
+    for c in (2, 3, 4, 9):
         assert [0xB0 | c, 123, 0] in tail and [0xB0 | c, 120, 0] in tail
     count = len(messages)
     time.sleep(0.4)

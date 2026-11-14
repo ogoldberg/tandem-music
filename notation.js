@@ -1,4 +1,4 @@
-// Export the melody and harmony as MusicXML 4.0 for notation apps (EXP.2): MuseScore, Sibelius,
+// Export the melody, harmony and harmony voice (HARM.1) as MusicXML 4.0 for notation apps (EXP.2): MuseScore, Sibelius,
 // Finale, Dorico. The notes are snapped to a sixteenth-note grid at the project tempo, in 4/4 from
 // the start of the project (the same zero as the MIDI file and the stems), and every note or rest is
 // split into notatable lengths, tied across barlines. Notes that start together are one chord; a note
@@ -28,6 +28,7 @@ const REST_VALUES = VALUES.filter(v => !v.dot).map(v => ({ ...v, align: v.length
 const PARTS = [
   { key: "notes", name: "Melody", instrument: "instrument" },
   { key: "harmony", name: "Harmony", instrument: "harmony_instrument" },
+  { key: "voice2", name: "Harmony voice", instrument: "voice2_instrument" },
 ];
 const SHARPS = [["C", 0], ["C", 1], ["D", 0], ["D", 1], ["E", 0], ["F", 0], ["F", 1], ["G", 0], ["G", 1], ["A", 0], ["A", 1], ["B", 0]];
 const FLATS = [["C", 0], ["D", -1], ["D", 0], ["E", -1], ["E", 0], ["F", 0], ["G", -1], ["G", 0], ["A", -1], ["A", 0], ["B", -1], ["B", 0]];

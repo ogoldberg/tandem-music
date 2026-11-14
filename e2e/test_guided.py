@@ -110,6 +110,17 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         expect(page.locator("#gharmstate")).to_have_text("Not added")
         page.click("#gredo")
         expect(page.locator("#gharmstate")).to_have_text("Chords added")
+        # HARM.1: a second voice a third above the tune, beside the chords, as one edit.
+        expect(page.locator("#gvoice2state")).to_have_text("Not added")
+        page.click("#gvoice2up")
+        notes = count(page, "notecount")
+        expect(page.locator("#gvoice2state")).to_have_text(f"{notes} notes")
+        assert count(page, "voice2count") == notes and count(page, "harmonycount") > 0
+        page.click("#gundo")
+        expect(page.locator("#gvoice2state")).to_have_text("Not added")
+        expect(page.locator("#gharmstate")).to_have_text("Chords added")
+        page.click("#gredo")
+        expect(page.locator("#gvoice2state")).to_have_text(f"{notes} notes")
         expect(page.locator("#slot-chat #chatform")).to_be_visible()
 
         # Step 4: a named version, and the song as a WAV file.
@@ -126,7 +137,7 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         # The rail (shown at desktop widths) sums up each step.
         sums = page.eval_on_selector_all("#steps .gsum", "els => els.map(e => e.textContent)")
         assert re.fullmatch(r"Recorded 0:0\d, cleaned up", sums[0]), sums
-        assert sums[1:] == [f"{notes} notes, pitch fixed", "Chords added", "1 version saved"]
+        assert sums[1:] == [f"{notes} notes, pitch fixed", "Chords and a second voice added", "1 version saved"]
 
 
 def test_helpers_turned_off_are_not_run_and_the_settings_are_kept(browser, server_url):

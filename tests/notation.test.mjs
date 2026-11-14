@@ -116,6 +116,16 @@ test("the score has the key, 4/4, the tempo, a part per non-empty part and the i
   assert.ok(parts.P1[0].notes.some(n => n.step === "B" && n.alter === -1));
 });
 
+test("the harmony voice is its own part after the harmony (HARM.1)", () => {
+  const xml = musicXml({ bpm: 120, instrument: "flute", harmony_instrument: "piano", voice2_instrument: "strings",
+    notes: [{ m: 60, t: 0, d: 0.5 }], harmony: [{ m: 48, t: 0, d: 2 }], voice2: [{ m: 64, t: 0, d: 0.5 }], drums: [] });
+  assert.deepEqual([...xml.matchAll(/<part-name>([^<]+)<\/part-name>/g)].map(m => m[1]), ["Melody", "Harmony", "Harmony voice"]);
+  assert.match(xml.split('<score-part id="P3">')[1], /<midi-program>49<\/midi-program>/);
+  assert.ok(readScore(xml).P3[0].notes.some(n => n.step === "E" && n.octave === 4));
+  // A harmony voice alone is enough for a score.
+  assert.doesNotThrow(() => musicXml({ bpm: 100, notes: [], harmony: [], voice2: [{ m: 64, t: 0, d: 1 }], drums: [] }));
+});
+
 test("an unknown key writes no mode, and a part with no notes is left out", () => {
   const xml = musicXml({ bpm: 100, instrument: "piano", notes: [{ m: 60, t: 0, d: 1 }], harmony: [], drums: [] });
   assert.match(xml, /<key><fifths>0<\/fifths><\/key>/);

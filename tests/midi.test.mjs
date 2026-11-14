@@ -23,9 +23,11 @@ test("listPorts names the connected ports and leaves out disconnected ones", () 
 });
 
 test("the harmony goes on the channel after the melody's, skipping the drum channel", () => {
-  assert.deepEqual(partChannels(0), { melody: 0, harmony: 1, drums: 9 });
-  assert.deepEqual(partChannels(8), { melody: 8, harmony: 10, drums: 9 });
-  assert.deepEqual(partChannels(15), { melody: 15, harmony: 0, drums: 9 });
+  // HARM.1: the harmony voice on the channel after the harmony's.
+  assert.deepEqual(partChannels(0), { melody: 0, harmony: 1, voice2: 2, drums: 9 });
+  assert.deepEqual(partChannels(7), { melody: 7, harmony: 8, voice2: 10, drums: 9 });
+  assert.deepEqual(partChannels(8), { melody: 8, harmony: 10, voice2: 11, drums: 9 });
+  assert.deepEqual(partChannels(15), { melody: 15, harmony: 0, voice2: 1, drums: 9 });
   assert.throws(() => partChannels(DRUM_CHANNEL), /other than 10/);
   assert.throws(() => partChannels(16));
 });
@@ -117,6 +119,12 @@ test("songEvents sends each part on its channel with its General MIDI program an
   assert.equal(offs.length, ons.length);
   assert.ok(offs.some(e => e.t === DRUM_SECONDS && e.data[1] === DRUM_NOTES.kick));
   for (let i = 1; i < events.length; i++) assert.ok(events[i - 1].t <= events[i].t);
+});
+
+test("songEvents sends the harmony voice on its own channel with its program (HARM.1)", () => {
+  const events = songEvents({ ...project, harmony: [], drums: [], voice2: [{ m: 64, t: 0.25, d: 0.5 }], voice2_instrument: "organ" }, 0);
+  assert.deepEqual(events.filter(e => (e.data[0] & 0xf0) === 0xc0).map(e => e.data), [[0xc0, PROGRAMS.flute], [0xc2, PROGRAMS.organ]]);
+  assert.deepEqual(events.filter(e => e.data[0] === 0x92).map(e => [e.t, ...e.data]), [[0.25, 0x92, 64, VELOCITY.voice2]]);
 });
 
 test("at one time a repeated pitch's end is sent before its next start", () => {

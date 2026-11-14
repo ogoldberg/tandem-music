@@ -273,6 +273,14 @@ def test_chat_project_accepts_an_optional_harmony_part():
     # The harmony fields come last, so the melody and drums are sent to the model before them.
     assert list(p.model_dump())[-2:]==["harmony","harmony_instrument"]
 
+def test_chat_project_accepts_an_optional_harmony_voice():
+    # HARM.1: the harmony voice is an optional part beside the harmony, before it in the prompt.
+    assert server.ChatProject().voice2==[] and server.ChatProject().voice2_instrument=="piano"
+    p=server.ChatProject(voice2=[{"m":64,"t":0,"d":0.5}],voice2_instrument="strings",harmony=[{"m":48,"t":0,"d":1.9}])
+    assert p.voice2[0].m==64 and p.voice2_instrument=="strings"
+    keys=list(p.model_dump())
+    assert keys.index("voice2")<keys.index("harmony") and keys.index("voice2_instrument")<keys.index("harmony")
+
 def test_chat_project_accepts_an_optional_band():
     # GEN.2: the generated band is described in the project; its audio never is.
     assert server.ChatProject().band is None
@@ -471,6 +479,10 @@ def test_analyze_rejects_unknown_mode(client):
     {"harmony":[{"m":48,"t":0,"d":1,"chord":"C"}]},
     {"harmony":[{"m":48,"t":0,"d":0.5}]*1025},
     {"harmony_instrument":"kazoo"},
+    {"voice2":"E G B"},
+    {"voice2":[{"m":64,"t":0,"d":0}]},
+    {"voice2":[{"m":64,"t":0,"d":0.5}]*1025},
+    {"voice2_instrument":"kazoo"},
     {"extra_field":{"deep":"x"*100}},
 ])
 def test_malformed_chat_project_gets_422(client,monkeypatch,project):
@@ -497,12 +509,13 @@ def test_valid_browser_project_reaches_model(client,monkeypatch):
         return json.dumps({"reply":"ok","actions":[{"type":"set_tempo","bpm":120}]})
     monkeypatch.setattr(server,"invoke_llm",fake)
     project={"bpm":100,"instrument":"marimba","notes":[{"m":60,"t":0,"d":0.36}],"drums":[{"k":"kick","t":0}],"melody_locked":True,
-        "harmony":[{"m":48,"t":0,"d":1.9}],"harmony_instrument":"organ"}
+        "harmony":[{"m":48,"t":0,"d":1.9}],"harmony_instrument":"organ","voice2":[{"m":64,"t":0,"d":0.36}],"voice2_instrument":"strings"}
     r=run(client("POST","/api/chat",json={"message":"faster","project":project,
         "history":[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]}))
     assert r.status_code==200 and r.json()["actions"]==[{"type":"set_tempo","bpm":120}]
     assert '"instrument": "marimba"' in seen["content"]
     assert '"harmony_instrument": "organ"' in seen["content"]
+    assert '"voice2_instrument": "strings"' in seen["content"]
     assert seen["prior"]==[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]
 
 def test_long_message_can_be_sent_back_as_history(client,monkeypatch):

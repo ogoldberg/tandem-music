@@ -6,7 +6,7 @@ import { PROGRAMS, DRUM_NOTES, DRUM_SECONDS } from "./daw.js";
 
 export const DRUM_CHANNEL = 9;
 // The same velocities the MIDI file uses (daw.js): the harmony a little under the melody.
-export const VELOCITY = Object.freeze({ melody: 90, harmony: 70, drums: 90 });
+export const VELOCITY = Object.freeze({ melody: 90, harmony: 70, voice2: 80, drums: 90 });
 // A count-in of one 4/4 bar before recording starts.
 export const COUNT_IN_BEATS = 4;
 // Shorter notes are key bounce or a slip, not a note.
@@ -32,12 +32,13 @@ export function listPorts(map) {
 }
 
 // The channels (0-based) the song is sent on: the melody on the chosen one, the harmony on the next
-// that is not the General MIDI drum channel, the drums on channel 10.
+// that is not the General MIDI drum channel, the harmony voice (HARM.1) on the one after that, the
+// drums on channel 10.
 export function partChannels(channel) {
   if (!Number.isInteger(channel) || channel < 0 || channel > 15 || channel === DRUM_CHANNEL) throw Error("Choose a MIDI channel from 1 to 16 other than 10");
-  let harmony = (channel + 1) % 16;
-  if (harmony === DRUM_CHANNEL) harmony = (harmony + 1) % 16;
-  return { melody: channel, harmony, drums: DRUM_CHANNEL };
+  const after = c => (c + 1) % 16 === DRUM_CHANNEL ? (c + 2) % 16 : (c + 1) % 16;
+  const harmony = after(channel);
+  return { melody: channel, harmony, voice2: after(harmony), drums: DRUM_CHANNEL };
 }
 
 // What one MIDI message means for recording: a note starting or ending, or the sustain pedal.
@@ -98,7 +99,7 @@ export function addTake(melody, take) {
 export function songEvents(project, channel) {
   const ch = partChannels(channel), events = [];
   const add = (t, order, data) => events.push({ t, order, data });
-  for (const [part, key, instrument] of [["melody", "notes", "instrument"], ["harmony", "harmony", "harmony_instrument"]]) {
+  for (const [part, key, instrument] of [["melody", "notes", "instrument"], ["harmony", "harmony", "harmony_instrument"], ["voice2", "voice2", "voice2_instrument"]]) {
     const notes = (project[key] || []).filter(n => n && finite(n.m) && finite(n.t) && finite(n.d) && n.d > 0);
     if (!notes.length) continue;
     const c = ch[part], program = PROGRAMS[project[instrument]];

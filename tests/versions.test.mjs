@@ -34,6 +34,18 @@ test("projectFromState keeps the voice played as an instrument only when there i
   assert.equal("timbre" in projectFromState({ ...project(), timbre: null }), false);
 });
 
+test("projectFromState keeps the harmony voice and its instrument only when it has notes (HARM.1)", () => {
+  const voice2 = [{ m: 64, t: 0, d: 0.4 }];
+  const p = projectFromState({ ...project(), voice2, voice2_instrument: "strings" });
+  assert.deepEqual(p.voice2, voice2);
+  assert.equal(p.voice2_instrument, "strings");
+  assert.equal(projectFromState({ ...project(), voice2 }).voice2_instrument, "piano");
+  for (const empty of [[], undefined, "junk"]) {
+    const q = projectFromState({ ...project(), voice2: empty, voice2_instrument: "organ" });
+    assert.equal("voice2" in q || "voice2_instrument" in q, false);
+  }
+});
+
 test("projectFromState keeps only the portable project fields", () => {
   const p = projectFromState({ ...project(120), extra: "x", melody_locked: false });
   assert.deepEqual(p, { format: "tandem-project", version: 1, bpm: 120, instrument: "piano", melody_locked: false, notes: [{ m: 60, t: 0, d: 0.4 }], drums: [{ k: "kick", t: 0 }], harmony: [], harmony_instrument: "piano" });
