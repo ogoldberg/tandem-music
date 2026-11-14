@@ -121,10 +121,15 @@ def test_a_song_is_separated_and_transcribed_from_its_voice(page, app, tmp_path)
     expect(page.locator("#status")).to_have_text(re.compile(r"^Recorded 9\.0s\."))
     # Before separating, the server transcriber finds hardly any of the melody under the music.
     before = fx.recall(transcribe_on_server(page))
+    # CI.3: keep every message Separate shows. The download can finish before a poll for it starts
+    # (the runner fetches the 80 MB in about a second), so look for it once separation is done.
+    page.evaluate("""() => { const el = document.getElementById('separateinfo'); window.__separateInfo = [];
+      new MutationObserver(() => window.__separateInfo.push(el.textContent)).observe(el, {childList: true, characterData: true, subtree: true}); }""")
     page.click("#separate")
     expect(page.locator("#separate")).to_have_text("Cancel separation")
-    page.wait_for_function("document.getElementById('separateinfo').textContent.startsWith('Downloading')", timeout=60_000)
     expect(page.locator("#separateinfo")).to_have_text(re.compile(r"^Separated the voice from the music"), timeout=900_000)
+    shown = page.evaluate("window.__separateInfo")
+    assert any(t.startswith("Downloading") for t in shown), shown
     assert desktop["runtime"].installed_ids() == ["htdemucs"]
     expect(page.locator("#playvocal")).to_be_enabled()
     expect(page.locator("#separate")).to_be_disabled()

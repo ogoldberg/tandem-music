@@ -340,7 +340,9 @@ def test_vocal_note_targets_cover_a_three_minute_recording(studio, tmp_path):
     expect(page.locator("#detectvocal")).to_be_enabled()
 
     page.click("#detectvocal")
-    expect(page.locator("#status")).to_have_text(re.compile(r"^\d+ vocal notes ready to edit\.$"), timeout=240_000)
+    # CI.3: Basic Pitch takes about 105 s on a Mac and about 250 s on a CI runner (it was at 94-99% when
+    # a 240 s wait ran out), so wait twice that.
+    expect(page.locator("#status")).to_have_text(re.compile(r"^\d+ vocal notes ready to edit\.$"), timeout=500_000)
 
     starts = [float(t) for t in page.locator("#vocalnoteeditor .target").evaluate_all("els => els.map(e => e.dataset.t)")]
     assert len(starts) > 128, f"only {len(starts)} targets: still capped at 128"
