@@ -14,6 +14,7 @@
 // import it directly; WAV decoding of other formats is passed in.
 
 import { AUDIO_SLOTS, monoSamples } from "./recordings.js";
+import { cleanBeat, grooveHits, barsToCover } from "./beats.js";
 
 export const BUNDLE_EXT = ".tandem.zip";
 export const BUNDLE_TYPE = "application/zip";
@@ -166,9 +167,16 @@ export async function toWav(blob, decode) {
   return encodeWav(monoSamples(buffer), buffer.sampleRate);
 }
 
-// The project a captured idea starts as in the studio.
-export function ideaProject() {
-  return { format: "tandem-project", version: 1, bpm: 100, instrument: "piano", melody_locked: true, notes: [], drums: [], harmony: [], harmony_instrument: "piano" };
+// The project a captured idea starts as in the studio. An idea recorded over a starter beat (REC.3) starts at the beat's
+// tempo with the beat as its drums, from zero, for the whole bars covering the take: the beat it was sung over.
+export function ideaProject(idea = null) {
+  const p = { format: "tandem-project", version: 1, bpm: 100, instrument: "piano", melody_locked: true, notes: [], drums: [], harmony: [], harmony_instrument: "piano" };
+  const beat = cleanBeat(idea?.beat);
+  if (beat) {
+    p.bpm = beat.bpm;
+    p.drums = grooveHits(beat.id, { bpm: beat.bpm, bars: barsToCover(idea.duration, beat.bpm, 1) });
+  }
+  return p;
 }
 
 const isProject = p => !!p && typeof p === "object" && !Array.isArray(p) && Array.isArray(p.notes) && Array.isArray(p.drums)

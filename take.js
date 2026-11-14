@@ -87,3 +87,37 @@ class TandemCapture extends AudioWorkletProcessor {
 }
 registerProcessor('tandem-capture', TandemCapture);
 `;
+
+// Records `source` (the microphone's node) in `ac` through the capture worklet: each batch goes to `onBatch(t, channels)`.
+// `flush()` resolves once the worklet has posted what it holds (or after a second). The worklet is loaded once per context.
+const loaded = new WeakMap();
+export async function startCapture(ac, source, onBatch) {
+  if (!loaded.has(ac)) {
+    loaded.set(ac, (async () => {
+      const url = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: "text/javascript" }));
+      try { await ac.audioWorklet.addModule(url); } finally { URL.revokeObjectURL(url); }
+    })());
+  }
+  try { await loaded.get(ac); } catch (e) { loaded.delete(ac); throw e; }
+  const node = new AudioWorkletNode(ac, "tandem-capture");
+  let done = null;
+  node.port.onmessage = e => { if (e.data === "done") done?.(); else onBatch(e.data.t, e.data.channels); };
+  source.connect(node); node.connect(ac.destination);
+  return {
+    node,
+    flush() {
+      return new Promise(resolve => {
+        let over = false;
+        const finish = () => { if (over) return; over = true; try { source.disconnect(node); } catch {} node.disconnect(); resolve(); };
+        done = finish; setTimeout(finish, 1000); node.port.postMessage("flush");
+      });
+    },
+  };
+}
+
+// Where a take's first frame is in the context: the song's zero plus the round trip, since the voice singing along
+// with what is heard at the song's time s reaches the capture at zero + s + latency.
+export function takeStart(zero, latency = 0) {
+  if (!(Number.isFinite(latency) && latency >= 0)) throw Error("The round trip must be zero or more seconds");
+  return round6(zero + latency);
+}

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GROOVES, grooveById, grooveHits, barSeconds, barsToCover, withBeat, MAX_BARS } from "../beats.js";
+import { GROOVES, grooveById, grooveHits, barSeconds, barsToCover, withBeat, grooveWindow, MAX_BARS } from "../beats.js";
 import { quantizeProject } from "../groove.js";
 import { midiFile, DRUM_NOTES } from "../daw.js";
 
@@ -36,6 +36,8 @@ test("the beat falls where it should: the backbeat, the half-time snare, the swu
   const at = (id, k) => grooveHits(id, { bpm: 120, bars: 1 }).filter(h => h.k === k).map(h => h.t / beat);
   assert.deepEqual(at("straight", "snare"), [1, 3]);
   assert.deepEqual(at("halftime", "snare"), [2]);
+  assert.deepEqual(at("halftime", "kick"), [0, 2.5]);
+  assert.deepEqual(at("straight", "kick"), [0, 2]);
   assert.deepEqual(at("four", "kick"), [0, 1, 2, 3]);
   assert.deepEqual(at("four", "hat"), [0.5, 1.5, 2.5, 3.5]);
   const swung = at("shuffle", "hat").map(x => +(x % 1).toFixed(4));
@@ -86,4 +88,21 @@ test("bars to cover a song, and what is refused", () => {
   assert.throws(() => grooveHits("straight", { bpm: 0, bars: 4 }), /tempo/);
   assert.throws(() => grooveHits("straight", { bpm: 100, bars: 0 }), /1 to 64 bars/);
   assert.throws(() => grooveHits("straight", { bpm: 100, bars: 2.5 }), /1 to 64 bars/);
+});
+
+test("the capture page's beat: the hits due in each window, from the take's zero, none twice and none missed", () => {
+  // 100 bpm: a bar is 2.4 s. The beat starts at zero = 3.1 (the end of a count-in) and runs until stopped.
+  const zero = 3.1, bpm = 100, all = grooveHits("straight", { bpm, bars: 5, from: zero });
+  const ticks = [];
+  for (let from = 0; from < 14.99; from += 0.2) ticks.push(...grooveWindow("straight", { bpm, zero, from: Math.round(from * 10) / 10, to: Math.round((from + 0.2) * 10) / 10 }));
+  assert.deepEqual(ticks.map(h => [h.k, h.t]), all.map(h => [h.k, h.t]));
+  // Each hit also says where it is in the song (seconds from zero), the same as the drum part opened in the studio.
+  assert.deepEqual(ticks.map(h => [h.k, h.s]), grooveHits("straight", { bpm, bars: 5 }).map(h => [h.k, h.t]));
+  // Nothing before zero, and a window inside one bar.
+  assert.deepEqual(grooveWindow("four", { bpm: 120, zero: 10, from: 0, to: 10 }), []);
+  // 120 bpm, a beat is 0.5 s: from 2.4 to 3.1 s into the song are bar 2's second beat (kick and snare), the hi-hat
+  // after it and the third beat (kick).
+  assert.deepEqual(grooveWindow("four", { bpm: 120, zero: 10, from: 12.4, to: 13.1 }).map(h => [h.k, h.s]),
+    [["kick", 2.5], ["snare", 2.5], ["hat", 2.75], ["kick", 3]]);
+  assert.throws(() => grooveWindow("waltz", { bpm: 120, zero: 0, from: 0, to: 1 }), /no starter beat/);
 });

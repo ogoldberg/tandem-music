@@ -19,10 +19,11 @@ button.danger{background:#7a2530;border-color:#d9434e}.hide{display:none}
 .pitchguide{width:100%;border-radius:14px;background:#101e32;padding:8px}.pitchguide canvas{display:block;width:100%;height:130px}
 #pitchnow{text-align:center;color:#7fd3b4;font-weight:700;font-size:1.15rem;margin-top:4px;font-variant-numeric:tabular-nums}
 .guideopts{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px 14px;font-size:.9rem}.guideopts label{display:flex;align-items:center;gap:6px}.guideopts input{min-height:0;width:20px;height:20px;accent-color:#8ce6cf}
+details.takeopts{width:100%;border:1px solid #33465f;border-radius:12px;padding:6px 12px}details.takeopts summary{cursor:pointer;min-height:36px;display:flex;align-items:center;color:#8ce6cf}.optrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:8px 0;font-size:.9rem}.optrow label{display:flex;align-items:center;gap:6px}.optrow input[type=checkbox]{min-height:0;width:20px;height:20px;accent-color:#8ce6cf}#bpm{width:5.5em}
 select{font:inherit;border:1px solid #455c78;background:#263950;color:white;border-radius:10px;padding:8px 10px;min-height:44px}
 </style></head><body><main>
 <header><h1>♫ Tandem Capture</h1><a href="./">Open studio →</a></header>
-<section class="recorder" aria-label="Recorder"><button id="record" aria-pressed="false">Record</button><div id="time" aria-hidden="true"></div><div id="pitchguide" class="pitchguide hide"><canvas id="pitchstrip" aria-hidden="true"></canvas><div id="pitchnow" role="status"></div></div><div class="guideopts"><label><input type="checkbox" id="showpitch" checked> Show my pitch</label><label>Against <select id="pitchkey"></select></label></div></section>
+<section class="recorder" aria-label="Recorder"><button id="record" aria-pressed="false">Record</button><div id="time" aria-hidden="true"></div><div id="pitchguide" class="pitchguide hide"><canvas id="pitchstrip" aria-hidden="true"></canvas><div id="pitchnow" role="status"></div></div><div class="guideopts"><label><input type="checkbox" id="showpitch" checked> Show my pitch</label><label>Against <select id="pitchkey"></select></label></div><details class="takeopts" id="takeopts"><summary>Beat and count-in</summary><div class="optrow"><label>Beat <select id="beat"></select></label><label>Speed <input id="bpm" type="number" min="45" max="220" step="1" inputmode="numeric" aria-label="Speed in beats a minute"> bpm</label></div><div class="optrow"><label><input type="checkbox" id="countin"> Count in one bar first</label></div><p id="beatnote" class="muted">Use headphones with a beat: through the speaker it gets into the take. With Bluetooth headphones the phone's own microphone records you.</p><div class="optrow"><span id="latencyinfo" class="muted">Takes are lined up with the beat by the delay of your microphone and headphones.</span><button id="calibrate">Measure the delay</button></div></details></section>
 <div id="status" class="status" role="status" aria-live="polite">Opening storage…</div>
 <button id="rescue" class="hide">Download the recording that was not kept</button>
 <section aria-labelledby="ideasheading"><h2 id="ideasheading" style="font-size:1.05rem">Your ideas <small id="count"></small></h2><ul id="ideas"></ul></section>
@@ -35,35 +36,75 @@ import {openKV,persistence,PERSISTENCE_TEXT} from './storage.js';
 import {openRecordings} from './recordings.js';
 import {createVersionStore} from './versions.js';
 import {createIdeaStore,ideaTitle,formatDuration} from './ideas.js';
-import {writeBundle,toWav,ideaProject,bundleFileName,BUNDLE_TYPE} from './bundle.js';
+import {writeBundle,toWav,encodeWav,ideaProject,bundleFileName,BUNDLE_TYPE} from './bundle.js';
+import {monoSamples} from './recordings.js';
+import {countIn,clickTimes,createTakeCollector,startCapture,takeStart} from './take.js';
+import {takeLatency,saveLatency,latencyText,deviceKeyFor,browserEstimate,measureLatency} from './latency.js';
+import {GROOVES,grooveById,grooveWindow,cleanBeat,MIN_BPM,MAX_BPM} from './beats.js';
+import {createSampleBank,playDrumSample,loadWithin} from './samples.js';
+import {synthDrum} from './voices.js';
 import {startPitchGuide,guideReading,hzToMidi,drawPitchStrip} from './pitch.js';
 import {KEY_NAMES,scalePitchClasses} from './contour.js';
 const $=id=>document.getElementById(id);
-let kv=null,recordings=null,ideas=null,recorder=null,mic=null,chunks=[],startedAt=0,ticker=null,unsaved=null,player=null,playingId=null,askedToPersist=false;
+let kv=null,recordings=null,ideas=null,take=null,starting=false,ticker=null,unsaved=null,player=null,playingId=null,askedToPersist=false;
 // Whether the browser promised to keep this site's storage. Asked for once per visit, when an idea is
 // first kept (browsers grant it more readily once the site holds something, and some ask the user).
 const showPersistence=(request=false)=>persistence(navigator.storage,{request}).then(s=>{$('storageinfo').textContent=PERSISTENCE_TEXT[s]},()=>{});
 const status=s=>{$('status').textContent=s};
 const when=ms=>new Date(ms).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-const elapsed=()=>(performance.now()-startedAt)/1000;
 
 function setRecording(on){
   $('record').setAttribute('aria-pressed',String(on));$('record').textContent=on?'Stop':'Record';
   $('record').setAttribute('aria-label',on?'Stop and keep the idea':'Record an idea');
   clearInterval(ticker);ticker=null;
-  if(on){const show=()=>{$('time').textContent=formatDuration(elapsed())};show();ticker=setInterval(show,250)}else $('time').textContent='';
+  if(on){const show=()=>{const t=take;if(!t)return;const now=t.rc.currentTime;$('time').textContent=now<t.start?'':formatDuration(now-t.start)};show();ticker=setInterval(show,250)}else $('time').textContent='';
 }
+// REC.3: a take is captured by take.js's worklet in an AudioContext of its own (a WAV of exactly the frames from the take's
+// start to Stop), after an optional one-bar count-in on a click, over an optional starter beat (beats.js) that plays from
+// the take's zero until Stop. When something is heard (the count-in or the beat) the take is moved earlier by the round
+// trip (latency.js), so the beat kept with the idea lines up with the voice. The choices are kept under tandem-capture-take.
+const TAKE_KEY='tandem-capture-take';
+let sampleDecoder=null;const samples=createSampleBank({fetchBytes:async u=>{const r=await fetch(u);if(!r.ok)throw Error('HTTP '+r.status+' for '+u);return r.arrayBuffer()},decode:b=>(sampleDecoder||=new OfflineAudioContext(1,1,22050)).decodeAudioData(b)});
+const drum=(ac,k,t)=>{if(!playDrumSample(ac,samples,k,t))synthDrum(ac,k,t)};
+function clickAt(ac,t,accent){if(t<ac.currentTime)return;const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=accent?1600:1000;g.gain.setValueAtTime(.18,t);g.gain.exponentialRampToValueAtTime(.001,t+.05);o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+.06)}
+const latencyStore={getItem:k=>{try{return localStorage.getItem(k)}catch{return null}},setItem:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
+function showLatency(l){$('latencyinfo').textContent=latencyText(l);$('latencyinfo').dataset.ms=String(Math.round(l.seconds*1000));$('latencyinfo').dataset.measured=String(l.measured)}
+$('beat').replaceChildren(new Option('None',''),...GROOVES.map(g=>new Option(g.name,g.id)));
+function takePrefs(){try{const p=JSON.parse(localStorage.getItem(TAKE_KEY)||'{}');return{beat:GROOVES.some(g=>g.id===p.beat)?p.beat:'',bpm:Number(p.bpm)>=MIN_BPM&&Number(p.bpm)<=MAX_BPM?Number(p.bpm):100,countIn:p.countIn===true}}catch{return{beat:'',bpm:100,countIn:false}}}
+function saveTakePrefs(){try{localStorage.setItem(TAKE_KEY,JSON.stringify({beat:$('beat').value,bpm:tempo(),countIn:$('countin').checked}))}catch{}}
+function tempo(){const v=Math.round(Number($('bpm').value));return v>=MIN_BPM&&v<=MAX_BPM?v:null}
+function showBeat(){const id=$('beat').value;$('beatnote').classList.toggle('hide',!id);if(id)samples.load(['drums'])}
+{const p=takePrefs();$('beat').value=p.beat;$('bpm').value=p.bpm;$('countin').checked=p.countIn;if(p.beat||p.countIn)$('takeopts').open=true;showBeat()}
+$('beat').onchange=()=>{saveTakePrefs();showBeat()};$('countin').onchange=saveTakePrefs;$('bpm').onchange=()=>{if(tempo())saveTakePrefs()};
 async function start(){
-  if(!ideas||!recordings)return;
-  stopPlayback();
-  try{mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}})}
-  catch(e){status('The microphone is not available: '+e.message);return}
-  chunks=[];recorder=new MediaRecorder(mic);
-  recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-  recorder.onstop=()=>keep(recorder.mimeType);
-  // Ask for the audio every second, so a take cut short (the phone locks, another app comes up) still has its data.
-  recorder.start(1000);startedAt=performance.now();setRecording(true);status('Recording… tap Stop when the idea is down.');
-  if($('showpitch').checked)await startGuide(mic);
+  if(!ideas||!recordings||take||starting)return;
+  const bpm=tempo();if(!bpm){status('Set a speed from '+MIN_BPM+' to '+MAX_BPM+' beats a minute.');return}
+  const beat=$('beat').value?cleanBeat({id:$('beat').value,bpm}):null;
+  starting=true;stopPlayback();let stream=null,rc=null;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}})}
+  catch(e){starting=false;status('The microphone is not available: '+e.message);return}
+  try{
+    rc=new AudioContext();await rc.resume();
+    if(beat){status('Loading the drums…');await loadWithin(samples,['drums'],3000)}
+    const key=await deviceKeyFor(rc,stream,navigator.mediaDevices),lat=takeLatency(latencyStore,key,browserEstimate(rc,stream));showLatency(lat);
+    const mic=rc.createMediaStreamSource(stream);let collector=null;const capture=await startCapture(rc,mic,(at,ch)=>collector?.add(at,ch));
+    const c=countIn(bpm,rc.currentTime+.1,{on:$('countin').checked}),heard=!!beat||c.beats>0,startAt=takeStart(c.zero,heard?lat.seconds:0);
+    collector=createTakeCollector({zero:startAt,rate:rc.sampleRate});
+    take={rc,stream,capture,collector,c,start:startAt,latency:heard?lat.seconds:0,beat,next:0,shown:0,counting:null};
+    tick(take);take.ticker=setInterval(()=>tick(take),25);setRecording(true);
+    $('record').dataset.take=JSON.stringify({zero:c.zero,start:startAt,latency:take.latency,beat,lead:c.lead});
+    if($('showpitch').checked)await startGuide(rc,mic);
+  }catch(e){if(take?.rc===rc){clearInterval(take.ticker);take=null;setRecording(false)}stream.getTracks().forEach(x=>x.stop());rc?.close().catch(()=>{});status('Could not start recording: '+e.message)}
+  finally{starting=false}
+}
+// Every 25 ms: the count-in's clicks and the beat's hits due in the next 0.2 s, and the status line.
+function tick(t){
+  if(take!==t)return;const now=t.rc.currentTime,to=now+.2;
+  for(const k of clickTimes(t.c,{from:t.next,to,click:false}))clickAt(t.rc,k.t,k.accent);
+  if(t.beat)for(const h of grooveWindow(t.beat.id,{bpm:t.beat.bpm,zero:t.c.zero,from:t.next,to}))if(h.t>=now)drum(t.rc,h.k,h.t);
+  t.next=to;const counting=now<t.c.zero;
+  if(counting){const n=Math.min(t.c.beats,Math.max(1,Math.floor((now-(t.c.zero-t.c.lead))/t.c.beat)+1));if(n!==t.shown){t.shown=n;status('Count-in: '+n+' of '+t.c.beats)}}
+  if(counting!==t.counting){t.counting=counting;if(!counting)status(t.beat?'Recording over '+grooveById(t.beat.id).name+' at '+t.beat.bpm+' bpm… tap Stop when the idea is down.':'Recording… tap Stop when the idea is down.')}
 }
 // SING.1: the live pitch guide (pitch.js). While recording, the microphone's pitch is tracked on the device and drawn as a
 // moving line against the nearest note of the chosen key, with how many cents sharp or flat. It only shows: the take is
@@ -76,12 +117,12 @@ $('pitchkey').replaceChildren(new Option('Any note','any'),...['major','minor'].
 {const p=pitchPrefs();$('showpitch').checked=p.show;$('pitchkey').value=[...$('pitchkey').options].some(o=>o.value===p.key)?p.key:'any'}
 $('showpitch').onchange=savePitchPrefs;$('pitchkey').onchange=()=>{savePitchPrefs();if(guide)guide.pcs=keyPcs()};
 function keyPcs(){const v=$('pitchkey').value;if(v==='any')return null;const [tonic,mode]=v.split(':');return scalePitchClasses(Number(tonic),mode)}
-async function startGuide(stream){
-  const g={points:[],count:0,from:null,to:null,last:null,frame:0,pcs:keyPcs(),ac:null,run:null};guide=g;
-  try{g.ac=new AudioContext();await g.ac.resume();const t0=g.ac.currentTime;
-    g.run=await startPitchGuide(g.ac,g.ac.createMediaStreamSource(stream),rs=>{if(guide!==g)return;for(const r of rs){const t=r.t-t0;g.points.push({t,m:r.hz?hzToMidi(r.hz):null});g.count++;if(g.points.length>1200)g.points.splice(0,600);if(g.from===null)g.from=t;g.to=t;g.last=r.hz?r.hz:null}if(!g.frame)g.frame=requestAnimationFrame(()=>{g.frame=0;if(guide===g)drawGuide(g)})})}
+async function startGuide(ac,source){
+  const g={points:[],count:0,from:null,to:null,last:null,frame:0,pcs:keyPcs(),run:null};guide=g;
+  try{const t0=ac.currentTime;
+    g.run=await startPitchGuide(ac,source,rs=>{if(guide!==g)return;for(const r of rs){const t=r.t-t0;g.points.push({t,m:r.hz?hzToMidi(r.hz):null});g.count++;if(g.points.length>1200)g.points.splice(0,600);if(g.from===null)g.from=t;g.to=t;g.last=r.hz?r.hz:null}if(!g.frame)g.frame=requestAnimationFrame(()=>{g.frame=0;if(guide===g)drawGuide(g)})})}
   catch(e){stopGuide();status('Recording, without the pitch guide: '+e.message);return}
-  if(guide!==g){g.run?.stop();g.ac?.close();return}
+  if(guide!==g){g.run?.stop();return}
   $('pitchnow').textContent='Sing to see your pitch';$('pitchguide').classList.remove('hide');
 }
 function drawGuide(g){
@@ -92,17 +133,22 @@ function drawGuide(g){
   if(cv.width!==Math.round(w*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
   const cx=cv.getContext('2d');cx.setTransform(dpr,0,0,dpr,0,0);drawPitchStrip(cx,{width:w,height:h,readings:g.points,now:g.to,reading});
 }
-function stopGuide(){const g=guide;guide=null;if(!g)return;cancelAnimationFrame(g.frame);g.run?.stop();g.ac?.close().catch(()=>{});$('pitchguide').classList.add('hide');const now=$('pitchnow');now.textContent='';for(const k of ['hz','cents','target','count','from','to'])delete now.dataset[k]}
-function stop(){if(recorder?.state==='recording')recorder.stop()}
-async function keep(type){
-  const duration=elapsed();stopGuide();mic?.getTracks().forEach(t=>t.stop());mic=null;setRecording(false);
-  const blob=new Blob(chunks,{type:type||chunks[0]?.type||''});chunks=[];
-  if(!blob.size){status('Nothing was recorded. Check the microphone and try again.');return}
+function stopGuide(){const g=guide;guide=null;if(!g)return;cancelAnimationFrame(g.frame);g.run?.stop();$('pitchguide').classList.add('hide');const now=$('pitchnow');now.textContent='';for(const k of ['hz','cents','target','count','from','to'])delete now.dataset[k]}
+async function stop(){
+  const t=take;if(!t)return;take=null;clearInterval(t.ticker);const end=t.rc.currentTime;stopGuide();setRecording(false);
+  await t.capture.flush();t.stream.getTracks().forEach(x=>x.stop());t.rc.close().catch(()=>{});
+  const {channels,frames,rate}=t.collector.finish(end);
+  $('record').dataset.take=JSON.stringify({zero:t.c.zero,start:t.start,latency:t.latency,beat:t.beat,lead:t.c.lead,end,rate,frames});
+  if(!frames){status(end<t.start?'Stopped during the count-in: nothing was kept.':'Nothing was recorded. Check the microphone and try again.');return}
+  const wav=encodeWav(monoSamples({numberOfChannels:channels.length,length:frames,getChannelData:i=>channels[i]}),rate);
+  await keep(new Blob([wav],{type:'audio/wav'}),frames/rate,t.beat);
+}
+async function keep(blob,duration,beat){
   status('Keeping the idea…');
   try{
-    await recordings.hold(async()=>ideas.add({duration,audio:await recordings.put(blob)}));
+    await recordings.hold(async()=>ideas.add({duration,audio:await recordings.put(blob),beat}));
     unsaved=null;$('rescue').classList.add('hide');
-    status('Kept a '+formatDuration(duration)+' idea on this device.');
+    status('Kept a '+formatDuration(duration)+' idea on this device'+(beat?', over '+grooveById(beat.id).name+' at '+beat.bpm+' bpm.':'.'));
     if(!askedToPersist){askedToPersist=true;showPersistence(true)}
   }catch(e){
     // Never lose a take silently: offer it as a download instead.
@@ -111,10 +157,21 @@ async function keep(type){
   }
   await render();
 }
-$('record').onclick=()=>recorder?.state==='recording'?stop():start();
+$('record').onclick=()=>{if(take)stop().catch(e=>status('Recording failed: '+e.message));else start()};
 // A web app on a phone loses the microphone when it leaves the screen: end the take there and keep it.
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&recorder?.state==='recording'){stop();status('Recording stopped when Tandem left the screen.')}});
-$('rescue').onclick=()=>{if(!unsaved)return;const ext=/mp4|aac/.test(unsaved.type)?'m4a':/ogg/.test(unsaved.type)?'ogg':'webm';const u=URL.createObjectURL(unsaved),a=document.createElement('a');a.href=u;a.download='tandem-idea.'+ext;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&take){stop().then(()=>{if(!unsaved)status($('status').textContent+' Recording stopped when Tandem left the screen.')},e=>status('Recording failed: '+e.message))}});
+// REC.3: measure the round trip for this microphone and output: six clicks played and recorded back (latency.js).
+let calibrating=false;
+$('calibrate').onclick=async()=>{
+  if(take||starting||calibrating)return;calibrating=true;$('calibrate').disabled=true;$('record').disabled=true;stopPlayback();let rc=null,stream=null;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});rc=new AudioContext();await rc.resume();
+    const key=await deviceKeyFor(rc,stream,navigator.mediaDevices);status('Measuring the delay: six clicks. Keep quiet; with headphones, hold them to the microphone.');
+    const r=await measureLatency(rc,rc.createMediaStreamSource(stream));saveLatency(latencyStore,key,r.seconds);showLatency({seconds:r.seconds,measured:true});
+    status('Measured the delay: '+Math.round(r.seconds*1000)+' ms ('+r.heard+' of '+r.of+' clicks heard).')}
+  catch(e){status('Could not measure the delay: '+e.message)}
+  finally{stream?.getTracks().forEach(x=>x.stop());rc?.close().catch(()=>{});calibrating=false;$('calibrate').disabled=false;$('record').disabled=!ideas||!recordings}
+};
+$('rescue').onclick=()=>{if(!unsaved)return;const ext=/wav/.test(unsaved.type)?'wav':/mp4|aac/.test(unsaved.type)?'m4a':/ogg/.test(unsaved.type)?'ogg':'webm';const u=URL.createObjectURL(unsaved),a=document.createElement('a');a.href=u;a.download='tandem-idea.'+ext;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
 
 function stopPlayback(){if(player){player.pause();URL.revokeObjectURL(player.src);player=null}const was=playingId;playingId=null;if(was)for(const b of document.querySelectorAll('.idea .play'))b.textContent='Play'}
 async function play(idea,button){
@@ -144,7 +201,7 @@ async function share(idea,button){
   try{
     const entry=await ideas.get(idea.id),blob=entry&&await recordings.get(entry.audio);
     if(!blob){status('The recording of this idea is no longer on this device.');return}
-    const bytes=writeBundle({name:idea.name,savedAt:idea.savedAt,project:ideaProject(),recordings:{original:await toWav(blob,decodeAudio)}});
+    const bytes=writeBundle({name:idea.name,savedAt:idea.savedAt,project:ideaProject(entry),recordings:{original:await toWav(blob,decodeAudio)}});
     file=new File([bytes],bundleFileName(title),{type:BUNDLE_TYPE});
   }catch(e){status('Could not prepare the idea for sharing: '+e.message);return}
   await send(file,title,button,idea.id,false);
@@ -179,7 +236,7 @@ async function collect(){
 function row(idea){
   const li=document.createElement('li');li.className='idea';li.dataset.id=idea.id;
   const title=document.createElement('div');title.className='title';title.textContent=ideaTitle(idea,when);
-  const meta=document.createElement('small');meta.textContent=formatDuration(idea.duration)+(idea.name?' · '+when(idea.savedAt):'');
+  const meta=document.createElement('small');meta.textContent=formatDuration(idea.duration)+(idea.name?' · '+when(idea.savedAt):'')+(idea.beat?' · over '+grooveById(idea.beat.id).name+' at '+idea.beat.bpm+' bpm':'');
   const actions=document.createElement('div');actions.className='actions';
   const playB=document.createElement('button');playB.className='play';playB.textContent=playingId===idea.id?'Stop':'Play';playB.onclick=()=>play(idea,playB);
   const renameB=document.createElement('button');renameB.textContent='Rename';renameB.onclick=()=>renameForm(idea,li);

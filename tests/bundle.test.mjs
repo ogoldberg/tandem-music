@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { grooveHits } from "../beats.js";
 import {
   crc32, zipFiles, unzipFiles, inflateWithin, encodeWav, isWav, toWav, writeBundle, readBundle, isBundle,
   bundleFileName, ideaProject, BUNDLE_FILES, MAX_BUNDLE_BYTES,
@@ -208,4 +209,17 @@ test("an idea's project is empty, at 100 bpm on piano, with the melody protected
     format: "tandem-project", version: 1, bpm: 100, instrument: "piano", melody_locked: true,
     notes: [], drums: [], harmony: [], harmony_instrument: "piano",
   });
+});
+
+test("REC.3: an idea recorded over a starter beat opens at the beat's tempo with the beat as its drums, covering the take", () => {
+  // 120 bpm: a bar is 2 s, so a 5.1 s take is covered by 3 bars.
+  const p = ideaProject({ duration: 5.1, beat: { id: "four", bpm: 120 } });
+  assert.equal(p.bpm, 120);
+  assert.deepEqual(p.drums, grooveHits("four", { bpm: 120, bars: 3 }));
+  assert.deepEqual(p.notes, []);
+  // A take shorter than a bar still gets the bar.
+  assert.deepEqual(ideaProject({ duration: 0.4, beat: { id: "straight", bpm: 100 } }).drums, grooveHits("straight", { bpm: 100, bars: 1 }));
+  // An idea without a beat, or with one this version does not know, is the plain idea project.
+  assert.deepEqual(ideaProject({ duration: 5 }), ideaProject());
+  assert.deepEqual(ideaProject({ duration: 5, beat: { id: "polka", bpm: 120 } }), ideaProject());
 });

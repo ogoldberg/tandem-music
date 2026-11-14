@@ -2,6 +2,9 @@
 and the click (during the count-in, and while recording when asked) is never in the take. Chromium's fake microphone
 (a beeping tone) is the input."""
 import json
+import os
+import tempfile
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
@@ -22,6 +25,7 @@ CLICK_LOG = """(() => {
 })()"""
 
 ACCENT, CLICK = 1600, 1000
+SHOTS = Path(os.environ.get("TANDEM_E2E_SHOTS") or tempfile.gettempdir())
 
 
 @pytest.fixture
@@ -67,8 +71,11 @@ def test_one_bar_count_in_then_the_take_starts_at_its_end(rec):
     assert [c["f"] for c in cs] == [ACCENT, CLICK, CLICK, CLICK]
     zero = info["zero"]
     assert [round(c["t"] - zero, 4) for c in cs] == [-2.4, -1.8, -1.2, -0.6]
-    # The take is exactly the frames from the count-in's end to Stop, so its zero is the end of the count-in.
-    assert abs(info["frames"] - (info["end"] - zero) * info["rate"]) <= 1
+    # The take is exactly the frames from the count-in's end to Stop, so its zero is the end of the count-in; REC.3: moved
+    # later by the round trip (here the browser's estimate), the delay before a voice singing along reaches the capture.
+    assert info["measured"] is False and 0 <= info["latency"] < 0.5
+    assert info["start"] == pytest.approx(zero + info["latency"], abs=1e-6)
+    assert abs(info["frames"] - (info["end"] - info["start"]) * info["rate"]) <= 1
     expect(page.locator("#status")).to_contain_text("Recorded")
     seconds = page.evaluate("""async () => { const r = await (await navigator.storage.getDirectory()).getDirectoryHandle('recordings');
       let newest = null; for await (const e of r.values()) { const f = await e.getFile(); if (!newest || f.lastModified >= newest.lastModified) newest = f; }
@@ -155,3 +162,100 @@ def test_the_click_is_not_in_the_take(rec):
     take = stored_take_peak(page)
     assert take["seconds"] == pytest.approx(info["frames"] / info["rate"], abs=0.002) and take["seconds"] > 1
     assert take["peak"] < 1e-4
+
+
+# REC.3: every sound started, with its context, kind and time: buffer sources (the drum samples and recorded parts) and
+# oscillators (the click and the oscillator drums), so what the take's context played under the take can be read back.
+SOUND_LOG = """(() => {
+  window.__sounds = [];
+  const ids = new WeakMap(); let next = 0;
+  const id = c => { if (!ids.has(c)) ids.set(c, ++next); return ids.get(c); };
+  for (const [cls, kind] of [[AudioBufferSourceNode, 'buffer'], [OscillatorNode, 'osc']]) {
+    const start = cls.prototype.start;
+    cls.prototype.start = function (when) {
+      window.__sounds.push({ ctx: id(this.context), kind, f: kind === 'osc' ? this.frequency.value : null, t: when ?? 0 });
+      return start.apply(this, arguments);
+    };
+  }
+})()"""
+
+# Keeps a measured round trip for the microphone and output the page will record with, through latency.js itself.
+SET_LATENCY = """async seconds => {
+  const { deviceKeyFor, saveLatency } = await import('/latency.js');
+  const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } });
+  const ac = new AudioContext(), key = await deviceKeyFor(ac, s, navigator.mediaDevices);
+  saveLatency(localStorage, key, seconds); s.getTracks().forEach(t => t.stop()); await ac.close(); return key;
+}"""
+
+DRUM_OSC = (140, 210, 1200)
+
+
+def take_sounds(page, info):
+    """The drum sounds the take's context started, as song times (seconds from the take's zero)."""
+    sounds = page.evaluate("window.__sounds")
+    ctx = next(s["ctx"] for s in sounds if s["kind"] == "osc" and s["f"] in (ACCENT, CLICK))
+    return sorted(round(s["t"] - info["zero"], 3) for s in sounds
+                  if s["ctx"] == ctx and (s["kind"] == "buffer" or s["f"] in DRUM_OSC))
+
+
+def test_the_song_plays_from_the_takes_zero_and_the_take_is_moved_by_the_measured_round_trip(studio):
+    page = studio
+    page.add_init_script(SOUND_LOG)
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    page.evaluate(SET_LATENCY, 0.25)
+    page.fill("#bpm", "120")
+    page.dispatch_event("#bpm", "change")
+    page.select_option("#groove", "four")
+    page.select_option("#groovebars", "4")
+    page.click("#addgroove")
+    expect(page.locator("#hitcount")).to_have_text("40 hits")
+    drums = page.evaluate("() => [...document.querySelectorAll('#drumroll .hit')].map(e => e.title)")
+    want = sorted(round(float(x.split(" ")[2].rstrip("s")), 3) for x in drums)
+    expect(page.locator("#recsong")).to_be_checked()
+    expect(page.locator("#recnote")).to_contain_text("Use headphones")
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording…", timeout=10000)
+    page.wait_for_timeout(1500)
+    page.click("#finish")
+    info = take_info(page)
+    # The song played in the take's own context, from the take's zero (the end of the count-in): every drum hit at its time.
+    assert info["song"] is True and info["lead"] == 2.0
+    assert take_sounds(page, info) == want
+    # The take is moved by the measured round trip: its first frame is the one captured 0.25 s after the song's zero.
+    assert info["measured"] is True and info["latency"] == 0.25
+    assert info["start"] == pytest.approx(info["zero"] + 0.25, abs=1e-6)
+    assert abs(info["frames"] - (info["end"] - info["start"]) * info["rate"]) <= 1
+    expect(page.locator("#latencyinfo")).to_have_attribute("data-ms", "250")
+    expect(page.locator("#latencyinfo")).to_contain_text("250 ms earlier to line up (measured)")
+    page.locator("#recnote").scroll_into_view_if_needed()
+    page.screenshot(path=str(SHOTS / "studio-record-over.png"))
+
+
+def test_without_the_song_or_anything_heard_the_take_is_not_moved(studio):
+    page = studio
+    page.add_init_script(SOUND_LOG)
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    page.evaluate(SET_LATENCY, 0.25)
+    page.select_option("#groove", "straight")
+    page.click("#addgroove")
+    page.uncheck("#recsong")
+    page.check("#countin")
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording…", timeout=10000)
+    page.wait_for_timeout(500)
+    page.click("#finish")
+    info = take_info(page)
+    # The song did not play (only the count-in's clicks), and the take sung to the count-in is still moved.
+    assert info["song"] is False and take_sounds(page, info) == []
+    assert info["latency"] == 0.25
+    # Nothing heard at all (no count-in, no click, no song): the take is not moved.
+    page.uncheck("#countin")
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording…", timeout=10000)
+    page.wait_for_timeout(800)
+    page.click("#finish")
+    wait_until(page, "async () => JSON.parse(document.getElementById('finish').dataset.take || '{}').lead === 0", "the second take")
+    info = take_info(page)
+    assert info["latency"] == 0 and info["start"] == info["zero"]

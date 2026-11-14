@@ -112,3 +112,22 @@ test("formatDuration shows minutes and seconds", () => {
   assert.equal(formatDuration(3600), "60:00");
   assert.equal(formatDuration(NaN), "0:00");
 });
+
+test("REC.3: an idea recorded over a starter beat keeps the beat and its tempo; a rename keeps it too", async () => {
+  const kv = memoryKV(), ideas = createIdeaStore(kv, { now: clock() });
+  const plain = await ideas.add({ duration: 4, audio: link("a") });
+  const over = await ideas.add({ duration: 6.5, audio: link("b"), beat: { id: "shuffle", bpm: 96, extra: 1 } });
+  assert.deepEqual(over.beat, { id: "shuffle", bpm: 96 });
+  assert.equal("beat" in plain, false);
+  assert.deepEqual((await ideas.get(over.id)).beat, { id: "shuffle", bpm: 96 });
+  assert.equal("beat" in (await ideas.get(plain.id)), false);
+  assert.deepEqual((await ideas.list()).map(i => i.beat ?? null), [{ id: "shuffle", bpm: 96 }, null]);
+  await ideas.rename(over.id, "Swing");
+  assert.deepEqual((await ideas.get(over.id)).beat, { id: "shuffle", bpm: 96 });
+  for (const beat of [{ id: "waltz", bpm: 96 }, { id: "four", bpm: 300 }, { id: "four", bpm: "fast" }, "four"]) {
+    await assert.rejects(ideas.add({ duration: 1, audio: link("c"), beat }), /not a starter beat/);
+  }
+  // A stored beat this version does not know is left out of what the idea reports, and the idea still opens.
+  await kv.update(IDEAS_KEY, v => [v.map(e => (e.id === over.id ? { ...e, beat: { id: "polka", bpm: 120 } } : e)), true]);
+  assert.equal("beat" in (await ideas.get(over.id)), false);
+});
