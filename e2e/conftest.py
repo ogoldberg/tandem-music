@@ -71,6 +71,51 @@ def context(context):
     return context
 
 
+# UI.2: the studio's side panel shows the settings of one part at a time, picked by its track lane (or step). A person
+# picks the track before using its controls; the tests do the same: before a click, fill, check or similar on a control
+# in a hidden part panel, the lane (or step) of that part is clicked, as a person would. Nothing else changes.
+REVEAL = """els => { for (const el of els) {
+  const panel = el.closest && el.closest('#partpanel [data-panel-part]');
+  if (!panel || !panel.hidden) continue;
+  const part = panel.dataset.panelPart;
+  const pick = document.querySelector('#lanes .lanehead[data-part="' + part + '"]') || document.querySelector('#rail .railstep[data-part="' + part + '"]');
+  if (pick) pick.click();
+} }"""
+ACTIONS = ["click", "dblclick", "tap", "fill", "type", "press", "press_sequentially", "check", "uncheck", "set_checked",
+           "select_option", "hover", "focus", "clear", "select_text", "scroll_into_view_if_needed"]
+
+
+def show_part(page, part):
+    """Pick a part's track lane (or step) in the studio, so its settings show in the side panel."""
+    page.click(f'#allcontrols [data-part="{part}"] >> nth=0')
+
+
+def _reveal_first():
+    from playwright.sync_api import Locator, Page
+
+    def wrap(cls, name, reveal):
+        original = getattr(cls, name, None)
+        if original is None or getattr(original, "_reveals", False):
+            return
+
+        def action(self, *args, **kwargs):
+            try:
+                reveal(self, *args)
+            except Exception:  # noqa: BLE001 - a selector the page cannot read yet: the action itself reports it
+                pass
+            return original(self, *args, **kwargs)
+
+        action._reveals = True
+        setattr(cls, name, action)
+
+    for name in ACTIONS:
+        wrap(Page, name, lambda page, selector=None, *_: page.eval_on_selector_all(selector, REVEAL) if selector else None)
+        wrap(Locator, name, lambda locator, *_: locator.evaluate_all(REVEAL))
+
+
+_reveal_first()
+
+
 @pytest.fixture(scope="session")
 def server_url(tmp_path_factory):
     # Server output goes to a file: an unread pipe would block uvicorn once it filled.

@@ -18,6 +18,7 @@ import zipfile
 import numpy as np
 import pytest
 from playwright.sync_api import expect
+from conftest import show_part
 
 import tandem_desktop as desk
 from tandem_desktop import band, models
@@ -120,13 +121,17 @@ def played(page):
 
 
 def test_the_band_is_offered_only_in_the_mac_app(studio):
+    show_part(studio, "band")
+    expect(studio.locator("#bandnote")).to_be_visible()
     expect(studio.locator("#bandtrack")).to_be_hidden()
 
 
 def test_a_band_follows_the_melody_and_is_kept_played_undone_and_exported(page, app):
     desktop = app()
     problems = open_app(page, desktop)
+    show_part(page, "band")
     expect(page.locator("#bandtrack")).to_be_visible()
+    expect(page.locator("#bandnote")).to_be_hidden()
     expect(page.locator("#playbandtrack")).to_be_disabled()
     page.click("#demo")
     page.fill("#bandstyle", "")
