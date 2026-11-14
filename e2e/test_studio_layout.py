@@ -4,7 +4,7 @@ The example project is 8 melody notes on the marimba and 16 drum hits at 100 bea
 """
 from playwright.sync_api import expect
 
-from test_studio import IDB_GET
+from test_studio import IDB_GET, wait_until
 
 # A control of each part that must be in its side panel, and the panel the step buttons show.
 PART_CONTROLS = {
@@ -118,7 +118,7 @@ def test_the_song_name_is_kept_and_names_a_version_saved_without_a_name(studio):
     page.fill("#songname", "Morning hum")
     page.press("#songname", "Tab")
     # The name is written to IndexedDB after the change event: reload only once it is stored.
-    page.wait_for_function("async () => (await (" + IDB_GET + ")('song-name')) === 'Morning hum'")
+    wait_until(page, "async () => (await (" + IDB_GET + ")('song-name')) === 'Morning hum'", "the song name is stored")
     page.reload()
     page.wait_for_function("!document.body.inert")
     expect(page.locator("#songname")).to_have_value("Morning hum")
