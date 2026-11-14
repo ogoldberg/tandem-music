@@ -1179,9 +1179,18 @@ def draft_audio(page):
 
 
 def wait_for_draft_audio(page, slots):
-    page.wait_for_function(f"""async () => {{ const v = await ({IDB_GET})('draft-audio');
-        return !!v && {json.dumps(sorted(slots))}.every(s => v[s]) && Object.keys(v).length === {len(slots)}; }}""")
-    return draft_audio(page)
+    """Polls inside the page. CI.3: wait_for_function passes at once on an async predicate (its
+    Promise is truthy), so the draft was read before the recording's link was saved."""
+    got = page.evaluate(f"""async () => {{
+      for (let i = 0; i < 100; i++) {{
+        const v = await ({IDB_GET})('draft-audio');
+        if (v && {json.dumps(sorted(slots))}.every(s => v[s]) && Object.keys(v).length === {len(slots)}) return v;
+        await new Promise(r => setTimeout(r, 100));
+      }}
+      return null;
+    }}""")
+    assert got is not None, f"the draft never linked exactly {slots}: {draft_audio(page)}"
+    return got
 
 
 def import_recording(page, path):

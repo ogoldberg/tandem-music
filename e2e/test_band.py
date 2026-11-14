@@ -178,7 +178,14 @@ def test_a_band_follows_the_melody_and_is_kept_played_undone_and_exported(page, 
     page.click("#undo")
     expect(page.locator("#playbandtrack")).to_be_disabled()
     assert draft(page)["band"] is None
-    page.wait_for_function("async () => !(await (" + IDB_GET + ")('draft-audio'))?.band")
+    # CI.3: poll inside the page; wait_for_function passes at once on an async predicate.
+    assert page.evaluate("""async () => {
+      for (let i = 0; i < 100; i++) {
+        if (!(await (""" + IDB_GET + """)('draft-audio'))?.band) return true;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return false;
+    }"""), "the band's link stayed in the draft after Undo"
     page.click("#redo")
     expect(page.locator("#playbandtrack")).to_be_enabled()
     wait_for_draft_audio(page, ["band"])
