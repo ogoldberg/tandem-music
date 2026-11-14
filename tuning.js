@@ -164,3 +164,55 @@ export async function tuneInChunks(samples, sampleRate, { strength, notes, send,
   }
   return { samples: stitchChunks(outputs, plan, samples.length, chooseSeams(samples, plan, sampleRate)), corrected: Math.round(corrected), chunks: plan.length };
 }
+
+// HARM.3: the take sung back on the harmony voice's notes. WORLD moves each target note by the
+// offset between its target and the sung pitch's centre over the note, and keeps each frame within
+// 250 cents of that centre (world_tuning._target_notes). A harmony note that spans two sung notes
+// would have one centre for both, so it is split where the sung notes (the detected vocal targets)
+// begin and end; a piece shorter than MIN_NOTE_SECONDS would be dropped, so it joins the piece
+// before it (or the next one, at the start). Notes outside 36..96, which WORLD leaves alone, are
+// left out and counted.
+export const HARMONY_LOWEST = 36, HARMONY_HIGHEST = 96;
+export function harmonyTargets(line, sung) {
+  const cuts = [...new Set((sung || []).flatMap(s => [s.t, s.t + s.d]).map(round3))].sort((a, b) => a - b);
+  const targets = [];
+  let skipped = 0;
+  for (const n of [...line].sort((a, b) => a.t - b.t || a.m - b.m)) {
+    if (!(n.d > 0)) continue;
+    if (!(n.m >= HARMONY_LOWEST && n.m <= HARMONY_HIGHEST)) { skipped++; continue; }
+    const start = round3(n.t), end = round3(n.t + n.d), edges = [start, ...cuts.filter(c => c > start && c < end), end], pieces = [];
+    for (let k = 0; k < edges.length - 1; k++) {
+      const piece = { m: n.m, t: edges[k], d: round3(edges[k + 1] - edges[k]) };
+      if (piece.d >= MIN_NOTE_SECONDS) pieces.push(piece);
+      else if (pieces.length) pieces[pieces.length - 1].d = round3(edges[k + 1] - pieces[pieces.length - 1].t);
+      else edges[k + 1] = edges[k];
+    }
+    targets.push(...pieces);
+  }
+  return { targets, skipped };
+}
+
+// The samples inside the spans ({t, d} in seconds), silent elsewhere, with a linear fade of
+// `fadeSeconds` just outside each edge so the cut does not click. The input is not changed.
+export function keepSpans(samples, sampleRate, spans, fadeSeconds = 0.01) {
+  const gain = new Float32Array(samples.length), fade = Math.max(1, Math.round(fadeSeconds * sampleRate));
+  for (const s of spans) {
+    const a = Math.round(s.t * sampleRate), b = Math.round((s.t + s.d) * sampleRate);
+    for (let i = Math.max(0, a - fade); i < Math.min(samples.length, b + fade + 1); i++) {
+      const g = i < a ? 1 - (a - i) / fade : i > b ? 1 - (i - b) / fade : 1;
+      if (g > gain[i]) gain[i] = g;
+    }
+  }
+  const out = new Float32Array(samples.length);
+  for (let i = 0; i < out.length; i++) out[i] = samples[i] * gain[i];
+  return out;
+}
+
+// A short name for a harmony line (FNV-1a over its notes in time order), kept with the sung harmony
+// so the studio can tell when the line has changed since it was sung.
+export function harmonyFingerprint(line) {
+  const text = [...line].map(n => `${n.m},${round3(n.t)},${round3(n.d)}`).sort().join(";");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16).padStart(8, "0");
+}

@@ -387,3 +387,51 @@ def test_device_engine_matches_the_server(case, rate):
         assert len(got) == len(expected)
         assert snr >= MIN_DEVICE_SNR_DB, (case, rate, kwargs.keys(), snr)
         assert np.max(np.abs(diff)) * 32767 <= MAX_DEVICE_DIFF_LSB, (case, rate, kwargs.keys())
+
+
+# HARM.3: the take sung back on the harmony voice's notes. The studio splits each harmony note where
+# the sung notes change (tuning.js harmonyTargets) and tunes the take to the pieces at full strength.
+MAX_HARMONY_CENTS = 20.0
+HARMONY_LINES = {
+    # Thirds above in C major, note for note with the sung phrase C4 E4 G4 F4.
+    "thirds": [(64, 0, 1), (67, 1, 1), (71, 2, 1), (69, 3, 1)],
+    # A counter-line: each note spans two sung notes, 5 to 10 semitones below them.
+    "counter": [(55, 0, 2), (57, 2, 2)],
+}
+
+
+def harmony_targets(line, sung):
+    """tuning.js harmonyTargets, run by Node, so the test tunes to exactly what the studio sends."""
+    if NODE is None:
+        pytest.fail("Node is needed to build the harmony targets")
+    script = ("import {harmonyTargets} from './tuning.js';"
+              "const [line, sung] = JSON.parse(process.argv[1]);"
+              "process.stdout.write(JSON.stringify(harmonyTargets(line, sung)))")
+    done = subprocess.run([NODE, "--input-type=module", "-e", script, json.dumps([line, sung])],
+                          cwd=REPO, capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+@pytest.mark.parametrize("line_name", sorted(HARMONY_LINES))
+@pytest.mark.parametrize("case", sorted(CASES))
+@pytest.mark.parametrize("rate", [16000, 44100])
+def test_sung_harmony_follows_the_harmony_voice(rate, case, line_name, tune, report):
+    """HARM.3 acceptance: the shifted voice follows the harmony notes within 20 cents."""
+    x, sung = render(case, rate)
+    line = [{"m": m, "t": round(LEAD_SECONDS + a * NOTE_SECONDS, 3), "d": round(b * NOTE_SECONDS, 3)}
+            for m, a, b in HARMONY_LINES[line_name]]
+    built = harmony_targets(line, sung)
+    assert built["skipped"] == 0
+    targets = built["targets"]
+    if line_name == "counter":
+        assert len(targets) == 4, "each counter-line note is split where the sung note changes"
+    y, _ = wav_samples(tune(x, rate, 1.0, targets, vibrato=0))
+    assert len(y) == len(x)
+    errs = np.abs(np.concatenate(note_cents(y, rate, targets)))
+    per_note = [float(np.median(np.abs(c))) for c in note_cents(y, rate, targets)]
+    report[f"sung_harmony/{line_name}/{case}/{rate}"] = {**summary(errs), "note_median_cents": [round(c, 2) for c in per_note]}
+    interior = sum(max(0.0, t["d"] - 2 * EDGE_SECONDS) for t in targets) / 0.01
+    assert len(errs) >= 0.8 * interior, f"only {len(errs)} of {interior:.0f} note-interior frames were measured"
+    assert max(per_note) <= MAX_HARMONY_CENTS, report[f"sung_harmony/{line_name}/{case}/{rate}"]
+    assert float(np.percentile(errs, 90)) <= MAX_HARMONY_CENTS, report[f"sung_harmony/{line_name}/{case}/{rate}"]
