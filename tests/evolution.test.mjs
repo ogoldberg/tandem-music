@@ -106,6 +106,10 @@ test("the song lasts to the end of its last note, hit, take or unmuted generated
   assert.equal(contentSeconds({ ...p, band: { seconds: 9, muted: false } }), 9);
   assert.equal(contentSeconds({ ...p, band: { seconds: 9, muted: true } }), 3.25);
   assert.equal(contentSeconds({ notes: [], drums: [] }), 0);
+  // A generated part counts only when its audio is there to play (review of #90).
+  const band = { ...p, band: { seconds: 9, muted: false } };
+  assert.equal(contentSeconds(band, 0, ["melody", "drums"]), 3.25);
+  assert.equal(contentSeconds(band, 0, ["melody", "drums", "band"]), 9);
 });
 
 test("the sections cover the song and the last one runs on through the rendered tail", () => {

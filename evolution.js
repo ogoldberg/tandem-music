@@ -28,13 +28,14 @@ export const FADE = 1;
 const DRUM_SECONDS = 0.25;
 
 // How long the song plays: the end of the last note, drum hit, take or generated part (the band, the
-// voice as instrument, the sung harmony unless muted). The rendered audio runs on a little after it so
+// voice as instrument, the sung harmony unless muted, and only when its audio is in `available`, if
+// given). The rendered audio runs on a little after it so
 // the last notes ring; the sections cover the song, not that tail.
-export function contentSeconds(project, takeSeconds = 0) {
+export function contentSeconds(project, takeSeconds = 0, available = null) {
   const notes = [...(project.notes || []), ...(project.harmony || []), ...(Array.isArray(project.voice2) ? project.voice2 : [])];
   const ends = notes.map(n => n.t + n.d)
     .concat((project.drums || []).map(h => h.t + DRUM_SECONDS))
-    .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []));
+    .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && (!available || available.includes(k)) && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []));
   return Math.max(0, takeSeconds || 0, ...ends);
 }
 
