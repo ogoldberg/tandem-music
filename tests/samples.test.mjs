@@ -236,8 +236,8 @@ test("loadWithin reports whether the samples loaded before the time limit", asyn
 test("Play and the exports wait for the samples for a limited time only", () => {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   assert.match(html, /await loadWithin\(samples,parts,3000\)/);
-  // Export WAV and Export stems both render through renderParts (EXP.1).
-  assert.match(html, /async function renderParts\(p\)\{status\('Loading instruments'\);await loadWithin\(samples,sampleParts\(\),EXPORT_WAIT_MS\)/);
+  // Export WAV, Export stems and Export how it grew all render through renderParts (EXP.1, EVO.1).
+  assert.match(html, /async function renderParts\(p,minFrames=0\)\{status\('Loading instruments'\);await loadWithin\(samples,sampleParts\(\),EXPORT_WAIT_MS\)/);
   assert.match(html, /async function renderAudio\(\)\{const \{parts,frames\}=await renderParts\(structuredClone\(state\)\)/);
   assert.doesNotMatch(html, /await samples\.load\(/);
 });
