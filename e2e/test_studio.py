@@ -340,7 +340,9 @@ def test_vocal_note_targets_cover_a_three_minute_recording(studio, tmp_path):
     expect(page.locator("#detectvocal")).to_be_enabled()
 
     page.click("#detectvocal")
-    expect(page.locator("#status")).to_have_text(re.compile(r"^\d+ vocal notes ready to edit\.$"), timeout=240_000)
+    # CI.3: Basic Pitch takes about 105 s on a Mac and about 250 s on a CI runner (it was at 94-99% when
+    # a 240 s wait ran out), so wait twice that.
+    expect(page.locator("#status")).to_have_text(re.compile(r"^\d+ vocal notes ready to edit\.$"), timeout=500_000)
 
     starts = [float(t) for t in page.locator("#vocalnoteeditor .target").evaluate_all("els => els.map(e => e.dataset.t)")]
     assert len(starts) > 128, f"only {len(starts)} targets: still capped at 128"
@@ -1177,9 +1179,31 @@ def draft_audio(page):
 
 
 def wait_for_draft_audio(page, slots):
-    page.wait_for_function(f"""async () => {{ const v = await ({IDB_GET})('draft-audio');
-        return !!v && {json.dumps(sorted(slots))}.every(s => v[s]) && Object.keys(v).length === {len(slots)}; }}""")
-    return draft_audio(page)
+    """Polls inside the page. CI.3: wait_for_function passes at once on an async predicate (its
+    Promise is truthy), so the draft was read before the recording's link was saved."""
+    got = page.evaluate(f"""async () => {{
+      for (let i = 0; i < 100; i++) {{
+        const v = await ({IDB_GET})('draft-audio');
+        if (v && {json.dumps(sorted(slots))}.every(s => v[s]) && Object.keys(v).length === {len(slots)}) return v;
+        await new Promise(r => setTimeout(r, 100));
+      }}
+      return null;
+    }}""")
+    assert got is not None, f"the draft never linked exactly {slots}: {draft_audio(page)}"
+    return got
+
+
+def wait_until(page, predicate, what):
+    """Polls an async predicate (a JS function source) inside the page for up to 10 s. CI.3:
+    wait_for_function cannot take one, because the Promise it returns is truthy."""
+    ok = page.evaluate(f"""async () => {{
+      for (let i = 0; i < 100; i++) {{
+        if (await ({predicate})()) return true;
+        await new Promise(r => setTimeout(r, 100));
+      }}
+      return false;
+    }}""")
+    assert ok, f"timed out waiting until {what}"
 
 
 def import_recording(page, path):
@@ -1261,7 +1285,7 @@ def test_versions_keep_their_own_recordings(studio, tmp_path):
     page.click("#saveversion")
     expect(page.locator("#status")).to_have_text("Saved version: Take A")
     import_recording(page, tone_wav(tmp_path / "b.wav", seconds=0.4))
-    page.wait_for_function(f"async () => (await ({IDB_GET})('draft-audio'))?.original?.id !== '{a}'")
+    wait_until(page, f"async () => (await ({IDB_GET})('draft-audio'))?.original?.id !== '{a}'", "the draft links take B")
     b = draft_audio(page)["original"]["id"]
     page.fill("#versionname", "Take B")
     page.click("#saveversion")
@@ -1277,12 +1301,12 @@ def test_versions_keep_their_own_recordings(studio, tmp_path):
     assert draft_audio(page)["original"]["id"] == a
     page.click("#versionlist .version:has-text('Take B') >> text=Restore")
     expect(page.locator("#status")).to_have_text("Restored version: Take B")
-    page.wait_for_function(f"async () => (await ({IDB_GET})('draft-audio'))?.original?.id === '{b}'")
+    wait_until(page, f"async () => (await ({IDB_GET})('draft-audio'))?.original?.id === '{b}'", "the draft links take B again")
 
     # A is linked only from Take A now, so deleting Take A deletes its file.
     page.click("#versionlist .version:has-text('Take A') >> text=Delete")
     expect(page.locator("#status")).to_have_text("Deleted version: Take A")
-    page.wait_for_function(f"async () => JSON.stringify(await ({OPFS_FILES})()) === '{json.dumps([b])}'")
+    wait_until(page, f"async () => JSON.stringify(await ({OPFS_FILES})()) === '{json.dumps([b])}'", "only take B's file is left")
     page.reload()
     expect(page.locator("#status")).to_have_text("Restored the draft and its recording.")
     assert page.evaluate(OPFS_FILES) == [b]

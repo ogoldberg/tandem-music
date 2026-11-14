@@ -65,6 +65,17 @@ def melody(page):
         "els => els.map(e => { const m = e.title.match(/MIDI (\\d+) at ([\\d.]+)s/); return [Number(m[1]), Number(m[2])]; })")
 
 
+DRAFT = """() => new Promise((resolve, reject) => {
+  const open = indexedDB.open('tandem');
+  open.onerror = () => reject(open.error);
+  open.onsuccess = () => {
+    const db = open.result, get = db.transaction('kv').objectStore('kv').get('draft');
+    get.onsuccess = () => { db.close(); resolve(get.result ?? null); };
+    get.onerror = () => reject(get.error);
+  };
+})"""
+
+
 def sent(page):
     return page.evaluate("window.__midiSent")
 
@@ -173,6 +184,43 @@ def test_play_sends_melody_harmony_and_drums_to_the_chosen_output_and_channel(mi
     count = len(messages)
     time.sleep(0.4)
     assert len(sent(page)) == count
+
+
+# An audio clock that moves in 25 ms steps, as it does with a large output buffer (and on CI's
+# fake audio device): the context time and performance.now() then disagree by a different amount
+# at each scheduler tick.
+COARSE_CLOCK = """(() => {
+  const real = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'currentTime').get;
+  Object.defineProperty(BaseAudioContext.prototype, 'currentTime', {configurable: true,
+    get() { return Math.floor(real.call(this) / 0.025) * 0.025; }});
+})()"""
+
+
+def test_play_keeps_the_song_spacing_on_the_midi_clock(page, server_url):
+    """CI.3: every message is stamped on the MIDI clock as far from the song's start as its time in
+    the song, so the order holds even where the audio clock moves in coarse steps."""
+    problems = open_studio(page, server_url, MOCK_MIDI + ";" + COARSE_CLOCK)
+    page.click("#demo")
+    page.click("#genharmony")
+    expect(page.locator("#harmonycount")).not_to_have_text("0 notes")
+    connect(page)
+    page.select_option("#midioutput", "out-1")
+    page.click("#play")
+    expect(page.locator("#status")).to_have_text("Playing to Test Synth")
+    page.wait_for_function("window.__midiSent.filter(e => e.ts != null).length >= 40")
+    page.click("#stop")
+    expected = page.evaluate("""async () => {
+      const {songEvents} = await import('/midi.js');
+      const draft = await (""" + DRAFT + """)();
+      return songEvents(draft.project ?? draft, Number(document.getElementById('midichannel').value));
+    }""")
+    timed = [e for e in sent(page) if e["ts"] is not None and e["data"][0] & 0xF0 != 0xB0]
+    assert len(timed) >= 40
+    assert [e["data"] for e in timed] == [e["data"] for e in expected[:len(timed)]]
+    start = timed[0]["ts"] - expected[0]["t"] * 1000
+    off = [round(e["ts"] - start - x["t"] * 1000, 3) for e, x in zip(timed, expected)]
+    assert all(abs(d) < 0.5 for d in off), sorted(set(off))
+    assert not problems, problems
 
 
 def test_keys_play_through_to_the_chosen_output(midi_studio):

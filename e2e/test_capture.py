@@ -7,7 +7,7 @@ import httpx
 import pytest
 from playwright.sync_api import expect
 
-from test_studio import IDB_GET, OPFS_FILES, count
+from test_studio import IDB_GET, OPFS_FILES, count, wait_until
 from conftest import ALL_CONTROLS
 
 PHONE = {"viewport": {"width": 390, "height": 844}, "device_scale_factor": 3, "has_touch": True}
@@ -103,7 +103,7 @@ def test_record_keep_rename_play_and_delete_an_idea(phone):
     expect(page.locator("#status")).to_have_text("Deleted Chorus hook.")
     expect(page.locator(".idea")).to_have_count(1)
     left = ideas(page)[0]["audio"]["id"]
-    page.wait_for_function(f"async () => JSON.stringify(await ({OPFS_FILES})()) === '{json.dumps([left])}'")
+    wait_until(page, f"async () => JSON.stringify(await ({OPFS_FILES})()) === '{json.dumps([left])}'", "the deleted idea's file is collected")
 
 
 def test_a_take_ends_and_is_kept_when_the_page_is_hidden(phone):
