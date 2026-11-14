@@ -15,6 +15,8 @@ MAC_APP = ["aibaseurl", "aiforget", "aikey", "aimodel", "aiprovider", "aisave", 
            "downloadband", "genband", "gentimbre", "openfolder", "playband", "playbandtrack", "playtimbretrack", "playvocal",
            "removeband", "removetimbre", "savefolder", "separate", "timbreinstrument", "timbremute", "usefull"]
 MIDI_PORTS = ["midichannel", "midiinput", "midioutput", "midirecord"]
+# HARM.2: shown only while harmony lines are being tried (after Create harmony).
+LINE_TRIAL = ["voice2cancel", "voice2keep", "voice2next"]
 CONTROL = re.compile(r'<(button|input|select|textarea)\b[^>]*\bid="([^"]+)"')
 
 
@@ -110,17 +112,26 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         expect(page.locator("#gharmstate")).to_have_text("Not added")
         page.click("#gredo")
         expect(page.locator("#gharmstate")).to_have_text("Chords added")
-        # HARM.1: a second voice a third above the tune, beside the chords, as one edit.
+        # HARM.2: a harmony line, played at once, tried, and kept beside the chords as one edit.
         expect(page.locator("#gvoice2state")).to_have_text("Not added")
-        page.click("#gvoice2up")
+        expect(page.locator("#gvoice2try")).to_be_hidden()
+        page.click("#gvoice2create")
+        expect(page.locator("#gvoice2trial")).to_contain_text("Line 1 of ")
+        expect(page.locator("#gvoice2trial")).to_contain_text("Thirds above in ")
+        page.click("#gvoice2next")
+        expect(page.locator("#gvoice2trial")).to_contain_text("Line 2 of ")
+        page.click("#gvoice2next")
+        page.click("#gvoice2keep")
+        expect(page.locator("#gvoice2try")).to_be_hidden()
         notes = count(page, "notecount")
-        expect(page.locator("#gvoice2state")).to_have_text(f"{notes} notes")
-        assert count(page, "voice2count") == notes and count(page, "harmonycount") > 0
+        voice = count(page, "voice2count")
+        assert voice > 0 and count(page, "harmonycount") > 0
+        expect(page.locator("#gvoice2state")).to_have_text(f"{voice} notes")
         page.click("#gundo")
         expect(page.locator("#gvoice2state")).to_have_text("Not added")
         expect(page.locator("#gharmstate")).to_have_text("Chords added")
         page.click("#gredo")
-        expect(page.locator("#gvoice2state")).to_have_text(f"{notes} notes")
+        expect(page.locator("#gvoice2state")).to_have_text(f"{voice} notes")
         expect(page.locator("#slot-chat #chatform")).to_be_visible()
 
         # Step 4: a named version, and the song as a WAV file.
@@ -200,9 +211,9 @@ def test_every_control_of_the_studio_is_in_the_all_controls_view(browser, server
         })""", ids)
         wrong = [r for r in report if r[1] not in ("shown", "feature")]
         assert not wrong, wrong
-        # Hidden here only because the feature is not available: the Mac app's controls, the MIDI ports (shown after
-        # Connect MIDI) and the file pickers behind their buttons.
-        assert sorted(r[0] for r in report if r[1] == "feature") == sorted(MAC_APP + MIDI_PORTS + ["audiofile", "projectfile"])
+        # Hidden here only because the feature is not available or not in use: the Mac app's controls, the MIDI ports
+        # (shown after Connect MIDI), the harmony line trial (shown after Create harmony) and the file pickers behind their buttons.
+        assert sorted(r[0] for r in report if r[1] == "feature") == sorted(MAC_APP + MIDI_PORTS + LINE_TRIAL + ["audiofile", "projectfile"])
         # The guided view's own controls are not in the studio's layout, and the roll is back in its place.
         assert page.evaluate("document.getElementById('melodyroll').closest('.track').contains(document.getElementById('addnote'))")
         # And back again, from the studio's header.

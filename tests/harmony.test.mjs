@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectKey, chordsForKey, generateHarmony, keyLabel, CHORD_RANGE, BASS_LOW, STYLES, MODES } from "../harmony.js";
+import { detectKey, chordsForKey, generateHarmony, keyLabel, CHORD_RANGE, BASS_LOW, STYLES, MODES, harmonyLines, parallelPerfects, HARMONY_LINES, MAX_HARMONY_NOTES } from "../harmony.js";
 
 const pc = m => ((m % 12) + 12) % 12;
 // Quarter notes at 120 bpm (0.5 s each), one pitch list per 4/4 bar.
@@ -160,4 +160,98 @@ test("a melody too long for a 1024-note harmony part is refused", () => {
   long.push({ m: 64, t: 0.5, d: 0.2 }, { m: 67, t: 1, d: 0.2 });
   assert.throws(() => generateHarmony({ bpm: 120, notes: long }), /too long/);
   assert.equal(generateHarmony({ bpm: 120, notes: long }, { style: "bass" }).notes.length, 684);
+});
+
+// HARM.2: generated harmony lines for the harmony voice.
+const C_MAJOR = { tonic: 0, mode: "major" }, A_MINOR = { tonic: 9, mode: "minor" };
+const inKey = (m, key) => (key.mode === "major" ? [0, 2, 4, 5, 7, 9, 11] : [0, 2, 3, 5, 7, 8, 10]).map(x => (x + key.tonic) % 12).includes(pc(m));
+const TUNE = [60, 62, 64, 65, 67, 65, 64, 62, 60, 67, 69, 67, 64, 62, 60, 59].map((m, i) => ({ m, t: i * 0.5, d: 0.45 }));
+
+test("harmonyLines offers the default line first, then distinct alternatives, every note in the key", () => {
+  for (const [key, tune] of [[C_MAJOR, TUNE], [A_MINOR, [57, 59, 60, 62, 64, 62, 60, 59, 57, 64, 65, 64, 60, 59, 57, 55].map((m, i) => ({ m, t: i * 0.5, d: 0.45 }))]]) {
+    const lines = harmonyLines({ bpm: 120, notes: tune }, { key });
+    assert.deepEqual(lines.map(l => l.id), HARMONY_LINES.map(l => l.id));
+    assert.equal(lines[0].id, "thirds");
+    const shapes = lines.map(l => JSON.stringify(l.notes));
+    assert.equal(new Set(shapes).size, lines.length, "each alternative is distinct");
+    for (const l of lines) {
+      assert.ok(l.notes.length > 0 && l.notes.length <= MAX_HARMONY_NOTES, l.id);
+      assert.ok(l.label, l.id);
+      for (const n of l.notes) {
+        assert.ok(inKey(n.m, key), l.id + " note " + n.m + " is in " + key.mode);
+        assert.ok(n.d > 0 && n.t >= 0);
+      }
+    }
+  }
+});
+
+test("the default line is a third above in key, a sixth where the third is not in the chord, with no parallel fifths or octaves", () => {
+  // C major chords for the whole tune: C over C gives E (a third), G over C gives E above it (a
+  // sixth, since B is not in the chord), D over C gives F (no chord tone either way: the third).
+  const chords = [48, 52, 55].map(m => ({ m, t: 0, d: 8 }));
+  const [line] = harmonyLines({ bpm: 120, notes: TUNE }, { key: C_MAJOR, chords });
+  assert.deepEqual(line.notes.map(n => n.t), TUNE.map(n => n.t), "it moves with the melody");
+  assert.deepEqual(line.notes.map(n => n.d), TUNE.map(n => n.d));
+  const byStart = new Map(line.notes.map(n => [n.t, n.m]));
+  assert.equal(byStart.get(0), 64, "C: a third above");
+  assert.equal(byStart.get(1), 67, "E: a third above, G is in the chord");
+  assert.equal(byStart.get(2), 76, "G: a sixth above, E, since B is not in the chord");
+  assert.equal(byStart.get(0.5), 65, "D: neither F nor B is in the chord, so the third");
+  for (const n of line.notes) assert.ok(n.m > TUNE.find(x => x.t === n.t).m, "above the melody");
+  assert.equal(parallelPerfects(TUNE, line.notes), 0);
+});
+
+test("without a harmony part the chords are worked out from the melody", () => {
+  const generated = generateHarmony({ bpm: 120, notes: TUNE }, { key: C_MAJOR }).notes;
+  assert.deepEqual(harmonyLines({ bpm: 120, notes: TUNE }, { key: C_MAJOR }),
+    harmonyLines({ bpm: 120, notes: TUNE }, { key: C_MAJOR, chords: generated }));
+  assert.deepEqual(harmonyLines({ bpm: 120, notes: TUNE }, { key: C_MAJOR, chords: [] }),
+    harmonyLines({ bpm: 120, notes: TUNE }, { key: C_MAJOR, chords: generated }));
+});
+
+test("parallelPerfects counts fifths and octaves held in similar motion", () => {
+  const mel = [60, 62, 64].map((m, i) => ({ m, t: i, d: 1 }));
+  assert.equal(parallelPerfects(mel, mel.map(n => ({ ...n, m: n.m + 7 }))), 2);
+  assert.equal(parallelPerfects(mel, mel.map(n => ({ ...n, m: n.m - 12 }))), 2);
+  assert.equal(parallelPerfects(mel, mel.map(n => ({ ...n, m: n.m + 4 }))), 0);
+  assert.equal(parallelPerfects(mel, [{ m: 67, t: 0, d: 1 }, { m: 67, t: 1, d: 1 }, { m: 71, t: 2, d: 1 }]), 0, "a held note is oblique motion");
+});
+
+test("the alternatives: a sixth below, an octave below, a counter-melody and a two-voice stack", () => {
+  const chords = [48, 52, 55].map(m => ({ m, t: 0, d: 4 })).concat([53, 57, 60].map(m => ({ m, t: 4, d: 4 })));
+  const lines = Object.fromEntries(harmonyLines({ bpm: 120, notes: TUNE }, { key: C_MAJOR, chords }).map(l => [l.id, l.notes]));
+  assert.deepEqual(lines.sixth_below.slice(0, 3).map(n => n.m), [52, 53, 55], "C D E a sixth below: E F G");
+  assert.deepEqual(lines.octave.map(n => n.m), TUNE.map(n => n.m - 12));
+  // The counter-melody moves every two beats (a second at 120 bpm), on a tone of the chord sounding
+  // then, below the tune, by small steps, and does not sit on one note.
+  assert.deepEqual(lines.counter.map(n => n.t), [0, 1, 2, 3, 4, 5, 6, 7]);
+  lines.counter.forEach(n => assert.ok((n.t < 4 ? [0, 4, 7] : [5, 9, 0]).includes(pc(n.m)), "chord tone at " + n.t));
+  assert.ok(lines.counter.every(n => n.m < Math.min(...TUNE.map(x => x.m))));
+  lines.counter.slice(1).forEach((n, i) => assert.ok(Math.abs(n.m - lines.counter[i].m) <= 5, "a small move at " + n.t));
+  assert.ok(new Set(lines.counter.map(n => n.m)).size > 2);
+  // The stack is the default line plus a third below, two notes for each melody note.
+  assert.equal(lines.stack.length, 2 * TUNE.length);
+  assert.deepEqual(lines.stack.filter(n => n.t === 0).map(n => n.m).sort((a, b) => a - b), [57, 64]);
+});
+
+test("the counter-melody leaves the nearest chord tone for another when it would move in octaves or fifths with the tune", () => {
+  // G A G over A minor, F, C: from A under the tune's A, the nearest C-chord tone is G, an octave
+  // below the tune's G reached in the same direction; the line goes up to C instead.
+  const tune = [67, 69, 67].map((m, t) => ({ m, t, d: 1 }));
+  const chords = [[57, 60, 64], [53, 57, 60], [48, 52, 55]].flatMap((c, t) => c.map(m => ({ m, t, d: 1 })));
+  const counter = harmonyLines({ bpm: 120, notes: tune }, { key: C_MAJOR, chords }).find(l => l.id === "counter").notes;
+  assert.deepEqual(counter.map(n => n.m), [60, 57, 60]);
+  assert.equal(parallelPerfects(tune, counter), 0);
+});
+
+test("harmonyLines needs a melody and a key, and leaves the project unchanged", () => {
+  assert.throws(() => harmonyLines({ bpm: 120, notes: [] }, { key: C_MAJOR }), /melody/);
+  assert.throws(() => harmonyLines({ bpm: 120, notes: TUNE }, { key: null }), /key/);
+  const project = { bpm: 120, notes: TUNE.map(n => ({ ...n })) }, copy = JSON.parse(JSON.stringify(project));
+  harmonyLines(project, { key: C_MAJOR });
+  assert.deepEqual(project, copy);
+  // A note out of the key is left out of the octave double rather than doubled out of the key.
+  const sharp = TUNE.map((n, i) => (i === 3 ? { ...n, m: 66 } : n));
+  const oct = harmonyLines({ bpm: 120, notes: sharp }, { key: C_MAJOR }).find(l => l.id === "octave");
+  assert.equal(oct.notes.length, TUNE.length - 1);
 });

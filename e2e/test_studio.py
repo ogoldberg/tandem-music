@@ -1755,6 +1755,69 @@ def test_harmony_voice_duplicates_the_melody_a_third_up_and_is_heard_exported_an
     assert undo_label(page) == "Undo: Clear harmony voice"
 
 
+def test_create_harmony_offers_lines_plays_each_and_keeps_one_as_one_edit(studio, tmp_path):
+    """HARM.2: Create harmony shows a generated line in the harmony voice roll and plays it at once;
+    Try another steps to the next line; nothing is in the project until Keep, which is one undoable
+    edit; the kept line is exported."""
+    page = studio
+    page.click("#demo")
+    melody = roll_notes(page)
+    expect(page.locator("#voice2trybar")).to_be_hidden()
+    page.click("#voice2create")
+    expect(page.locator("#voice2trial")).to_have_text("Line 1 of 5: Thirds above in C major")
+    expect(page.locator("#status")).to_have_text("Playing composition")
+    expect(page.locator("#voice2roll")).to_have_class(re.compile(r"\btrial\b"))
+    thirds = [(64, 0.0), (67, 0.45), (76, 0.9), (72, 1.35), (76, 1.8), (67, 2.25), (65, 2.7), (64, 3.15)]
+    assert roll_notes(page, "voice2roll") == thirds
+    # On trial only: the project, the draft and the history are unchanged.
+    expect(page.locator("#voice2count")).to_have_text("0 notes")
+    assert draft(page).get("voice2", []) == []
+    assert undo_label(page) == "Undo: Load example"
+
+    page.click("#stop")
+    page.click("#voice2next")
+    expect(page.locator("#voice2trial")).to_have_text("Line 2 of 5: A sixth below in C major")
+    expect(page.locator("#status")).to_have_text("Playing composition")
+    sixth = [(52, 0.0), (55, 0.45), (59, 0.9), (60, 1.35), (59, 1.8), (55, 2.25), (53, 2.7), (52, 3.15)]
+    assert roll_notes(page, "voice2roll") == sixth
+    for n in range(3, 6):
+        page.click("#voice2next")
+        expect(page.locator("#voice2trial")).to_contain_text(f"Line {n} of 5")
+    page.click("#voice2next")
+    expect(page.locator("#voice2trial")).to_have_text("Line 1 of 5: Thirds above in C major")
+    page.click("#voice2next")
+
+    page.click("#voice2keep")
+    label = "Keep the harmony line: a sixth below in C major"
+    expect(page.locator("#status")).to_have_text(label)
+    expect(page.locator("#voice2trybar")).to_be_hidden()
+    expect(page.locator("#voice2roll")).not_to_have_class(re.compile(r"\btrial\b"))
+    assert roll_notes(page, "voice2roll") == sixth and roll_notes(page) == melody
+    expect(page.locator("#voice2count")).to_have_text("8 notes")
+    expect(page.locator("#voice2instrument")).to_have_value("marimba")
+    assert undo_label(page) == "Undo: " + label
+    assert [(n["m"], n["t"]) for n in draft(page)["voice2"]] == sixth
+    data = download(page, "#exportmidi", tmp_path).read_bytes()
+    assert [p for _, p in midi_note_ons(data, 2)] == [m for m, _ in sixth]
+
+    page.click("#undo")
+    assert roll_notes(page, "voice2roll") == [] and undo_label(page) == "Undo: Load example"
+    page.click("#redo")
+    assert roll_notes(page, "voice2roll") == sixth
+
+    # Cancel leaves the kept line; an edit while trying ends the trial.
+    page.click("#voice2create")
+    expect(page.locator("#voice2trial")).to_contain_text("Line 1 of 5")
+    page.click("#voice2cancel")
+    expect(page.locator("#status")).to_have_text("Harmony line not kept")
+    assert roll_notes(page, "voice2roll") == sixth
+    page.click("#voice2create")
+    expect(page.locator("#voice2trybar")).to_be_visible()
+    page.click("#clearvoice2")
+    expect(page.locator("#voice2trybar")).to_be_hidden()
+    assert roll_notes(page, "voice2roll") == []
+
+
 def test_roll_selects_moves_resizes_draws_and_shifts_notes(studio, tmp_path):
     """EDIT.3: a tap selects a note (it no longer deletes it); notes are moved, resized, drawn, deleted
     and shifted by octave and in key with the mouse and the keyboard, each as one undoable edit."""
