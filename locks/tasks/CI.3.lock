@@ -1,0 +1,7 @@
+{
+  "task_id": "CI.3",
+  "agent_id": "agent-m5",
+  "branch": "feat/ci-3",
+  "claimed_at": "2026-11-14T08:20:20Z",
+  "heartbeat": "2026-11-14T08:20:20Z"
+}
