@@ -175,6 +175,10 @@ def guide_js():
 def playhead_js():
     return FileResponse(Path(__file__).resolve().parent / "playhead.js", media_type="text/javascript")
 
+@app.get("/evolution.js", include_in_schema=False)
+def evolution_js():
+    return FileResponse(Path(__file__).resolve().parent / "evolution.js", media_type="text/javascript")
+
 @app.get("/worldtune.js", include_in_schema=False)
 def worldtune_js():
     return FileResponse(Path(__file__).resolve().parent / "worldtune.js", media_type="text/javascript")
