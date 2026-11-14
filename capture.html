@@ -16,9 +16,13 @@ ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10p
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.actions a{display:inline-flex;align-items:center;padding:0 12px;min-height:44px;border:1px solid #455c78;border-radius:10px;text-decoration:none}
 .rename{display:flex;gap:8px}.rename input{flex:1;min-width:0}
 button.danger{background:#7a2530;border-color:#d9434e}.hide{display:none}
+.pitchguide{width:100%;border-radius:14px;background:#101e32;padding:8px}.pitchguide canvas{display:block;width:100%;height:130px}
+#pitchnow{text-align:center;color:#7fd3b4;font-weight:700;font-size:1.15rem;margin-top:4px;font-variant-numeric:tabular-nums}
+.guideopts{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px 14px;font-size:.9rem}.guideopts label{display:flex;align-items:center;gap:6px}.guideopts input{min-height:0;width:20px;height:20px;accent-color:#8ce6cf}
+select{font:inherit;border:1px solid #455c78;background:#263950;color:white;border-radius:10px;padding:8px 10px;min-height:44px}
 </style></head><body><main>
 <header><h1>♫ Tandem Capture</h1><a href="./">Open studio →</a></header>
-<section class="recorder" aria-label="Recorder"><button id="record" aria-pressed="false">Record</button><div id="time" aria-hidden="true"></div></section>
+<section class="recorder" aria-label="Recorder"><button id="record" aria-pressed="false">Record</button><div id="time" aria-hidden="true"></div><div id="pitchguide" class="pitchguide hide"><canvas id="pitchstrip" aria-hidden="true"></canvas><div id="pitchnow" role="status"></div></div><div class="guideopts"><label><input type="checkbox" id="showpitch" checked> Show my pitch</label><label>Against <select id="pitchkey"></select></label></div></section>
 <div id="status" class="status" role="status" aria-live="polite">Opening storage…</div>
 <button id="rescue" class="hide">Download the recording that was not kept</button>
 <section aria-labelledby="ideasheading"><h2 id="ideasheading" style="font-size:1.05rem">Your ideas <small id="count"></small></h2><ul id="ideas"></ul></section>
@@ -32,6 +36,8 @@ import {openRecordings} from './recordings.js';
 import {createVersionStore} from './versions.js';
 import {createIdeaStore,ideaTitle,formatDuration} from './ideas.js';
 import {writeBundle,toWav,ideaProject,bundleFileName,BUNDLE_TYPE} from './bundle.js';
+import {startPitchGuide,guideReading,hzToMidi,drawPitchStrip} from './pitch.js';
+import {KEY_NAMES,scalePitchClasses} from './contour.js';
 const $=id=>document.getElementById(id);
 let kv=null,recordings=null,ideas=null,recorder=null,mic=null,chunks=[],startedAt=0,ticker=null,unsaved=null,player=null,playingId=null,askedToPersist=false;
 // Whether the browser promised to keep this site's storage. Asked for once per visit, when an idea is
@@ -57,10 +63,39 @@ async function start(){
   recorder.onstop=()=>keep(recorder.mimeType);
   // Ask for the audio every second, so a take cut short (the phone locks, another app comes up) still has its data.
   recorder.start(1000);startedAt=performance.now();setRecording(true);status('Recording… tap Stop when the idea is down.');
+  if($('showpitch').checked)await startGuide(mic);
 }
+// SING.1: the live pitch guide (pitch.js). While recording, the microphone's pitch is tracked on the device and drawn as a
+// moving line against the nearest note of the chosen key, with how many cents sharp or flat. It only shows: the take is
+// recorded as before. The choice is kept in localStorage under tandem-capture-pitch. #pitchnow's data is for tests.
+const PITCH_KEY='tandem-capture-pitch';
+let guide=null;
+function pitchPrefs(){try{const p=JSON.parse(localStorage.getItem(PITCH_KEY)||'{}');return{show:p.show!==false,key:typeof p.key==='string'?p.key:'any'}}catch{return{show:true,key:'any'}}}
+function savePitchPrefs(){try{localStorage.setItem(PITCH_KEY,JSON.stringify({show:$('showpitch').checked,key:$('pitchkey').value}))}catch{}}
+$('pitchkey').replaceChildren(new Option('Any note','any'),...['major','minor'].flatMap(mode=>KEY_NAMES.map((name,tonic)=>new Option(name+' '+mode,tonic+':'+mode))));
+{const p=pitchPrefs();$('showpitch').checked=p.show;$('pitchkey').value=[...$('pitchkey').options].some(o=>o.value===p.key)?p.key:'any'}
+$('showpitch').onchange=savePitchPrefs;$('pitchkey').onchange=()=>{savePitchPrefs();if(guide)guide.pcs=keyPcs()};
+function keyPcs(){const v=$('pitchkey').value;if(v==='any')return null;const [tonic,mode]=v.split(':');return scalePitchClasses(Number(tonic),mode)}
+async function startGuide(stream){
+  const g={points:[],count:0,from:null,to:null,last:null,frame:0,pcs:keyPcs(),ac:null,run:null};guide=g;
+  try{g.ac=new AudioContext();await g.ac.resume();const t0=g.ac.currentTime;
+    g.run=await startPitchGuide(g.ac,g.ac.createMediaStreamSource(stream),rs=>{if(guide!==g)return;for(const r of rs){const t=r.t-t0;g.points.push({t,m:r.hz?hzToMidi(r.hz):null});g.count++;if(g.points.length>1200)g.points.splice(0,600);if(g.from===null)g.from=t;g.to=t;g.last=r.hz?r.hz:null}if(!g.frame)g.frame=requestAnimationFrame(()=>{g.frame=0;if(guide===g)drawGuide(g)})})}
+  catch(e){stopGuide();status('Recording, without the pitch guide: '+e.message);return}
+  if(guide!==g){g.run?.stop();g.ac?.close();return}
+  $('pitchnow').textContent='Sing to see your pitch';$('pitchguide').classList.remove('hide');
+}
+function drawGuide(g){
+  const reading=g.last?guideReading(g.last,{pcs:g.pcs}):null,now=$('pitchnow');now.textContent=reading?reading.text:'Sing to see your pitch';
+  Object.assign(now.dataset,{count:g.count,from:g.from,to:g.to});
+  if(reading)Object.assign(now.dataset,{hz:g.last.toFixed(2),cents:reading.cents,target:reading.target});else for(const k of ['hz','cents','target'])delete now.dataset[k];
+  const cv=$('pitchstrip'),w=cv.clientWidth,h=cv.clientHeight,dpr=devicePixelRatio||1;if(!w||!h)return;
+  if(cv.width!==Math.round(w*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+  const cx=cv.getContext('2d');cx.setTransform(dpr,0,0,dpr,0,0);drawPitchStrip(cx,{width:w,height:h,readings:g.points,now:g.to,reading});
+}
+function stopGuide(){const g=guide;guide=null;if(!g)return;cancelAnimationFrame(g.frame);g.run?.stop();g.ac?.close().catch(()=>{});$('pitchguide').classList.add('hide');const now=$('pitchnow');now.textContent='';for(const k of ['hz','cents','target','count','from','to'])delete now.dataset[k]}
 function stop(){if(recorder?.state==='recording')recorder.stop()}
 async function keep(type){
-  const duration=elapsed();mic?.getTracks().forEach(t=>t.stop());mic=null;setRecording(false);
+  const duration=elapsed();stopGuide();mic?.getTracks().forEach(t=>t.stop());mic=null;setRecording(false);
   const blob=new Blob(chunks,{type:type||chunks[0]?.type||''});chunks=[];
   if(!blob.size){status('Nothing was recorded. Check the microphone and try again.');return}
   status('Keeping the idea…');

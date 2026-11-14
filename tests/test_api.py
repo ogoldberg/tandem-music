@@ -758,6 +758,15 @@ def test_take_module_is_served_and_precached(client):
     assert "from './take.js'" in run(client("GET","/")).text
     assert "'./take.js'" in run(client("GET","/sw.js")).text
 
+def test_pitch_module_is_served_and_precached(client):
+    # SING.1: the studio and the capture page import pitch.js (the live pitch guide) at start-up, so it is precached.
+    js=run(client("GET","/pitch.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function guideReading" in js.text
+    assert "from './pitch.js'" in run(client("GET","/")).text
+    assert "from './pitch.js'" in run(client("GET","/capture")).text
+    assert "'./pitch.js'" in run(client("GET","/sw.js")).text
+
 def test_playhead_module_is_served_and_precached(client):
     # PLAY.1: the studio imports playhead.js (play from here and loops) at start-up, so it is precached for offline use.
     js=run(client("GET","/playhead.js"))

@@ -183,6 +183,11 @@ def evolution_js():
 def take_js():
     return FileResponse(Path(__file__).resolve().parent / "take.js", media_type="text/javascript")
 
+
+@app.get("/pitch.js", include_in_schema=False)
+def pitch_js():
+    return FileResponse(Path(__file__).resolve().parent / "pitch.js", media_type="text/javascript")
+
 @app.get("/worldtune.js", include_in_schema=False)
 def worldtune_js():
     return FileResponse(Path(__file__).resolve().parent / "worldtune.js", media_type="text/javascript")
