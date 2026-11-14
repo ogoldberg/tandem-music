@@ -742,6 +742,14 @@ def test_guide_module_is_served_and_precached(client):
     assert "from './guide.js'" in run(client("GET","/")).text
     assert "'./guide.js'" in run(client("GET","/sw.js")).text
 
+def test_evolution_module_is_served_and_precached(client):
+    # EVO.1: the studio imports evolution.js (how the song grew) at start-up, so it is precached for offline use.
+    js=run(client("GET","/evolution.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function evolutionPlan" in js.text
+    assert "from './evolution.js'" in run(client("GET","/")).text
+    assert "'./evolution.js'" in run(client("GET","/sw.js")).text
+
 def test_playhead_module_is_served_and_precached(client):
     # PLAY.1: the studio imports playhead.js (play from here and loops) at start-up, so it is precached for offline use.
     js=run(client("GET","/playhead.js"))
