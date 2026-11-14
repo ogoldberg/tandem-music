@@ -203,3 +203,62 @@ test("notesForChunk takes the server's note limit", () => {
   assert.throws(() => notesForChunk(notes, 0, 30), /limit is 128/);
   assert.equal(notesForChunk(notes, 0, 30, 4096).length, 200);
 });
+
+// HARM.3: the take sung back on the harmony voice's notes.
+import { harmonyTargets, keepSpans, harmonyFingerprint } from "../tuning.js";
+
+test("harmonyTargets splits each harmony note where the sung notes change, so every piece covers one sung note", () => {
+  const sung = [{ m: 60, t: 0, d: 1 }, { m: 64, t: 1, d: 1 }, { m: 67, t: 2.2, d: 0.8 }];
+  const line = [{ m: 55, t: 0, d: 2 }, { m: 59, t: 2, d: 1 }];
+  const { targets, skipped } = harmonyTargets(line, sung);
+  assert.equal(skipped, 0);
+  // 55 over two sung notes becomes two pieces; 59 covers a 0.2 s gap before 67 and then 67 itself.
+  assert.deepEqual(targets, [{ m: 55, t: 0, d: 1 }, { m: 55, t: 1, d: 1 }, { m: 59, t: 2, d: 0.2 }, { m: 59, t: 2.2, d: 0.8 }]);
+});
+
+test("harmonyTargets keeps a harmony note whole without sung notes and folds slivers into the piece before", () => {
+  const line = [{ m: 64, t: 0.5, d: 1 }];
+  assert.deepEqual(harmonyTargets(line, null).targets, line);
+  assert.deepEqual(harmonyTargets(line, []).targets, line);
+  // A sung note ends 0.02 s into the harmony note: too short to tune, so it joins the next piece.
+  const sung = [{ m: 60, t: 0, d: 0.52 }, { m: 62, t: 0.52, d: 1.2 }];
+  assert.deepEqual(harmonyTargets(line, sung).targets, [{ m: 64, t: 0.5, d: 1 }]);
+  // A sung note ending 0.02 s before the harmony note does: that sliver joins the piece before it.
+  const late = [{ m: 60, t: 0, d: 1.48 }, { m: 62, t: 1.48, d: 1 }];
+  assert.deepEqual(harmonyTargets(line, late).targets, [{ m: 64, t: 0.5, d: 1 }]);
+});
+
+test("harmonyTargets leaves out notes WORLD cannot sing and counts them, and sorts by time", () => {
+  const line = [{ m: 70, t: 1, d: 0.5 }, { m: 30, t: 0, d: 0.5 }, { m: 100, t: 2, d: 0.5 }, { m: 67, t: 0.2, d: 0.5 }, { m: 65, t: 3, d: 0 }];
+  const { targets, skipped } = harmonyTargets(line, null);
+  assert.deepEqual(targets, [{ m: 67, t: 0.2, d: 0.5 }, { m: 70, t: 1, d: 0.5 }]);
+  assert.equal(skipped, 2, "the notes below 36 and above 96; a note with no length is not a note");
+});
+
+test("keepSpans silences everything outside the spans, with short fades outside each edge", () => {
+  const rate = 1000, x = new Float32Array(3000).fill(0.5);
+  const y = keepSpans(x, rate, [{ t: 1, d: 0.5 }, { t: 1.4, d: 0.4 }], 0.01);
+  assert.equal(y.length, x.length);
+  assert.notEqual(y, x);
+  assert.equal(x[0], 0.5, "the input is not changed");
+  assert.equal(y[500], 0);
+  assert.equal(y[989], 0);
+  assert.ok(y[995] > 0 && y[995] < 0.5, "fades in before the span");
+  for (let i = 1000; i <= 1800; i++) assert.equal(y[i], 0.5, "overlapping spans are kept whole at " + i);
+  assert.ok(y[1805] > 0 && y[1805] < 0.5, "fades out after the span");
+  assert.equal(y[1811], 0);
+  assert.equal(y[2999], 0);
+  // A span past the end and one before zero are clipped.
+  const z = keepSpans(x, rate, [{ t: 2.9, d: 1 }], 0.01);
+  assert.equal(z[2950], 0.5);
+  assert.equal(z[2999], 0.5);
+});
+
+test("harmonyFingerprint changes with any note of the line and not with their order", () => {
+  const a = [{ m: 64, t: 0, d: 1 }, { m: 67, t: 1, d: 1 }];
+  assert.match(harmonyFingerprint(a), /^[0-9a-f]{8}$/);
+  assert.equal(harmonyFingerprint(a), harmonyFingerprint([a[1], a[0]]));
+  assert.notEqual(harmonyFingerprint(a), harmonyFingerprint([a[0], { m: 68, t: 1, d: 1 }]));
+  assert.notEqual(harmonyFingerprint(a), harmonyFingerprint([a[0], { m: 67, t: 1.001, d: 1 }]));
+  assert.notEqual(harmonyFingerprint(a), harmonyFingerprint([a[0]]));
+});

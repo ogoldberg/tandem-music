@@ -34,6 +34,13 @@ test("projectFromState keeps the voice played as an instrument only when there i
   assert.equal("timbre" in projectFromState({ ...project(), timbre: null }), false);
 });
 
+test("projectFromState keeps the sung harmony only when there is one (HARM.3)", () => {
+  const voice2_sung = { id: "s-1", seconds: 9.5, muted: true, line: "89abcdef" };
+  assert.deepEqual(projectFromState({ ...project(), voice2_sung }).voice2_sung, voice2_sung);
+  assert.equal("voice2_sung" in projectFromState({ ...project(), voice2_sung: null }), false);
+  assert.equal("voice2_sung" in projectFromState(project()), false);
+});
+
 test("projectFromState keeps the harmony voice and its instrument only when it has notes (HARM.1)", () => {
   const voice2 = [{ m: 64, t: 0, d: 0.4 }];
   const p = projectFromState({ ...project(), voice2, voice2_instrument: "strings" });

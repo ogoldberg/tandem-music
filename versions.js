@@ -29,6 +29,8 @@ export function projectFromState(state) {
     ...(state.band ? { band: state.band } : {}),
     // TIMBRE.1: the voice played as an instrument, when there is one (its audio is the "timbre" recording).
     ...(state.timbre ? { timbre: state.timbre } : {}),
+    // HARM.3: the take sung on the harmony voice, when there is one (its audio is the "voice2_sung" recording).
+    ...(state.voice2_sung ? { voice2_sung: state.voice2_sung } : {}),
   };
 }
 

@@ -301,6 +301,16 @@ def test_chat_project_accepts_an_optional_instrument_voice():
         with pytest.raises(Exception):
             server.ChatProject(timbre=bad)
 
+def test_chat_project_accepts_an_optional_sung_harmony():
+    # HARM.3: the take sung on the harmony voice is described in the project; its audio never is.
+    assert server.ChatProject().voice2_sung is None
+    sung={"id":"s-1","seconds":12.25,"muted":True,"line":"0a1b2c3d"}
+    assert server.ChatProject(voice2_sung=sung).voice2_sung.model_dump()==sung
+    for bad in ({**sung,"audio":"UklGRg=="},{**sung,"seconds":0},{**sung,"seconds":601},{**sung,"line":"XYZ"},
+                {**sung,"line":"0a1b2c3d4"},{**sung,"id":"../x"},{k:v for k,v in sung.items() if k!="line"}):
+        with pytest.raises(Exception):
+            server.ChatProject(voice2_sung=bad)
+
 def test_new_instruments_are_accepted_everywhere():
     # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.
     for name in ("organ","guitar","flute"):

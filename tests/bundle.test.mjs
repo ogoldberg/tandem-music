@@ -127,7 +127,8 @@ test("a bundle round-trips its name, project and recordings", async () => {
 
 test("the file names are the DESK.3 project folder's", () => {
   assert.deepEqual(BUNDLE_FILES, { meta: "tandem.json", project: "project.json", original: "original.wav", polished: "polished.wav", tuned: "tuned.wav",
-    vocal: "vocal.wav", accompaniment: "accompaniment.wav", band: "band.wav", timbre: "timbre.wav" });
+    vocal: "vocal.wav", accompaniment: "accompaniment.wav", band: "band.wav", timbre: "timbre.wav",
+    voice2_sung: "harmony-voice-sung.wav" });
 });
 
 test("a generated band is kept with its project, with or without a recording (GEN.2)", async () => {
