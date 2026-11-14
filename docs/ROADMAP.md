@@ -89,6 +89,7 @@ This is the working task list, in strategic order: protect the deployment, prove
   - Sound (#46): the export status names the voices that were ready before the render; a recording that ends during a key's release fades out instead of being cut.
   - Long work (#18, #59): Basic Pitch on TensorFlow.js's CPU backend says so and shows progress (or the server transcriber is offered); the Mac app tunes a long take in sections of a few minutes so its memory stays bounded.
   - Timeline (from the review of #89): the Timeline is focusable and keyboard users can play from a time and mark a loop (arrow keys move a cursor, Enter plays from it, Shift+arrows mark a section); Play and Stop already work from the keyboard.
+  - Hear how it grew (from the review of #90): mixing every stage of a three-minute song takes about two seconds before it starts to play, longer on a phone; say so in the status, or render the first sections first and start playing while the rest renders.
   - Guided view (from the review of #82): without the Origin Private File System, Record a beat's warning points to a control the guided view has (a Download your voice button next to it, or Share's Stems + MIDI) instead of "Download your voice first"; the no-OPFS test in `e2e/test_guided.py` fails on page errors and `console.error` like the other guided tests.
   - **Acceptance:** each issue closed by the PR with a test that fails before its fix (Node, pytest or e2e), or with a reason where it cannot be tested; the long-take memory measured before and after on a 10-minute take.
 
