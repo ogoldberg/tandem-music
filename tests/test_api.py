@@ -742,6 +742,14 @@ def test_guide_module_is_served_and_precached(client):
     assert "from './guide.js'" in run(client("GET","/")).text
     assert "'./guide.js'" in run(client("GET","/sw.js")).text
 
+def test_playhead_module_is_served_and_precached(client):
+    # PLAY.1: the studio imports playhead.js (play from here and loops) at start-up, so it is precached for offline use.
+    js=run(client("GET","/playhead.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function createPlan" in js.text
+    assert "from './playhead.js'" in run(client("GET","/")).text
+    assert "'./playhead.js'" in run(client("GET","/sw.js")).text
+
 def test_dawproject_module_is_served_and_precached(client):
     # EXP.3: the studio imports dawproject.js (DAWproject export) at start-up, so it is precached for offline use.
     js=run(client("GET","/dawproject.js"))

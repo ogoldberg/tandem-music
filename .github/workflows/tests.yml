@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs tests/harmony.test.mjs tests/phrases.test.mjs tests/storage.test.mjs tests/recordings.test.mjs tests/samples.test.mjs tests/ideas.test.mjs tests/bundle.test.mjs tests/daw.test.mjs tests/notation.test.mjs tests/dawproject.test.mjs tests/worldtune.test.mjs tests/midi.test.mjs tests/noteedit.test.mjs tests/guide.test.mjs
+      - run: node --test tests/transcription.test.mjs tests/polish.test.mjs tests/tuning.test.mjs tests/history.test.mjs tests/versions.test.mjs tests/contour.test.mjs tests/groove.test.mjs tests/voices.test.mjs tests/harmony.test.mjs tests/phrases.test.mjs tests/storage.test.mjs tests/recordings.test.mjs tests/samples.test.mjs tests/ideas.test.mjs tests/bundle.test.mjs tests/daw.test.mjs tests/notation.test.mjs tests/dawproject.test.mjs tests/worldtune.test.mjs tests/midi.test.mjs tests/noteedit.test.mjs tests/guide.test.mjs tests/playhead.test.mjs
   e2e:
     runs-on: ubuntu-24.04
     steps:
