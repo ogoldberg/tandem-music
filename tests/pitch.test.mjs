@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { yin, createPitchTracker, PITCH_WORKLET, hzToMidi, centsOff, pitchTarget, guideReading, TRACK_RATE, WINDOW, HOP } from "../pitch.js";
+import { yin, createPitchTracker, PITCH_WORKLET, hzToMidi, centsOff, pitchTarget, guideReading, drawPitchStrip, TRACK_RATE, WINDOW, HOP } from "../pitch.js";
 import { scalePitchClasses } from "../contour.js";
 
 const midiHz = m => 440 * 2 ** ((m - 69) / 12);
@@ -140,4 +140,21 @@ test("the worklet's source runs the same tracker and posts its readings", () => 
   assert.ok(readings.length > 10 && readings.every(r => Math.abs(cents(r.hz, 330)) <= 10));
   node.port.onmessage({ data: "stop" });
   assert.equal(node.process([[x.subarray(0, 128)]]), false);
+});
+
+test("the strip draws the last few seconds and reads only those readings, however long the take", () => {
+  // Ten minutes of readings at 60 a second, a held A4 then a held C5 in the last two seconds.
+  const all = Array.from({ length: 36000 }, (_, i) => ({ t: i / 60, m: i >= 36000 - 120 ? 72 : 69 }));
+  let reads = 0;
+  const readings = new Proxy(all, { get(a, k) { if (typeof k === "string" && /^\d+$/.test(k)) reads++; return a[k]; } });
+  const calls = [], cx = new Proxy({}, { get: (o, k) => k in o ? o[k] : (...args) => calls.push([k, ...args]), set: (o, k, v) => (o[k] = v, true) });
+  const now = all.at(-1).t;
+  drawPitchStrip(cx, { width: 400, height: 100, readings, now, span: 4 });
+  assert.ok(reads < 3 * 4 * 60, `${reads} of ${all.length} readings read`);
+  // The line is every reading of the last 4 s, from the left edge to the right edge (after the 15 grid lines).
+  const inWindow = all.filter(r => r.t >= now - 4).length, line = calls.slice(calls.findLastIndex(c => c[0] === "beginPath") + 1).filter(c => c[0] === "moveTo" || c[0] === "lineTo");
+  assert.equal(line.length, inWindow);
+  assert.ok(Math.abs(line[0][1]) < 1e-6 && Math.abs(line.at(-1)[1] - 400) < 1e-9);
+  // The held C5 at the end is drawn above the A4 before it.
+  assert.ok(line.at(-1)[2] < line[0][2]);
 });

@@ -79,7 +79,7 @@ function keyPcs(){const v=$('pitchkey').value;if(v==='any')return null;const [to
 async function startGuide(stream){
   const g={points:[],count:0,from:null,to:null,last:null,frame:0,pcs:keyPcs(),ac:null,run:null};guide=g;
   try{g.ac=new AudioContext();await g.ac.resume();const t0=g.ac.currentTime;
-    g.run=await startPitchGuide(g.ac,g.ac.createMediaStreamSource(stream),rs=>{if(guide!==g)return;for(const r of rs){const t=r.t-t0;g.points.push({t,m:r.hz?hzToMidi(r.hz):null});g.count++;if(g.from===null)g.from=t;g.to=t;g.last=r.hz?r.hz:null}if(!g.frame)g.frame=requestAnimationFrame(()=>{g.frame=0;if(guide===g)drawGuide(g)})})}
+    g.run=await startPitchGuide(g.ac,g.ac.createMediaStreamSource(stream),rs=>{if(guide!==g)return;for(const r of rs){const t=r.t-t0;g.points.push({t,m:r.hz?hzToMidi(r.hz):null});g.count++;if(g.points.length>1200)g.points.splice(0,600);if(g.from===null)g.from=t;g.to=t;g.last=r.hz?r.hz:null}if(!g.frame)g.frame=requestAnimationFrame(()=>{g.frame=0;if(guide===g)drawGuide(g)})})}
   catch(e){stopGuide();status('Recording, without the pitch guide: '+e.message);return}
   if(guide!==g){g.run?.stop();g.ac?.close();return}
   $('pitchnow').textContent='Sing to see your pitch';$('pitchguide').classList.remove('hide');

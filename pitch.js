@@ -152,10 +152,14 @@ export function drawPitchStrip(cx, { width, height, readings, now, span = 4, rea
     cx.beginPath(); cx.moveTo(0, y(centre + k)); cx.lineTo(width, y(centre + k)); cx.stroke();
   }
   cx.strokeStyle = "#7fd3b4"; cx.lineWidth = 3; cx.lineJoin = "round";
+  // Only the readings inside the strip are read, from the newest back, so a long take costs no more to draw.
+  let first = readings.length;
+  while (first > 0 && readings[first - 1].t >= now - span) first--;
   let open = false;
   cx.beginPath();
-  for (const r of readings) {
-    if (r.t < now - span || r.m == null) { open = false; continue; }
+  for (let i = first; i < readings.length; i++) {
+    const r = readings[i];
+    if (r.m == null) { open = false; continue; }
     if (open) cx.lineTo(x(r.t), y(r.m)); else { cx.moveTo(x(r.t), y(r.m)); open = true; }
   }
   cx.stroke();

@@ -140,6 +140,70 @@ def test_the_studio_draws_the_sung_pitch_over_the_melody_roll_and_reads_it_sharp
     expect(page.locator("#pitchnow")).to_have_count(0)
 
 
+def open_project(page, tmp_path, notes):
+    project = tmp_path / "song.json"
+    project.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": 100, "instrument": "piano",
+                                   "melody_locked": True, "notes": notes, "drums": []}))
+    page.set_input_files("#projectfile", str(project))
+    expect(page.locator("#status")).to_have_text("Project opened")
+
+
+def test_in_the_studio_the_voice_is_measured_against_the_melody_note_sounding(tone_studio, tmp_path):
+    page = tone_studio
+    # G4 for the first 30 s: the sung A4 (+25 cents) is measured against it, 225 cents sharp, not against A4.
+    open_project(page, tmp_path, [{"m": 67, "t": 0, "d": 30}])
+    page.uncheck("#countin")
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording…", timeout=8000)
+    wait_for_readings(page, 10)
+    data = pitch_data(page)
+    assert data["target"] == "67" and abs(int(data["cents"]) - 225) <= 5, data
+    assert re.fullmatch(r"G4, 2\d\d cents sharp", data["text"]), data["text"]
+    page.click("#finish")
+    wait_until(page, "async () => !!document.getElementById('finish').dataset.take", "the take has finished")
+
+
+def test_in_the_studio_between_melody_notes_the_voice_is_measured_against_the_key(tone_studio, tmp_path):
+    page = tone_studio
+    # The melody comes in only at 60 s; until then the chosen key, E♭ major, has B♭ nearest: 75 cents flat.
+    open_project(page, tmp_path, [{"m": 63, "t": 60, "d": 1}])
+    page.select_option("#harmonykey", "3:major")
+    page.uncheck("#countin")
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording…", timeout=8000)
+    wait_for_readings(page, 10)
+    data = pitch_data(page)
+    assert data["target"] == "70" and abs(int(data["cents"]) + 75) <= 5, data
+    page.click("#finish")
+    wait_until(page, "async () => !!document.getElementById('finish').dataset.take", "the take has finished")
+
+
+BROKEN_GUIDE = """(() => {
+  const Node = window.AudioWorkletNode;
+  window.AudioWorkletNode = function (ac, name, opts) {
+    if (name === 'tandem-pitch') throw new Error('no pitch worklet here');
+    return new Node(ac, name, opts);
+  };
+})()"""
+
+
+def test_when_the_guide_cannot_start_the_take_records_and_says_so(tone_browser, server_url):
+    page, problems = open_page(tone_browser, server_url + "/")
+    page.add_init_script(BROKEN_GUIDE)
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    page.uncheck("#countin")
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording… (without the pitch guide: no pitch worklet here)", timeout=8000)
+    expect(page.locator("#pitchnow")).to_have_count(0)
+    page.wait_for_timeout(800)
+    page.click("#finish")
+    wait_until(page, "async () => !!document.getElementById('finish').dataset.take", "the take has finished")
+    expect(page.locator("#status")).to_contain_text("Recorded")
+    page.context.close()
+    assert not problems, problems
+
+
 def test_the_take_is_the_same_with_the_guide_as_without(tone_studio):
     page = tone_studio
     page.uncheck("#countin")
