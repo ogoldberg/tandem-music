@@ -89,7 +89,7 @@ Every control, laid out as in the third frame of `docs/design/tandem-guided-stud
 - The controls are the same elements with the same ids and handlers as before: only where they sit changed. Panels hide what is not chosen, so a control is reached by picking its part first; e2e tests do that through conftest (`REVEAL`: before a click, fill or check on a control in a hidden panel, its lane is clicked).
 - `studioRefresh` (called by `guideRefresh`, so after every `update()` and every take or tuning change) writes the step summaries (`stepSummaries`, as in the guided rail), the line under each lane, the key and speed, and the band and voice-as-instrument lane bars; `setClock` writes the time from the playhead each frame.
 - The song's name (`#songname`) is kept in the key-value store under `song-name`, beside the draft and not in the project, so the project schema is unchanged.
-- Space plays or stops and 1 to 4 pick the steps while the studio is shown, unless a field, button, menu, roll or the Timeline has the key.
+- Space plays or stops and 1 to 4 pick the steps while the studio is shown. Space does nothing while a field, button, link, menu, roll, the pitch editor or the Timeline has the key; 1 to 4 do nothing while a field, menu, roll or the pitch editor has it (a lane or step button keeps the key after a click, so the digits still work there).
 
 ## Edit history (EDIT.1)
 `history.js` is a pure module the studio script imports at startup (the inline script is `type="module"`). Every edit in `index.html` goes through `edit(label, fn)`, which serializes a snapshot before and after `fn` and records the pair with its label:
