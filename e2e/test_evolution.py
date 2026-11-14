@@ -241,11 +241,15 @@ def test_a_section_marked_while_it_plays_stays_inside_the_song(studio, tmp_path)
     # marks a loop that ends at the song's end, and the Timeline shows the song again (review of #90).
     page = studio
     short_song(page, tmp_path, 12.0)
-    page.click("#evolution")
-    expect(page.locator("#timeline .tick")).to_have_count(6)
     tl = page.locator("#timeline")
     tl.scroll_into_view_if_needed()
     box = tl.bounding_box()
+    page.click("#evolution")
+    expect(page.locator("#timeline .tick")).to_have_count(6)
+    # The "Now:" line above the Timeline keeps its height while empty, so the Timeline does not move
+    # from under the pointer when the stage is first named.
+    page.wait_for_function("document.getElementById('timeline').dataset.stage > ''", timeout=20_000)
+    assert tl.bounding_box()["y"] == box["y"], (box, tl.bounding_box())
     y = box["y"] + box["height"] / 2
     page.mouse.move(box["x"] + box["width"] * 0.97 * 0.5, y)
     page.mouse.down()
