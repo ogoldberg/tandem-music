@@ -180,3 +180,33 @@ def test_the_guided_share_step_plays_and_downloads_how_it_grew(browser, server_u
         assert info.value.suggested_filename == "tandem-how-it-grew.wav"
         with open(info.value.path(), "rb") as f:
             assert len(samples(f.read())) > SONG * RATE
+
+
+def test_the_timeline_and_rolls_cover_a_take_longer_than_the_notes_while_it_plays(studio, tmp_path):
+    # The notes and drums end by about 8 s but the take lasts 12 s, and the evolution plays to the end of the take, so
+    # while it plays the Timeline and the rolls show 12 s (6 bars at 120 bpm) and the playhead is not
+    # parked at the right edge for the take's last 4 s; on Stop they show the song again (review of #90).
+    page = studio
+    path = tmp_path / "song.json"
+    path.write_text(json.dumps(project()))
+    page.set_input_files("#projectfile", str(path))
+    expect(page.locator("#status")).to_have_text("Project opened")
+    page.set_input_files("#audiofile", str(take(tmp_path / "take.wav", seconds=12.0)))
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Recorded 12\.0s"))
+    # The song's scale: the last drum hit is drawn to 8.05 s, so 5 bars.
+    expect(page.locator("#timeline .tick")).to_have_count(5)
+    first = page.locator("#melodyroll .note").first.evaluate("e => parseFloat(e.style.left)")
+
+    page.click("#evolution")
+    expect(page.locator("#status")).to_contain_text("Playing how the song grew")
+    expect(page.locator("#timeline .tick")).to_have_count(6)
+    page.wait_for_function("document.getElementById('timeline').dataset.t > '0.5'", timeout=20_000)
+    s = page.evaluate("""() => { const tl = document.getElementById('timeline');
+        return {t: parseFloat(tl.dataset.t), left: parseFloat(tl.querySelector('.playhead').style.left)} }""")
+    assert abs(s["left"] - s["t"] / 12 * 97) < 1.5, s
+    # The melody's second note (0.5 s) is drawn on the same 12 s scale.
+    second = page.locator("#melodyroll .note").nth(1).evaluate("e => parseFloat(e.style.left)")
+    assert abs((second - first) - 0.5 / 12 * 97) < 0.6, (first, second)
+
+    page.click("#stop")
+    expect(page.locator("#timeline .tick")).to_have_count(5)

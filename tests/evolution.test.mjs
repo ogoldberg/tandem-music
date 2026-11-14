@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { STAGES, FADE, evolutionPlan, stageGain, stageAt, mixEvolution, contentSeconds } from "../evolution.js";
 
 const keys = plan => plan.stages.map(s => s.key);
@@ -119,4 +120,10 @@ test("the sections cover the song and the last one runs on through the rendered 
   assert.equal(stageAt(plan, 10.5).key, "drums");
   assert.equal(stageGain(plan, "drums", 10.9), 1);
   assert.equal(evolutionPlan(["melody"], 9, { length: 5 }).stages[0].end, 9);
+});
+
+test("the studio sizes the sections by the stems it has", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  // A generated part whose audio is not loaded has no stem, so it must not lengthen the song (review of #90).
+  assert.match(html, /evolutionPlan\(Object\.keys\(stems\),contentSeconds\(p,longest\/STEM_RATE,Object\.keys\(stems\)\)/);
 });
