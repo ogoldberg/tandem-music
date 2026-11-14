@@ -179,6 +179,10 @@ def playhead_js():
 def evolution_js():
     return FileResponse(Path(__file__).resolve().parent / "evolution.js", media_type="text/javascript")
 
+@app.get("/take.js", include_in_schema=False)
+def take_js():
+    return FileResponse(Path(__file__).resolve().parent / "take.js", media_type="text/javascript")
+
 @app.get("/worldtune.js", include_in_schema=False)
 def worldtune_js():
     return FileResponse(Path(__file__).resolve().parent / "worldtune.js", media_type="text/javascript")
