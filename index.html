@@ -478,13 +478,13 @@ $('audiofile').onchange=async e=>{try{await loadAudio(e.target.files[0]);saveDra
 // frame has a context time. With Count in on, one bar of the click at the project tempo plays first and the take's zero is the
 // end of the count-in; with Click while recording on, the click goes on at the tempo. The click plays to the speakers only and
 // is never in the take (headphones keep the microphone from hearing it). #finish's data-take holds the take's times, for tests.
-let takeRun=null;
+let takeRun=null,takeStarting=false;
 function takeTick(t){const now=t.rc.currentTime;for(const c of clickTimes(t.c,{from:t.next,to:now+.2,click:t.click}))clickAt(t.rc,c.t,c.accent);t.next=Math.max(t.next,now+.2);const counting=now<t.c.zero;if(counting){const n=Math.min(t.c.beats,Math.max(1,Math.floor((now-(t.c.zero-t.c.lead))/t.c.beat)+1));if(n!==t.shown){t.shown=n;status('Count-in: '+n+' of '+t.c.beats)}}if(counting!==t.counting){t.counting=counting;if(!counting)status('Recording…');guideRefresh()}}
-$('record').onclick=async()=>{guidedTake=false;if(takeRun)return;let rc=null,stream=null;try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});rc=new AudioContext();await rc.resume();const url=URL.createObjectURL(new Blob([CAPTURE_WORKLET],{type:'text/javascript'}));try{await rc.audioWorklet.addModule(url)}finally{URL.revokeObjectURL(url)}
+$('record').onclick=async()=>{guidedTake=false;if(takeRun||takeStarting)return;takeStarting=true;let rc=null,stream=null;try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});rc=new AudioContext();await rc.resume();const url=URL.createObjectURL(new Blob([CAPTURE_WORKLET],{type:'text/javascript'}));try{await rc.audioWorklet.addModule(url)}finally{URL.revokeObjectURL(url)}
  const node=new AudioWorkletNode(rc,'tandem-capture');rc.createMediaStreamSource(stream).connect(node);node.connect(rc.destination);
  const c=countIn(state.bpm,rc.currentTime+.1,{on:$('countin').checked}),t={rc,stream,node,c,collector:createTakeCollector({zero:c.zero,rate:rc.sampleRate}),click:$('recclick').checked,next:0,counting:null,shown:0,done:null};
  node.port.onmessage=e=>{if(e.data==='done')t.done?.();else t.collector.add(e.data.t,e.data.channels)};takeRun=t;$('record').disabled=true;$('finish').disabled=false;delete $('finish').dataset.take;
- t.ticker=setInterval(()=>takeTick(t),25);takeTick(t)}catch(e){stream?.getTracks().forEach(x=>x.stop());rc?.close();status('Mic unavailable: '+e.message)}};
+ t.ticker=setInterval(()=>takeTick(t),25);takeTick(t)}catch(e){stream?.getTracks().forEach(x=>x.stop());rc?.close();status('Mic unavailable: '+e.message)}finally{takeStarting=false}};
 async function finishTake(){const t=takeRun;if(!t)return;takeRun=null;clearInterval(t.ticker);const end=t.rc.currentTime;$('record').disabled=false;$('finish').disabled=true;guideRefresh();
  const flushed=new Promise(r=>{t.done=r;setTimeout(r,1000)});t.node.port.postMessage('flush');await flushed;t.stream.getTracks().forEach(x=>x.stop());t.rc.close();
  const {channels,frames,rate}=t.collector.finish(end);$('finish').dataset.take=JSON.stringify({zero:t.c.zero,lead:t.c.lead,beat:t.c.beat,end,rate,frames});

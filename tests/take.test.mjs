@@ -58,3 +58,41 @@ test("the capture worklet's source registers a processor that posts the context 
   // It runs as written in an AudioWorkletGlobalScope: a quick check that it parses as script.
   assert.doesNotThrow(() => new Function("registerProcessor", "AudioWorkletProcessor", "currentTime", "sampleRate", CAPTURE_WORKLET));
 });
+
+// Runs the worklet's source in a stand-in AudioWorkletGlobalScope whose clock the test sets, and returns the processor
+// and what it posted.
+function runWorklet(rate) {
+  const scope = { currentTime: 0, sampleRate: rate, Processor: null };
+  scope.AudioWorkletProcessor = class { constructor() { this.port = { posted: [], postMessage: m => this.port.posted.push(m) }; } };
+  scope.registerProcessor = (name, cls) => { assert.equal(name, "tandem-capture"); scope.Processor = cls; };
+  new Function("scope", `with (scope) { ${CAPTURE_WORKLET} }`)(scope);
+  const node = new scope.Processor();
+  const block = (frame, start) => { scope.currentTime = frame / rate; return node.process([[Float32Array.from({ length: 128 }, (_, i) => start + i)]]); };
+  return { scope, node, block, posted: node.port.posted };
+}
+
+test("the capture worklet posts each batch with the context time of its first frame, and splits a batch at a gap", () => {
+  const rate = 1000, w = runWorklet(rate);
+  // 16 blocks of 128 frames from frame 256 (0.256 s): one full batch of 2048 frames.
+  for (let b = 0; b < 16; b++) w.block(256 + b * 128, 256 + b * 128);
+  // Then a gap: the next block's first frame is 640 frames later than the frames held.
+  w.block(2304, 2304); w.block(3072, 3072); w.block(3200, 3200);
+  w.node.port.onmessage({ data: "flush" });
+  const batches = w.posted.filter(m => m !== "done");
+  assert.equal(w.posted.at(-1), "done");
+  assert.deepEqual(batches.map(b => [b.t, b.channels[0].length, b.channels[0][0]]),
+    [[0.256, 2048, 256], [2.304, 128, 2304], [3.072, 256, 3072]]);
+  // Every frame of a batch is the value of its own frame number, so each frame's time is the batch's time plus its index.
+  for (const b of batches) b.channels[0].forEach((x, i) => assert.equal(x, Math.round(b.t * rate) + i));
+  // The collector puts each frame at its time: a take from frame 2000 to 3300 holds the gap as silence.
+  const col = createTakeCollector({ zero: 2, rate });
+  for (const b of batches) col.add(b.t, b.channels);
+  const out = col.finish(3.3);
+  assert.equal(out.frames, 1300);
+  assert.equal(out.channels[0][0], 2000);
+  assert.equal(out.channels[0][304], 2304);
+  assert.equal(out.channels[0][500], 0);
+  assert.equal(out.channels[0][1072], 3072);
+  // After the flush the processor stops.
+  assert.equal(w.block(3328, 3328), false);
+});

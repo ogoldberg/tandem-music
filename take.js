@@ -76,7 +76,9 @@ class TandemCapture extends AudioWorkletProcessor {
     if (!this.live) return false;
     if (!input || !input.length) return true;
     const len = input[0].length;
-    if (this.held && this.n + len > BATCH) this.post();
+    // A batch is one run of frames without a gap: if the input skipped (the context's time moved on more than the frames
+    // held), the batch so far is posted and the next starts at the time it is now, so no frame lands early.
+    if (this.held && (this.n + len > BATCH || Math.abs(currentTime - this.t - this.n / sampleRate) > 0.5 / sampleRate)) this.post();
     if (!this.held) { this.held = input.map(() => new Float32Array(Math.max(BATCH, len))); this.t = currentTime; this.n = 0; }
     for (let c = 0; c < this.held.length; c++) this.held[c].set(input[Math.min(c, input.length - 1)].subarray(0, len), this.n);
     this.n += len;

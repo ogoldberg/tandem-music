@@ -111,3 +111,47 @@ def test_stopping_during_the_count_in_records_nothing(rec):
     assert take_info(page)["frames"] == 0
     expect(page.locator("#record")).to_be_enabled()
     expect(page.locator("#original")).to_be_disabled()
+
+
+# A silent microphone: getUserMedia gives a stream that carries only zeros, and counts how often it was asked for.
+SILENT_MIC = """(() => {
+  window.__micRequests = 0;
+  navigator.mediaDevices.getUserMedia = async () => {
+    window.__micRequests++;
+    const ac = new AudioContext(), src = ac.createConstantSource(), dest = ac.createMediaStreamDestination();
+    src.offset.value = 0; src.connect(dest); src.start(); await ac.resume();
+    return dest.stream;
+  };
+})()"""
+
+
+def stored_take_peak(page):
+    return page.evaluate("""async () => { const r = await (await navigator.storage.getDirectory()).getDirectoryHandle('recordings');
+      let newest = null; for await (const e of r.values()) { const f = await e.getFile(); if (!newest || f.lastModified >= newest.lastModified) newest = f; }
+      const ac = new OfflineAudioContext(1, 1, 44100); const b = await ac.decodeAudioData(await newest.arrayBuffer());
+      let peak = 0; for (const x of b.getChannelData(0)) peak = Math.max(peak, Math.abs(x));
+      return { seconds: b.duration, peak }; }""")
+
+
+def test_the_click_is_not_in_the_take(rec):
+    page = rec
+    page.add_init_script(SILENT_MIC)
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    page.fill("#bpm", "100")
+    page.press("#bpm", "Tab")
+    page.check("#recclick")
+    # Two quick presses start one take: the second press finds the first still opening the microphone.
+    page.evaluate("() => { document.getElementById('record').onclick(); document.getElementById('record').onclick(); }")
+    expect(page.locator("#status")).to_have_text("Recording…", timeout=8000)
+    page.wait_for_timeout(1500)
+    page.click("#finish")
+    info = take_info(page)
+    assert page.evaluate("window.__micRequests") == 1
+    # The click played through the count-in and on into the take ...
+    offsets = [round(c["t"] - info["zero"], 4) for c in clicks(page)]
+    assert offsets[:4] == [-2.4, -1.8, -1.2, -0.6] and 0 in offsets and 0.6 in offsets
+    # ... and the take of a silent microphone is silent: none of it was recorded.
+    take = stored_take_peak(page)
+    assert take["seconds"] == pytest.approx(info["frames"] / info["rate"], abs=0.002) and take["seconds"] > 1
+    assert take["peak"] < 1e-4
