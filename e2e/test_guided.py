@@ -132,6 +132,11 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         expect(page.locator("#gharmstate")).to_have_text("Chords added")
         page.click("#gredo")
         expect(page.locator("#gvoice2state")).to_have_text(f"{voice} notes")
+        # HARM.3: the kept line sung in the person's own voice, from the take.
+        expect(page.locator("#gvoice2sung")).to_have_text("")
+        page.click("#gsingvoice2")
+        expect(page.locator("#gvoice2sung")).to_have_text("Sung in your voice", timeout=120_000)
+        expect(page.locator("#gsingvoice2")).to_have_text("Sing it again in my voice")
         expect(page.locator("#slot-chat #chatform")).to_be_visible()
 
         # Step 4: a named version, and the song as a WAV file.
