@@ -169,8 +169,10 @@ def test_a_loop_resends_its_notes_each_pass(page, server_url):
     drag_loop(page, 0.4, 1.3)  # the second and third notes (64 at 0.45 s, 67 at 0.9 s); 69 starts at 1.35 s
     page.click("#play")
     expect(page.locator("#status")).to_contain_text("Playing to Test Synth from 0.4 s, looping")
-    page.wait_for_function("window.__midiSent.filter(e => (e.data[0] & 0xf0) === 0x90 && e.data[2] > 0 && (e.data[0] & 15) !== 9).length >= 6", timeout=8000)
-    assert melody_ons(page)[:6] == [64, 67, 64, 67, 64, 67]
+    # Seven passes of the 0.9 s loop take 6.3 s: only the first 2 s are scheduled when Play starts
+    # (HORIZON), so the later passes prove the ticker keeps filling the loop while it plays.
+    page.wait_for_function("window.__midiSent.filter(e => (e.data[0] & 0xf0) === 0x90 && e.data[2] > 0 && (e.data[0] & 15) !== 9).length >= 14", timeout=15000)
+    assert melody_ons(page)[:14] == [64, 67] * 7
     page.click("#stop")
     sounding = page.evaluate("window.__midiSounding()")
     assert sounding == [], sounding
