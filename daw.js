@@ -19,16 +19,18 @@ export const DRUM_SECONDS = 0.1;
 const PARTS = [
   { key: "notes", name: "Melody", channel: 0, velocity: 90, instrument: "instrument" },
   { key: "harmony", name: "Harmony", channel: 1, velocity: 70, instrument: "harmony_instrument" },
+  // HARM.1: the harmony voice, a copy of the melody shifted, after the harmony so older files keep their channels.
+  { key: "voice2", name: "Harmony voice", channel: 2, velocity: 80, instrument: "voice2_instrument" },
 ];
 const DRUM_CHANNEL = 9;
 export const STEM_FILES = Object.freeze({
-  mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", drums: "drums.wav", band: "band.wav", timbre: "timbre.wav",
+  mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", voice2: "harmony-voice.wav", drums: "drums.wav", band: "band.wav", timbre: "timbre.wav",
   original: "vocal-original.wav", polished: "vocal-polished.wav", tuned: "vocal-tuned.wav",
   vocal: "vocal-separated.wav", accompaniment: "accompaniment.wav", midi: "tandem.mid",
 });
 // GEN.2 and TIMBRE.1: the generated band and the voice played as an instrument are parts: they are in
 // mix.wav and Export WAV.
-const PART_STEMS = ["melody", "harmony", "drums", "band", "timbre"];
+const PART_STEMS = ["melody", "harmony", "voice2", "drums", "band", "timbre"];
 const VOCAL_STEMS = ["original", "polished", "tuned", "vocal", "accompaniment"];
 
 const encoder = new TextEncoder();
@@ -79,8 +81,8 @@ function track(head, events) {
 }
 
 // The project as a type-1 MIDI file: a conductor track (tempo, 4/4, the key when known) and one
-// named track per part that has notes: Melody on channel 1 and Harmony on channel 2 with their
-// General MIDI programs, Drums on channel 10.
+// named track per part that has notes: Melody on channel 1, Harmony on channel 2 and the Harmony voice
+// on channel 3 with their General MIDI programs, Drums on channel 10.
 export function midiFile(project, { key = null } = {}) {
   const bpm = finite(project.bpm) && project.bpm > 0 ? project.bpm : 100;
   const ticks = t => Math.max(0, Math.round(t * TICKS_PER_BEAT * bpm / 60));
@@ -121,7 +123,7 @@ export function midiFile(project, { key = null } = {}) {
 // and the voice played as an instrument (TIMBRE.1) unless muted, at least four, and one more second so
 // the last release is not cut.
 export function arrangementSeconds(project) {
-  const ends = [...(project.notes || []), ...(project.harmony || [])].map(n => n.t + n.d + 1)
+  const ends = [...(project.notes || []), ...(project.harmony || []), ...(Array.isArray(project.voice2) ? project.voice2 : [])].map(n => n.t + n.d + 1)
     .concat((project.drums || []).map(h => h.t + 1))
     .concat(["band", "timbre"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []));
   return Math.max(4, ...ends) + 1;

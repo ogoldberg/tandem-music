@@ -117,3 +117,49 @@ export function stepInKey(notes, indices, key, dir) {
   }
   return notes.map((n, i) => (set.has(i) ? { ...n, m: to.get(i) } : n));
 }
+
+// HARM.1: move the selection by n semitones; refused if a note would leave the MIDI range.
+export function shiftSemitones(notes, indices, n) {
+  const sel = checked(notes, indices);
+  if (sel.some(i => notes[i].m + n < MIN_PITCH || notes[i].m + n > MAX_PITCH)) throw Error("That shift would go outside the MIDI range.");
+  const set = new Set(sel);
+  return notes.map((x, i) => (set.has(i) ? { ...x, m: x.m + n } : x));
+}
+
+// Move the selection `steps` steps of the key up (> 0) or down (< 0), one stepInKey at a time:
+// two steps up from a scale note is a third above it in the key, five down a sixth below.
+export function shiftInKey(notes, indices, key, steps) {
+  checked(notes, indices);
+  keyPitchClasses(key);
+  let out = notes;
+  for (let k = 0; k < Math.abs(steps); k++) out = stepInKey(out, indices, key, Math.sign(steps));
+  return out;
+}
+
+// The intervals a melody is duplicated at: scale steps in the key, or semitones.
+export const VOICE_INTERVALS = Object.freeze({
+  third_up: Object.freeze({ steps: 2, label: "a third up in key" }),
+  third_down: Object.freeze({ steps: -2, label: "a third down in key" }),
+  sixth_down: Object.freeze({ steps: -5, label: "a sixth down in key" }),
+  octave_up: Object.freeze({ semitones: 12, label: "an octave up" }),
+  octave_down: Object.freeze({ semitones: -12, label: "an octave down" }),
+  same: Object.freeze({ semitones: 0, label: "at the same pitch" }),
+});
+
+// Copy the selected source notes (all of them when nothing is selected) into the voice, shifted by
+// `interval` ({steps} needs `key`; {semitones}), after the notes it already holds. A copy the voice
+// already has (same pitch and start) is left out. Returns the voice's notes and the copies' indices,
+// which the studio selects so the copy can be shifted further.
+export function duplicateToVoice(source, indices, voice, interval, key = null) {
+  if (!source.length) throw Error("The melody has no notes to duplicate yet.");
+  const from = indices.length ? checked(source, indices) : allIndices(source);
+  const steps = interval?.steps, semis = interval?.semitones;
+  if ((steps == null) === (semis == null) || !Number.isInteger(steps ?? semis)) throw Error("Unknown interval.");
+  let copies = from.map(i => ({ m: source[i].m, t: source[i].t, d: source[i].d })).sort((a, b) => a.t - b.t || a.m - b.m);
+  const all = allIndices(copies);
+  copies = steps != null ? shiftInKey(copies, all, key, steps) : semis ? shiftSemitones(copies, all, semis) : copies;
+  const held = new Set(voice.map(x => x.m + "@" + x.t));
+  const fresh = copies.filter(x => !held.has(x.m + "@" + x.t));
+  if (!fresh.length) throw Error("The harmony voice already has those notes.");
+  return { notes: [...voice, ...fresh], indices: fresh.map((_, k) => voice.length + k) };
+}

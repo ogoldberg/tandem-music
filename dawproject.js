@@ -1,10 +1,10 @@
 // Export the song as a DAWproject file (EXP.3): the open exchange format of Bitwig, Studio One and
 // Cubase (https://github.com/bitwig/dawproject, version 1.0). A .dawproject file is a zip with
-// project.xml (tracks, mixer and arrangement), metadata.xml and the audio files. Melody, harmony and
-// drums are note clips on their own tracks (the same channels and drum keys as the MIDI file), and
-// every recording the studio holds (the takes, the separated music, the band and the voice played as
-// an instrument) is an audio clip on its own track, from zero, so it lines up with the notes as the
-// stems do. The tempo is the project tempo in 4/4; the key has no place in the format and goes in
+// project.xml (tracks, mixer and arrangement), metadata.xml and the audio files. Melody, harmony, the
+// harmony voice (HARM.1) and drums are note clips on their own tracks (the same channels and drum keys
+// as the MIDI file), and every recording the studio holds (the takes, the separated music, the band
+// and the voice played as an instrument) is an audio clip on its own track, from zero, so it lines up
+// with the notes as the stems do. The tempo is the project tempo in 4/4; the key has no place in the format and goes in
 // the metadata comment. DOM-free so Node tests import it directly.
 
 import { encodeWav, zipFiles } from "./bundle.js";
@@ -19,6 +19,7 @@ export const FORMAT_VERSION = "1.0";
 const NOTE_TRACKS = [
   { key: "notes", name: "Melody", channel: 0, vel: 90 / 127, color: "#3b82f6" },
   { key: "harmony", name: "Harmony", channel: 1, vel: 70 / 127, color: "#a855f7" },
+  { key: "voice2", name: "Harmony voice", channel: 2, vel: 80 / 127, color: "#14b8a6" },
 ];
 const DRUMS = { name: "Drums", channel: 9, vel: 90 / 127, color: "#f97316" };
 // Audio tracks in the order they are listed, with their names in the DAW.

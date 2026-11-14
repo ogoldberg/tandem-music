@@ -51,6 +51,12 @@ test("the parts are note tracks in beats at the project tempo, on the MIDI file'
   for (const t of p.tracks.filter(t => t.name !== "Master")) assert.equal(t.channel.destination, master.id);
 });
 
+test("the harmony voice is a note track on the MIDI file's channel 3, after the harmony (HARM.1)", () => {
+  const p = readProject(projectXml({ bpm: 120, notes: [{ m: 60, t: 0, d: 0.5 }], harmony: [{ m: 48, t: 0, d: 2 }], voice2: [{ m: 64, t: 0.5, d: 0.5 }], drums: [] }, { rate: 44100 }));
+  assert.deepEqual(p.tracks.map(t => t.name), ["Melody", "Harmony", "Harmony voice", "Master"]);
+  assert.deepEqual(p.lanes[p.byName("Harmony voice").id].notes.map(n => [n.key, n.time, n.duration, n.channel]), [["64", "1", "1", "2"]]);
+});
+
 test("recordings are audio tracks from zero, warped so their seconds line up with the beats", () => {
   const p = readProject(projectXml({ bpm: 90, notes: [{ m: 60, t: 0, d: 1 }] }, {
     rate: 44100, audio: { band: { seconds: 8, gain: 0.8, muted: true }, tuned: { seconds: 6 } },

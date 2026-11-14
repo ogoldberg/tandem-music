@@ -1663,6 +1663,87 @@ def undo_label(page):
     return page.get_attribute("#undo", "title")
 
 
+def band_level(samples, rate, start, end, hz):
+    """Spectral magnitude within 2% of `hz` between `start` and `end` seconds of a mono signal."""
+    x = samples[int(start * rate):int(end * rate)] * np.hanning(int(end * rate) - int(start * rate))
+    spectrum, freqs = np.abs(np.fft.rfft(x)), np.fft.rfftfreq(len(x), 1 / rate)
+    return spectrum[(freqs > hz * 0.98) & (freqs < hz * 1.02)].max()
+
+
+def test_harmony_voice_duplicates_the_melody_a_third_up_and_is_heard_exported_and_saved(studio, tmp_path):
+    """HARM.1: Duplicate melody copies the melody a third up in the key into the harmony voice as one
+    undoable edit; the copy is selected and shifted further in its own roll, sounds in Export WAV, is its
+    own track in the MIDI file, and is kept in the draft and the project file, beside the chords."""
+    page = studio
+    page.click("#demo")
+    melody = roll_notes(page)
+    plain = wav_samples(download(page, "#exportwav", tmp_path))
+    page.click("#genharmony")
+    expect(page.locator("#harmonycount")).to_have_text("6 notes")
+    chords = roll_notes(page, "harmonyroll")
+
+    expect(page.locator("#voice2interval")).to_have_value("third_up")
+    page.click("#voice2dup")
+    label = "Duplicate the melody a third up in C major into the harmony voice"
+    expect(page.locator("#status")).to_have_text(label)
+    assert undo_label(page) == "Undo: " + label
+    # C D E G A, a third up in C major: E F G B C. The melody and the chords are unchanged.
+    third = [(64, 0.0), (67, 0.45), (71, 0.9), (72, 1.35), (71, 1.8), (67, 2.25), (65, 2.7), (64, 3.15)]
+    assert roll_notes(page, "voice2roll") == third
+    assert roll_notes(page) == melody and roll_notes(page, "harmonyroll") == chords
+    expect(page.locator("#voice2count")).to_have_text("8 notes")
+    expect(page.locator("#voice2sel")).to_have_text("8 selected")
+    expect(page.locator("#voice2instrument")).to_have_value("marimba")
+    # One edit: undo removes the whole copy, redo brings it back.
+    page.click("#undo")
+    assert roll_notes(page, "voice2roll") == [] and undo_label(page) == "Undo: Generate chords in C major"
+    page.click("#redo")
+    assert roll_notes(page, "voice2roll") == third
+    # The same notes again are refused rather than doubled.
+    page.click("#voice2dup")
+    expect(page.locator("#status")).to_have_text("The harmony voice already has those notes.")
+
+    # Shift a copied note by a semitone in its own roll, then back with Alt+Down.
+    page.locator("#voice2roll .note").nth(6).click()
+    page.click("#voice2semiup")
+    assert roll_notes(page, "voice2roll")[6] == (66, 2.7)
+    assert undo_label(page) == "Undo: Move harmony voice note up a semitone"
+    page.locator("#voice2roll .note").nth(6).click()
+    page.keyboard.press("Alt+ArrowDown")
+    assert roll_notes(page, "voice2roll") == third
+
+    # MIDI: its own named track on channel 3, beside the melody and the chords.
+    mid = mido.MidiFile(file=io.BytesIO(download(page, "#exportmidi", tmp_path).read_bytes()))
+    names = [next((m.name for m in t if m.type == "track_name"), None) for t in mid.tracks]
+    assert names == ["Tandem", "Melody", "Harmony", "Harmony voice", "Drums"]
+    data = download(page, "#exportmidi", tmp_path).read_bytes()
+    assert [p for _, p in midi_note_ons(data, 2)] == [m for m, _ in third]
+    assert [p for _, p in midi_note_ons(data, 0)] == [m for m, _ in melody]
+
+    # WAV: the third above the first melody note (E4 over C4) is heard where it was not before. The chords
+    # are muted for this check by clearing them, so only the harmony voice adds the E.
+    page.click("#clearharmony")
+    with_voice = wav_samples(download(page, "#exportwav", tmp_path))
+    assert np.abs(with_voice).max() < 32000
+    e4, c4 = 329.63, 261.63
+    assert band_level(with_voice, 44100, 0.05, 0.35, e4) > 5 * band_level(plain, 44100, 0.05, 0.35, e4)
+    assert band_level(with_voice, 44100, 0.05, 0.35, c4) == pytest.approx(band_level(plain, 44100, 0.05, 0.35, c4), rel=0.2)
+
+    # Kept in the draft and the saved project, and it plays.
+    saved = draft(page)
+    assert [(n["m"], n["t"]) for n in saved["voice2"]] == third and saved["voice2_instrument"] == "marimba"
+    page.click("#play")
+    expect(page.locator("#status")).to_have_text("Playing composition")
+    page.click("#stop")
+    project = json.loads(download(page, "#save", tmp_path).read_text())
+    assert len(project["voice2"]) == 8
+    page.reload()
+    expect(page.locator("#voice2count")).to_have_text("8 notes")
+    page.click("#clearvoice2")
+    expect(page.locator("#voice2count")).to_have_text("0 notes")
+    assert undo_label(page) == "Undo: Clear harmony voice"
+
+
 def test_roll_selects_moves_resizes_draws_and_shifts_notes(studio, tmp_path):
     """EDIT.3: a tap selects a note (it no longer deletes it); notes are moved, resized, drawn, deleted
     and shifted by octave and in key with the mouse and the keyboard, each as one undoable edit."""

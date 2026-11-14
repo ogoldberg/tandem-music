@@ -94,6 +94,17 @@ test("notes land on the right ticks, channels and programs", () => {
   assert.deepEqual(notesOn(drums), [[0, 36, 9], [beat, 38, 9], [1.5 * beat, 42, 9]]);
 });
 
+test("the harmony voice is its own named track on channel 3 with its program, after the harmony (HARM.1)", () => {
+  const p = { ...song(), voice2: [{ m: 64, t: 0, d: 0.5 }, { m: 67, t: 0.5, d: 0.5 }], voice2_instrument: "strings" };
+  const midi = readMidi(midiFile(p));
+  assert.deepEqual(midi.tracks.map(midi.name), ["Tandem", "Melody", "Harmony", "Harmony voice", "Drums"]);
+  const voice = midi.tracks[3];
+  assert.deepEqual(voice.find(e => e.kind === 0xc), { tick: 0, kind: 0xc, channel: 2, data: [PROGRAMS.strings] });
+  assert.deepEqual(notesOn(voice), [[0, 64, 2], [TICKS_PER_BEAT, 67, 2]]);
+  // Without one, the file is as before.
+  assert.deepEqual(readMidi(midiFile(song())).tracks.map(midi.name), ["Tandem", "Melody", "Harmony", "Drums"]);
+});
+
 test("a note-off comes before a note-on of the same pitch at the same tick", () => {
   // The later note comes first, so the order cannot come from the input.
   const p = { ...song(), notes: [{ m: 60, t: 0.5, d: 0.5 }, { m: 60, t: 0, d: 0.5 }], harmony: [], drums: [] };
@@ -150,6 +161,8 @@ test("the arrangement length covers every note and drum with a tail, at least fo
   assert.equal(arrangementSeconds({ notes: [], harmony: [], drums: [] }), 5);
   assert.equal(arrangementSeconds({ notes: [{ m: 60, t: 6, d: 1 }], harmony: [{ m: 48, t: 0, d: 9 }], drums: [{ k: "kick", t: 3 }] }), 11);
   assert.equal(arrangementSeconds({ notes: [], drums: [{ k: "kick", t: 7 }] }), 9);
+  // HARM.1: the harmony voice's notes count too.
+  assert.equal(arrangementSeconds({ notes: [{ m: 60, t: 0, d: 1 }], drums: [], voice2: [{ m: 64, t: 8, d: 2 }] }), 12);
   // GEN.2: a band plays to its end unless it is muted.
   const band = { id: "b", style: "rock", follows: "melody", seconds: 20, muted: false, model: "musicgen-melody" };
   assert.equal(arrangementSeconds({ notes: [{ m: 60, t: 0, d: 1 }], drums: [], band }), 21);
@@ -216,6 +229,14 @@ test("the voice played as an instrument is a part: in the mix, after the band, b
   assert.deepEqual([0, 1].map(i => s.getInt16(i * 2, true)), [Math.round(0.75 * 32767), Math.round(0.25 * 32767)]);
 });
 
+test("the harmony voice is a part stem in the mix, after the harmony (HARM.1)", async () => {
+  const files = await unzipFiles(stemsZip({ parts: { voice2: Float32Array.of(0.25, 0.25), harmony: Float32Array.of(0.25), melody: Float32Array.of(0.25) },
+    vocals: {}, rate: 8000, midi: midiFile(song()) }));
+  assert.deepEqual([...files.keys()], ["mix.wav", "melody.wav", "harmony.wav", "harmony-voice.wav", "tandem.mid"]);
+  const mix = files.get("mix.wav"), s = new DataView(mix.buffer, mix.byteOffset + 44);
+  assert.deepEqual([0, 1].map(i => s.getInt16(i * 2, true)), [Math.round(0.75 * 32767), Math.round(0.25 * 32767)]);
+});
+
 test("vocals alone make no mix; nothing at all is refused", async () => {
   const files = await unzipFiles(stemsZip({ parts: {}, vocals: { tuned: Float32Array.of(0.1, 0.2) }, rate: 8000, midi: midiFile(song()) }));
   assert.deepEqual([...files.keys()], [STEM_FILES.tuned, STEM_FILES.midi]);
@@ -225,7 +246,7 @@ test("vocals alone make no mix; nothing at all is refused", async () => {
 test("the file names", () => {
   assert.equal(STEM_RATE, 44100);
   assert.deepEqual(STEM_FILES, {
-    mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", drums: "drums.wav", band: "band.wav", timbre: "timbre.wav",
+    mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", voice2: "harmony-voice.wav", drums: "drums.wav", band: "band.wav", timbre: "timbre.wav",
     original: "vocal-original.wav", polished: "vocal-polished.wav", tuned: "vocal-tuned.wav",
     vocal: "vocal-separated.wav", accompaniment: "accompaniment.wav", midi: "tandem.mid",
   });
