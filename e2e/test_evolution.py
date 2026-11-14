@@ -210,3 +210,51 @@ def test_the_timeline_and_rolls_cover_a_take_longer_than_the_notes_while_it_play
 
     page.click("#stop")
     expect(page.locator("#timeline .tick")).to_have_count(5)
+
+
+def short_song(page, tmp_path, take_seconds):
+    """A melody to 2 s (the song's own scale is the 8 s minimum: 4 bars) and a longer take."""
+    p = project()
+    p["notes"], p["harmony"], p["drums"] = p["notes"][:4], [], []
+    path = tmp_path / "short.json"
+    path.write_text(json.dumps(p))
+    page.set_input_files("#projectfile", str(path))
+    expect(page.locator("#status")).to_have_text("Project opened")
+    page.set_input_files("#audiofile", str(take(tmp_path / "take.wav", seconds=take_seconds)))
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Recorded "))
+    expect(page.locator("#timeline .tick")).to_have_count(4)
+
+
+def test_the_song_scale_comes_back_when_it_ends_on_its_own(studio, tmp_path):
+    page = studio
+    short_song(page, tmp_path, 9.0)
+    page.click("#evolution")
+    expect(page.locator("#timeline .tick")).to_have_count(5)
+    page.wait_for_function("document.getElementById('timeline').dataset.t > ''", timeout=20_000)
+    # Nobody presses Stop: when the playhead passes the end, the rolls and the Timeline show the song again.
+    page.wait_for_function("document.getElementById('timeline').dataset.t === ''", timeout=20_000)
+    expect(page.locator("#timeline .tick")).to_have_count(4)
+
+
+def test_a_section_marked_while_it_plays_stays_inside_the_song(studio, tmp_path):
+    # The Timeline shows the 12 s evolution; a drag across its last third, past the song's own 8 s,
+    # marks a loop that ends at the song's end, and the Timeline shows the song again (review of #90).
+    page = studio
+    short_song(page, tmp_path, 12.0)
+    page.click("#evolution")
+    expect(page.locator("#timeline .tick")).to_have_count(6)
+    tl = page.locator("#timeline")
+    tl.scroll_into_view_if_needed()
+    box = tl.bounding_box()
+    y = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + box["width"] * 0.97 * 0.5, y)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] * 0.97 * 0.75, y, steps=5)
+    page.mouse.move(box["x"] + box["width"] * 0.97 * 0.95, y, steps=5)
+    page.mouse.up()
+    expect(page.locator("#timeline .tick")).to_have_count(4)
+    m = re.search(r"Section ([\d.]+) to ([\d.]+) s", page.locator("#timeinfo").inner_text())
+    assert m, page.locator("#timeinfo").inner_text()
+    start, end = float(m.group(1)), float(m.group(2))
+    assert 5.5 < start < 6.5 and end <= 8.0, (start, end)
+    page.click("#stop")

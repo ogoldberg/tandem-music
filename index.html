@@ -336,7 +336,8 @@ async function playback({lead=0,click=false,voice=false,from=0,loop=null}={}){st
 // t / songEnd() * 97% across each. The loop region belongs to the studio, not the project: it is not saved and not an edit.
 const HORIZON=2,HEAD_IDS=['timeline','melodyroll','drumroll','harmonyroll','voice2roll'];let playing=null,headFrame=0,loopZone=null,loopOn=false;
 // While the evolution (EVO.1) plays it runs to the end of the take, so the rolls and the Timeline show that long.
-function songEnd(){const end=timelineEnd(state,lineTry?lineTry.lines[lineTry.i].notes:[]);return playing?.evolution?Math.max(end,playing.evolution.seconds):end}
+function ownEnd(){return timelineEnd(state,lineTry?lineTry.lines[lineTry.i].notes:[])}
+function songEnd(){const end=ownEnd();return playing?.evolution?Math.max(end,playing.evolution.seconds):end}
 function renderScale(){renderNoteRoll('notes');renderRoll('drumroll',state.drums,true);renderTimeline();renderNoteRoll('harmony');renderNoteRoll('voice2')}
 // The song time now, from the audio clock less the output latency, so the line is where the sound is; null during a count-in.
 function songNow(){if(!playing||ctx!==playing.ac)return null;const ac=playing.ac;return songTime(ac.currentTime-(ac.outputLatency||0)-playing.zero,playing)}
@@ -347,10 +348,11 @@ function drawHeads(){headFrame=0;if(!playing||ctx!==playing.ac){playing=null;sho
 function renderTimeline(){const el=$('timeline'),end=songEnd(),bar=240/state.bpm,bars=Math.ceil(end/bar),every=bars>32?4:bars>16?2:1,head=el.querySelector(':scope>.playhead');el.replaceChildren();for(let b=0;b*bar<end;b++){const k=document.createElement('span');k.className='tick';k.style.left=(b*bar/end*97)+'%';if(b%every===0)k.textContent=b+1;el.append(k)}const z=loopDraft||loopZone;if(z){const r=document.createElement('div');r.className='loopregion'+(loopOn||loopDraft?'':' off');r.style.left=(z.start/end*97)+'%';r.style.width=((Math.min(z.end,end)-z.start)/end*97)+'%';el.append(r)}if(head)el.append(head);$('loop').disabled=!loopZone;$('loop').setAttribute('aria-pressed',String(loopOn&&!!loopZone));$('clearloop').disabled=!loopZone;$('timeinfo').textContent=loopZone?'Section '+loopZone.start.toFixed(1)+' to '+loopZone.end.toFixed(1)+' s'+(loopOn?', looping':', loop off'):'Click a time to play from there; drag to mark a section to loop'}
 let loopDraft=null;
 function playFrom(t){playback({from:t,loop:loopOn?loopZone:null}).catch(e=>status(e.message))}
-{const tl=$('timeline');let down=null;const timeAt=e=>{const r=tl.getBoundingClientRect();return Math.min(1,Math.max(0,(e.clientX-r.left)/(r.width*.97)))*songEnd()};
+// While the evolution plays the Timeline shows its length, but a time picked on it stays inside the song itself (ownEnd).
+{const tl=$('timeline');let down=null;const timeAt=e=>{const r=tl.getBoundingClientRect();return Math.min(ownEnd(),Math.min(1,Math.max(0,(e.clientX-r.left)/(r.width*.97)))*songEnd())};
  tl.onpointerdown=e=>{if(e.button)return;down={x:e.clientX,t:timeAt(e),drag:false};try{tl.setPointerCapture(e.pointerId)}catch{}};
- tl.onpointermove=e=>{if(!down)return;if(Math.abs(e.clientX-down.x)>=4)down.drag=true;if(down.drag){loopDraft=loopRegion(down.t,timeAt(e),songEnd());renderTimeline()}};
- tl.onpointerup=e=>{if(!down)return;const d=down;down=null;loopDraft=null;if(!d.drag){renderTimeline();playFrom(d.t);return}const z=loopRegion(d.t,timeAt(e),songEnd());if(!z){renderTimeline();status('That section is too short to loop: drag across at least a quarter of a second');return}loopZone=z;loopOn=true;renderTimeline();if(playing)playFrom(z.start);else status('Marked a section to loop: '+z.start.toFixed(1)+' to '+z.end.toFixed(1)+' s. Play repeats it until Stop')};
+ tl.onpointermove=e=>{if(!down)return;if(Math.abs(e.clientX-down.x)>=4)down.drag=true;if(down.drag){loopDraft=loopRegion(down.t,timeAt(e),ownEnd());renderTimeline()}};
+ tl.onpointerup=e=>{if(!down)return;const d=down;down=null;loopDraft=null;if(!d.drag){renderTimeline();playFrom(d.t);return}const z=loopRegion(d.t,timeAt(e),ownEnd());if(!z){renderTimeline();status('That section is too short to loop: drag across at least a quarter of a second');return}loopZone=z;loopOn=true;renderTimeline();if(playing)playFrom(z.start);else status('Marked a section to loop: '+z.start.toFixed(1)+' to '+z.end.toFixed(1)+' s. Play repeats it until Stop')};
  tl.onpointercancel=()=>{down=null;loopDraft=null;renderTimeline()}}
 $('loop').onclick=()=>{if(!loopZone)return;loopOn=!loopOn;renderTimeline();if(!playing)return;const t=songNow()??playing.from;playFrom(loopOn&&(t<loopZone.start||t>=loopZone.end)?loopZone.start:t)};
 $('clearloop').onclick=()=>{const wasLooping=!!playing?.loop,t=songNow();loopZone=null;loopOn=false;renderTimeline();if(wasLooping)playFrom(t??0)};
