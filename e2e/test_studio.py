@@ -1193,6 +1193,19 @@ def wait_for_draft_audio(page, slots):
     return got
 
 
+def wait_until(page, predicate, what):
+    """Polls an async predicate (a JS function source) inside the page for up to 10 s. CI.3:
+    wait_for_function cannot take one, because the Promise it returns is truthy."""
+    ok = page.evaluate(f"""async () => {{
+      for (let i = 0; i < 100; i++) {{
+        if (await ({predicate})()) return true;
+        await new Promise(r => setTimeout(r, 100));
+      }}
+      return false;
+    }}""")
+    assert ok, f"timed out waiting until {what}"
+
+
 def import_recording(page, path):
     page.set_input_files("#audiofile", str(path))
     expect(page.locator("#status")).to_contain_text("Recorded")
@@ -1272,7 +1285,7 @@ def test_versions_keep_their_own_recordings(studio, tmp_path):
     page.click("#saveversion")
     expect(page.locator("#status")).to_have_text("Saved version: Take A")
     import_recording(page, tone_wav(tmp_path / "b.wav", seconds=0.4))
-    page.wait_for_function(f"async () => (await ({IDB_GET})('draft-audio'))?.original?.id !== '{a}'")
+    wait_until(page, f"async () => (await ({IDB_GET})('draft-audio'))?.original?.id !== '{a}'", "the draft links take B")
     b = draft_audio(page)["original"]["id"]
     page.fill("#versionname", "Take B")
     page.click("#saveversion")
@@ -1288,12 +1301,12 @@ def test_versions_keep_their_own_recordings(studio, tmp_path):
     assert draft_audio(page)["original"]["id"] == a
     page.click("#versionlist .version:has-text('Take B') >> text=Restore")
     expect(page.locator("#status")).to_have_text("Restored version: Take B")
-    page.wait_for_function(f"async () => (await ({IDB_GET})('draft-audio'))?.original?.id === '{b}'")
+    wait_until(page, f"async () => (await ({IDB_GET})('draft-audio'))?.original?.id === '{b}'", "the draft links take B again")
 
     # A is linked only from Take A now, so deleting Take A deletes its file.
     page.click("#versionlist .version:has-text('Take A') >> text=Delete")
     expect(page.locator("#status")).to_have_text("Deleted version: Take A")
-    page.wait_for_function(f"async () => JSON.stringify(await ({OPFS_FILES})()) === '{json.dumps([b])}'")
+    wait_until(page, f"async () => JSON.stringify(await ({OPFS_FILES})()) === '{json.dumps([b])}'", "only take B's file is left")
     page.reload()
     expect(page.locator("#status")).to_have_text("Restored the draft and its recording.")
     assert page.evaluate(OPFS_FILES) == [b]
