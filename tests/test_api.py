@@ -331,7 +331,7 @@ def test_chat_project_accepts_recorded_layers_and_their_mixer_channels():
     assert [l.model_dump(exclude_none=True) for l in got.layers]==layers
     mix={"melody":{"level":-3},"layer-harm1":{"mute":True},"layer-beat1":{"level":-6,"solo":True}}
     assert server.ChatProject(mix=mix,layers=layers).mix.model_dump(exclude_unset=True)==mix
-    for bad in ([{"id":"A","name":"x","seconds":1}],[{"id":"x","name":"","seconds":1}],[{"id":"x","name":"x","seconds":0}],
+    for bad in ([{"id":"A","name":"x","seconds":1}],[{"id":"x","name":"","seconds":1}],[{"id":"x","name":"   ","seconds":1}],[{"id":"x","name":" Ooh","seconds":1}],[{"id":"x","name":"x","seconds":0}],
                 [{"id":"x","name":"x","seconds":1,"into":"band"}],[{"id":"x","name":"x","seconds":1,"audio":"UklGRg=="}],
                 [{"id":f"l{i}","name":"x","seconds":1} for i in range(9)]):
         with pytest.raises(Exception):

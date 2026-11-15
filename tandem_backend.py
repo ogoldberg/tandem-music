@@ -332,7 +332,8 @@ class ProjectLayer(BaseModel):
     No AI action edits it."""
     model_config=ConfigDict(extra="forbid")
     id: str = Field(pattern=r"^[a-z0-9]{1,24}$")
-    name: str = Field(min_length=1,max_length=40)
+    # Trimmed and not blank, as cleanLayers keeps it.
+    name: str = Field(min_length=1,max_length=40,pattern=r"^\S(.*\S)?$")
     seconds: float = Field(gt=0,le=600,allow_inf_nan=False)
     into: Literal["melody","harmony","drums"] | None = None
 class ProjectMix(BaseModel):
