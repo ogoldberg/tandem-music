@@ -428,6 +428,36 @@ def test_sections_module_is_served_and_precached(client):
     assert "from './sections.js'" in run(client("GET","/")).text
     assert "'./sections.js'" in run(client("GET","/sw.js")).text
 
+def test_chat_project_accepts_lyrics_as_lyrics_js_keeps_them():
+    # LYR.1: the words typed for the melody, as text, at most lyrics.js MAX_LYRICS characters.
+    assert server.ChatProject().lyrics==""
+    words="Sing it slow-ly, sing it _ low\nand let the morn-ing come"
+    assert server.ChatProject(lyrics=words).lyrics==words
+    assert len(server.ChatProject(lyrics="a"*4000).lyrics)==4000
+    for bad in ("a"*4001,5,["la"],{"text":"la"}):
+        with pytest.raises(Exception):
+            server.ChatProject(lyrics=bad)
+    assert "lyrics" in server.SYSTEM
+
+def test_chat_accepts_a_project_with_lyrics(client, monkeypatch):
+    # LYR.1: the studio sends its whole state to /api/chat, the lyrics included; no action edits them.
+    monkeypatch.setenv("TANDEM_PROVIDER","openai-compatible")
+    async def fake(messages, config=None):
+        return '{"reply":"ok","actions":[]}'
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    project={"bpm":100,"notes":[{"m":60,"t":0,"d":0.5}],"drums":[],"lyrics":"la-la"}
+    r=run(client("POST","/api/chat",json={"message":"hi","project":project}))
+    assert r.status_code==200, r.text
+
+def test_lyrics_module_is_served_and_precached(client):
+    # LYR.1: the studio's module script and notation.js import lyrics.js statically.
+    js=run(client("GET","/lyrics.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function assignLyrics" in js.text
+    assert "from './lyrics.js'" in run(client("GET","/")).text
+    assert "from \"./lyrics.js\"" in run(client("GET","/notation.js")).text
+    assert "'./lyrics.js'" in run(client("GET","/sw.js")).text
+
 def test_new_instruments_are_accepted_everywhere():
     # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.
     for name in ("organ","guitar","flute"):

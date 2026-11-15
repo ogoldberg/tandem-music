@@ -38,6 +38,8 @@ export function projectFromState(state) {
     ...(state.takes && typeof state.takes === "object" ? { takes: state.takes } : {}),
     // SONG.1: the song's named sections, when there are any (sections.js cleanSections).
     ...(Array.isArray(state.sections) && state.sections.length ? { sections: state.sections } : {}),
+    // LYR.1: the words for the melody, when there are any (lyrics.js cleanLyrics).
+    ...(typeof state.lyrics === "string" && state.lyrics.trim() ? { lyrics: state.lyrics } : {}),
     // MIX.1: the mixer, when anything in it differs from the defaults (mixer.js cleanMix).
     ...(state.mix && typeof state.mix === "object" && Object.keys(state.mix).length ? { mix: state.mix } : {}),
   };

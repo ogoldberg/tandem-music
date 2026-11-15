@@ -6,9 +6,10 @@
 // DOM-free so Node tests import it directly.
 
 import { keySignature, PROGRAMS } from "./daw.js";
+import { assignLyrics, sixteenth, GRID } from "./lyrics.js";
 
 // Divisions per quarter note: the grid is a sixteenth note, and a 4/4 measure is 16 of them.
-export const DIVISIONS = 4;
+export const DIVISIONS = GRID;
 export const MEASURE = 16;
 // Notatable lengths in sixteenths, longest first, with the written type and dot, and the grid
 // position (in sixteenths) a value may start on, so a quarter starts on a beat and a whole note on
@@ -63,9 +64,10 @@ function pieces(at, length, rest) {
 }
 
 // A part as measures of written events: {rest, pitches, at, length, value, tieStart, tieStop}, with
-// `at` and `length` in sixteenths within the measure. Every measure adds up to MEASURE.
+// `at` and `length` in sixteenths within the measure, and `onset` (the sixteenth the note starts on)
+// on the first piece of a note, for its lyric (LYR.1). Every measure adds up to MEASURE.
 export function partMeasures(notes, bpm) {
-  const grid = t => Math.max(0, Math.round((t * bpm) / 60 * DIVISIONS));
+  const grid = t => sixteenth(t, bpm);
   const onsets = new Map();
   for (const n of notes) {
     if (!n || !finite(n.m) || !finite(n.t) || !finite(n.d) || n.d <= 0) continue;
@@ -107,13 +109,22 @@ export function partMeasures(notes, bpm) {
     written.forEach((w, i) => measures[w.bar].push({
       rest: !span.pitches, pitches: span.pitches || [], at: w.at, length: w.value.length, value: w.value,
       tieStart: !!span.pitches && i < written.length - 1, tieStop: !!span.pitches && i > 0,
+      onset: span.pitches && i === 0 ? span.start : null,
     }));
   }
   // A measure that is all silence is one measure rest.
   return measures.map(bar => (bar.every(e => e.rest) ? [{ rest: true, pitches: [], at: 0, length: MEASURE, value: null, whole: true, tieStart: false, tieStop: false }] : bar));
 }
 
-function noteXml(e, sf) {
+// LYR.1: the lyric on a note: a syllable (with an extend line when it is held over the next notes),
+// or the end of that line on the last note it is held over.
+function lyricXml(l) {
+  if (!l) return "";
+  if (l.held) return l.last ? '<lyric number="1"><extend type="stop"/></lyric>' : "";
+  return `<lyric number="1"><syllabic>${l.syllabic}</syllabic><text>${escape(l.text)}</text>${l.extend ? '<extend type="start"/>' : ""}</lyric>`;
+}
+
+function noteXml(e, sf, lyric = null) {
   if (e.rest) {
     if (e.whole) return `<note><rest measure="yes"/><duration>${MEASURE}</duration><voice>1</voice></note>`;
     return `<note><rest/><duration>${e.length}</duration><voice>1</voice><type>${e.value.type}</type>${e.value.dot ? "<dot/>" : ""}</note>`;
@@ -125,11 +136,11 @@ function noteXml(e, sf) {
     return "<note>" + (i ? "<chord/>" : "")
       + `<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ""}<octave>${octave}</octave></pitch>`
       + `<duration>${e.length}</duration>${ties.join("")}<voice>1</voice><type>${e.value.type}</type>${e.value.dot ? "<dot/>" : ""}`
-      + (tied.length ? `<notations>${tied.join("")}</notations>` : "") + "</note>";
+      + (tied.length ? `<notations>${tied.join("")}</notations>` : "") + (i ? "" : lyricXml(lyric)) + "</note>";
   }).join("\n        ");
 }
 
-// The project's melody and harmony as a MusicXML 4.0 partwise score: one part per part with notes,
+// The project's melody (with its lyrics, LYR.1) and harmony as a MusicXML 4.0 partwise score: one part per part with notes,
 // named and with its General MIDI program, the key signature (and mode) when the key is known, 4/4
 // and the tempo. Throws when neither part has a note: drums are not written as notation.
 export function musicXml(project, { key = null, title = "Tandem" } = {}) {
@@ -144,6 +155,8 @@ export function musicXml(project, { key = null, title = "Tandem" } = {}) {
   const sf = key ? keySignature(key).sf : 0;
   const keyXml = `<key><fifths>${sf}</fifths>${key ? `<mode>${key.mode}</mode>` : ""}</key>`;
   const written = parts.map(p => partMeasures(p.notes, bpm));
+  // LYR.1: the lyrics go on the melody, by the sixteenth each syllable's note starts on.
+  const lyrics = parts.map(p => (p.key === "notes" && typeof project.lyrics === "string" ? assignLyrics(p.notes, project.lyrics, bpm).byOnset : null));
   const bars = Math.max(...written.map(w => w.length));
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -174,7 +187,7 @@ export function musicXml(project, { key = null, title = "Tandem" } = {}) {
         lines.push(`      <attributes><divisions>${DIVISIONS}</divisions>${keyXml}<time><beats>4</beats><beat-type>4</beat-type></time>${clef}</attributes>`);
         if (i === 0) lines.push(`      <direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${round2(bpm)}</per-minute></metronome></direction-type><sound tempo="${round2(bpm)}"/></direction>`);
       }
-      for (const e of bar) lines.push("      " + noteXml(e, sf));
+      for (const e of bar) lines.push("      " + noteXml(e, sf, e.onset != null ? lyrics[i]?.get(e.onset) : null));
       lines.push("    </measure>");
     });
     lines.push("  </part>");
