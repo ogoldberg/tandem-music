@@ -175,9 +175,9 @@ $('gvoice2inst').replaceChildren(...[...$('voice2instrument').options].map(o=>ne
 for(const [g,b] of [['gvoice2create','voice2create'],['gvoice2next','voice2next'],['gvoice2keep','voice2keep'],['gvoice2cancel','voice2cancel']])$(g).onclick=()=>$(b).onclick();
 $('gnovoice2').onclick=()=>$('clearvoice2').onclick();
 const toBeat=()=>{$('gbeatwarn').hidden=true;$('mode').value='rhythm';planStates={};showStep('sing')};
-// One take at a time: a beat take replaces the recording, so with one loaded say so first, and keep the song as a version
-// where versions can keep recordings (OPFS); where they cannot, say the recording will be lost.
-$('gbeat').onclick=()=>{if(!audio)return toBeat();$('gbeatmsg').textContent=recordings?'A beat take replaces the recording you have now, with your voice. Tandem keeps this song as a version first, so you can open it again from Share.':'A beat take replaces the recording you have now, with your voice, and this browser cannot keep recordings in a version. Download your voice first if you want to keep it.';$('gbeatyes').textContent=recordings?'Keep a version and record a beat':'Record a beat anyway';$('gbeatyes').disabled=false;$('gbeatwarn').hidden=false};
+// A beat take becomes the recording the song uses (TAKE.1 keeps the singing as Take 1), so with one loaded say so first, and keep
+// the song as a version where versions can keep recordings (OPFS); where they cannot, say the singing lasts only until the page closes.
+$('gbeat').onclick=()=>{if(!audio)return toBeat();$('gbeatmsg').textContent=recordings?'A beat take becomes the recording the song uses; your singing stays as Take 1 under Takes. Tandem keeps this song as a version first, so you can open it again from Share.':'A beat take becomes the recording the song uses; your singing stays as Take 1 only until this page is closed, as this browser cannot keep recordings. Download your voice first if you want to keep it.';$('gbeatyes').textContent=recordings?'Keep a version and record a beat':'Record a beat anyway';$('gbeatyes').disabled=false;$('gbeatwarn').hidden=false};
 $('gbeatno').onclick=()=>{$('gbeatwarn').hidden=true};
 $('gbeatyes').onclick=async()=>{if($('gbeatyes').disabled)return;if(!recordings)return toBeat();$('gbeatyes').disabled=true;try{const v=await saveVersion('Before the beat');toBeat();status('Your song is kept as the version "'+v.name+'". Record your beat.')}catch(e){status(e.message)}finally{$('gbeatyes').disabled=false}renderVersions()};
 $('gnodrums').onclick=()=>$('clearhits').onclick();

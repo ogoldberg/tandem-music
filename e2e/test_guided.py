@@ -241,7 +241,7 @@ def test_recording_a_beat_after_singing_keeps_the_sung_song_as_a_version_first(b
         record_take(page)
         assert page.evaluate("document.getElementById('playtuned').disabled") is False
 
-        # A beat take replaces the recording, so Record a beat asks first, and Cancel leaves everything as it was.
+        # A beat take becomes the recording the song uses, so Record a beat asks first, and Cancel leaves everything as it was.
         page.click('#steps [data-step="song"]')
         page.click("#gbeat")
         expect(page.locator("#gbeatwarn")).to_be_visible()
@@ -258,6 +258,8 @@ def test_recording_a_beat_after_singing_keeps_the_sung_song_as_a_version_first(b
         expect(page.locator("#gstatus")).to_have_text('Your song is kept as the version "Before the beat". Record your beat.')
         record_take(page)
         assert page.evaluate("document.getElementById('playtuned').disabled") is True
+        # TAKE.1: the singing is kept as Take 1 beside the beat take.
+        assert page.evaluate("[...document.querySelectorAll('#takelist .takerow')].map(r => r.dataset.used)") == ["false", "true"]
 
         # The sung take, cleaned up and pitch-fixed, comes back with the version.
         page.click("#gsettings")
@@ -281,8 +283,8 @@ def test_without_recording_storage_record_a_beat_says_the_take_is_lost_and_saves
         page.click('#steps [data-step="song"]')
         page.click("#gbeat")
         expect(page.locator("#gbeatmsg")).to_have_text(
-            "A beat take replaces the recording you have now, with your voice, and this browser cannot keep recordings "
-            "in a version. Download your voice first if you want to keep it.")
+            "A beat take becomes the recording the song uses; your singing stays as Take 1 only until this page is closed, "
+            "as this browser cannot keep recordings. Download your voice first if you want to keep it.")
         expect(page.locator("#gbeatyes")).to_have_text("Record a beat anyway")
         page.click("#gbeatyes")
         expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
