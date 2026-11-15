@@ -204,6 +204,10 @@ def takes_js():
 def lyrics_js():
     return FileResponse(Path(__file__).resolve().parent / "lyrics.js", media_type="text/javascript")
 
+@app.get("/tension.js", include_in_schema=False)
+def tension_js():
+    return FileResponse(Path(__file__).resolve().parent / "tension.js", media_type="text/javascript")
+
 @app.get("/sections.js", include_in_schema=False)
 def sections_js():
     return FileResponse(Path(__file__).resolve().parent / "sections.js", media_type="text/javascript")
