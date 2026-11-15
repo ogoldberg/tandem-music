@@ -1717,7 +1717,7 @@ def test_transcription_progress_is_shown_while_the_model_runs(studio, tmp_path):
     page.click("#analyze")
     expect(page.locator("#status")).to_have_text("Transcription complete", timeout=120_000)
     shown = {int(m.group(1)) for text in page.evaluate("window.drawn")
-             if (m := re.fullmatch(r"Transcribing on device: (\d+)%", text))}
+             if (m := re.fullmatch(r"Transcribing on device: (\d+)%( \(slow here: .*\))?", text))}
     assert len({p for p in shown if 0 < p < 100}) >= 3, f"progress drawn: {sorted(shown)}"
 
 
