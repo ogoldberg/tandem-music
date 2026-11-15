@@ -9,7 +9,6 @@ import wave
 import zipfile
 
 import numpy as np
-import pytest
 from playwright.sync_api import expect
 
 from test_capture import PHONE, open_capture, phone_page, record
@@ -194,10 +193,26 @@ def test_a_project_file_without_a_recording_opens_like_a_project(studio):
     expect(page.locator("#versionlist")).to_have_text("No saved versions yet.")
 
 
-@pytest.mark.parametrize("kind", ["json", "bundle"])
-def test_opening_a_project_without_a_recording_keeps_the_draft_as_a_version_then_clears_its_recording(studio, tmp_path, kind):
-    """#61: the recording loaded before goes with the draft it belongs to: the draft is kept as a version with it, and
-    the project opens without it, so a later save does not write the old recording into the opened project."""
+def test_a_project_json_opens_over_the_recording_loaded_now(studio, tmp_path):
+    """A project file is notes only (it never has audio), so it opens over the recording loaded now, which stays."""
+    page = studio
+    page.wait_for_function("!document.body.inert")
+    page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
+    expect(page.locator("#status")).to_contain_text("Recorded")
+    held = page.evaluate(IDB_GET, "draft-audio")["original"]["id"]
+    project = {"format": "tandem-project", "version": 1, "bpm": 120, "notes": [{"m": 62, "t": 0, "d": 1}], "drums": []}
+    page.set_input_files("#projectfile", {"name": "plain.json", "mimeType": "application/json", "buffer": json.dumps(project).encode()})
+    expect(page.locator("#status")).to_have_text("Project opened")
+    assert count(page, "notecount") == 1
+    expect(page.locator("#original")).to_be_enabled()
+    assert page.evaluate(IDB_GET, "draft-audio")["original"]["id"] == held
+    assert page.evaluate(IDB_GET, "versions") in (None, [])
+
+
+def test_opening_a_tandem_file_without_a_recording_keeps_the_draft_as_a_version_then_clears_its_recording(studio, tmp_path):
+    """#61: a Tandem file (or folder, e2e/test_desktop.py) is a whole project, so the recording loaded before goes with the draft it belongs to:
+    the draft is kept as a version with it, and the project opens without it, so a later save does not write the old
+    recording into the opened project."""
     page = studio
     page.wait_for_function("!document.body.inert")
     page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
@@ -205,13 +220,10 @@ def test_opening_a_project_without_a_recording_keeps_the_draft_as_a_version_then
     expect(page.locator("#original")).to_be_enabled()
     held = page.evaluate(IDB_GET, "draft-audio")["original"]["id"]
     project = {"format": "tandem-project", "version": 1, "bpm": 120, "notes": [{"m": 62, "t": 0, "d": 1}], "drums": []}
-    if kind == "json":
-        page.set_input_files("#projectfile", {"name": "plain.json", "mimeType": "application/json", "buffer": json.dumps(project).encode()})
-    else:
-        out = io.BytesIO()
-        with zipfile.ZipFile(out, "w") as z:
-            z.writestr("project.json", json.dumps(project))
-        open_bundle(page, "plain.tandem.zip", out.getvalue())
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        z.writestr("project.json", json.dumps(project))
+    open_bundle(page, "plain.tandem.zip", out.getvalue())
     expect(page.locator("#status")).to_have_text('Project opened. Your previous draft was saved as the version "Before plain".')
     assert count(page, "notecount") == 1
     for button in ["#original", "#polish", "#analyze", "#tune"]:
