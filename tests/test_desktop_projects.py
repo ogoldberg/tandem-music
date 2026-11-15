@@ -205,6 +205,8 @@ def test_a_deflated_bundle_is_read_too():
     (lambda: bundle({"Song/original.wav": wav_bytes()}), "Song/original.wav"),
     (lambda: bundle({"run.sh": b"#!/bin/sh"}), "run.sh"),
     (lambda: bundle(meta=[]), "tandem.json"),
+    (lambda: bundle({"polished.wav": wav_bytes()}), "polished.wav without original.wav"),
+    (lambda: bundle({"tuned.wav": wav_bytes()}), "tuned.wav without original.wav"),
 ])
 def test_anything_but_a_tandem_project_is_refused(make, message):
     with pytest.raises(pj.ProjectError, match=message.replace(".", r"\.").replace("/", "/")):
@@ -215,6 +217,14 @@ def test_an_oversized_bundle_is_refused_before_it_is_read(monkeypatch):
     monkeypatch.setattr(pj, "MAX_BYTES", 1000)
     with pytest.raises(pj.ProjectError, match="too large"):
         pj.files_from_bundle(bundle({"original.wav": wav_bytes(1)}))
+
+
+def test_an_oversized_folder_is_refused(monkeypatch, tmp_path):
+    (tmp_path / "project.json").write_text(json.dumps(PROJECT))
+    (tmp_path / "original.wav").write_bytes(wav_bytes(1))
+    monkeypatch.setattr(pj, "MAX_BYTES", 1000)
+    with pytest.raises(pj.ProjectError, match="too large to open"):
+        pj.read_folder(tmp_path)
 
 
 def test_a_folder_that_is_not_a_project_is_refused(tmp_path):
@@ -249,6 +259,35 @@ def test_a_link_in_place_of_a_project_file_is_refused(tmp_path, name):
     target.unlink()
     with pytest.raises(pj.ProjectError, match=f"{name} in Song is a link"):
         pj.read_folder(folder)
+
+
+@pytest.mark.parametrize("name", ["project.json", "original.wav"])
+def test_a_link_swapped_in_after_the_check_is_still_not_followed(tmp_path, monkeypatch, name):
+    """#64: each file is opened with O_NOFOLLOW and checked on the open descriptor, so a link that
+    appears between a check and the read is refused too. The race is played by a check that misses it."""
+    folder, elsewhere = tmp_path / "Song", tmp_path / "elsewhere"
+    folder.mkdir(); elsewhere.mkdir()
+    (folder / "project.json").write_text(json.dumps(PROJECT))
+    (folder / "original.wav").write_bytes(wav_bytes())
+    target = elsewhere / name
+    target.write_bytes((folder / name).read_bytes())
+    (folder / name).unlink()
+    (folder / name).symlink_to(target)
+    monkeypatch.setattr(pj.Path, "is_symlink", lambda self: False)
+    with pytest.raises(pj.ProjectError, match=f"{name} in Song is a link"):
+        pj.read_folder(folder)
+
+
+@pytest.mark.parametrize("make", ["fifo", "folder"])
+def test_something_else_in_place_of_a_recording_is_refused_without_blocking(tmp_path, make):
+    import os
+    (tmp_path / "project.json").write_text(json.dumps(PROJECT))
+    if make == "fifo":
+        os.mkfifo(tmp_path / "original.wav")
+    else:
+        (tmp_path / "original.wav").mkdir()
+    with pytest.raises(pj.ProjectError, match="original.wav in .* is not a file"):
+        pj.read_folder(tmp_path)
 
 
 def test_saving_into_a_folder_that_holds_other_things_is_refused(tmp_path):

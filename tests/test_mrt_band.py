@@ -139,10 +139,28 @@ def test_a_repeated_note_starts_again_and_the_roll_stops_at_the_length():
     (b'{"notes": [{"m": 60, "t": 0, "d": 0}]}', "lasts more than"),
     (b'{"notes": [{"m": 60, "t": "0", "d": 1}]}', "numbers of seconds"),
     (b'{"notes": [{"m": 60, "t": 0, "d": 1, "v": 1}]}', "{m, t, d}"),
+    (b'{"notes": [{"m": 60, "t": 1' + b'0' * 400 + b', "d": 1}]}', "starts at 0"),
+    (b'{"notes": [{"m": 60, "t": 0, "d": 1' + b'0' * 400 + b'}]}', "lasts more than"),
 ])
 def test_bad_notes_are_refused(body, words):
     with pytest.raises(band.BandError, match=words.replace("{", r"\{").replace("}", r"\}")):
         band.clean_notes(body)
+
+
+def test_loading_the_model_keeps_hugging_face_offline_even_when_the_environment_says_otherwise(monkeypatch, tmp_path):
+    # magenta_rt may not be installed here: stop at its import, after the environment is set.
+    monkeypatch.setenv("HF_HUB_OFFLINE", "0")
+    import builtins
+    real = builtins.__import__
+
+    def refuse(name, *args, **kwargs):
+        if name.startswith("magenta_rt"):
+            raise ImportError("stopped before loading")
+        return real(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, "__import__", refuse)
+    with pytest.raises(ImportError, match="stopped before loading"):
+        band.load_mrt(tmp_path / "models" / "mrt2_small")
+    assert os.environ["HF_HUB_OFFLINE"] == "1"
 
 
 # --- The route, with a stand-in model ------------------------------------------------------------

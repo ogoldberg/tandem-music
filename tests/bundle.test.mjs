@@ -197,6 +197,20 @@ test("reading refuses files that are not Tandem projects", async () => {
   ])), /more than one project/);
 });
 
+test("#55: a file with a polished or tuned recording but no original is refused, saying why", async () => {
+  for (const slot of ["polished", "tuned"]) {
+    await assert.rejects(readBundle(zipFiles([
+      { name: "project.json", data: text(JSON.stringify(project())) },
+      { name: `${slot}.wav`, data: wav() },
+    ])), new RegExp(`${slot}\\.wav without original\\.wav`));
+  }
+  const both = await readBundle(zipFiles([
+    { name: "project.json", data: text(JSON.stringify(project())) },
+    { name: "original.wav", data: wav() }, { name: "tuned.wav", data: wav() },
+  ]));
+  assert.deepEqual(Object.keys(both.recordings).sort(), ["original", "tuned"]);
+});
+
 test("a bundle file name comes from the idea's name and is safe on every system", () => {
   assert.equal(bundleFileName("Bus stop"), "Bus stop.tandem.zip");
   assert.equal(bundleFileName('a/b:c*?"<>|\\d. '), "a-b-c-d.tandem.zip");

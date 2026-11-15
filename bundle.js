@@ -231,6 +231,10 @@ export async function readBundle(bytes, options) {
     if (!isWav(data)) throw Error(`${BUNDLE_FILES[slot]} is not a WAV recording.`);
     recordings[slot] = data;
   }
+  // #55: the polished and tuned recordings are made from the original; without it the studio could not use them.
+  for (const slot of ["polished", "tuned"]) {
+    if (recordings[slot] && !recordings.original) throw Error(`The file has ${BUNDLE_FILES[slot]} without ${BUNDLE_FILES.original}, the recording it was made from, so it cannot be opened.`);
+  }
   // TRACK.1: each layer's recording, by the layer's id; TAKE.1: each kept take's, by the take's id.
   for (const [file, data] of files) {
     if (!file.startsWith(folder)) continue;

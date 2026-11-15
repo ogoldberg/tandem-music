@@ -91,15 +91,31 @@ test("on a sung phrase each note's pitch is read within 10 cents of how it was s
   }
 });
 
-test("readings come at least 20 times a second, each at the middle of its window", () => {
+test("readings come at least 20 times a second, each at the middle of the frames YIN read", () => {
   for (const rate of [44100, 48000]) {
     const readings = track(tone(440, 2, rate), rate, 5);
     const perSecond = (readings.length - 1) / (readings.at(-1).t - readings[0].t);
     assert.ok(perSecond >= 20, `${perSecond.toFixed(1)} readings a second at ${rate}`);
     const step = Math.round(rate / TRACK_RATE), r = rate / step;
-    // The first reading comes when the window is full; its time is the window's middle.
-    assert.ok(Math.abs(readings[0].t - (5 + (WINDOW * step) / rate - WINDOW / 2 / r)) < 1 / rate * step + 1e-9);
-    assert.ok(Math.abs(readings[1].t - readings[0].t - HOP / r) < 1e-9);
+    // The first reading comes when the window is full. YIN compares the window's first half with the same
+    // length one period later, so the reading is stamped at the middle of those frames: (half + period) / 2.
+    const start = 5 + (WINDOW * step) / rate - WINDOW / r, period = r / readings[0].hz;
+    assert.ok(Math.abs(readings[0].t - (start + (WINDOW / 2 + period) / 2 / r)) < 1 / rate * step + 1e-9);
+    assert.ok(Math.abs(readings[1].t - readings[0].t - HOP / r) < 1e-6);
+  }
+});
+
+test("on a glide each reading is the pitch sung at its time, not the pitch about 14 ms earlier", () => {
+  // An octave a second up from C4, so 14 ms late reads about 17 cents low.
+  for (const rate of [44100, 48000]) {
+    const seconds = 1.2, x = new Float32Array(Math.round(seconds * rate));
+    const midiAt = t => 60 + 12 * t;
+    let phase = 0;
+    for (let i = 0; i < x.length; i++) { phase += 2 * Math.PI * midiHz(midiAt(i / rate)) / rate; x[i] = 0.3 * Math.sin(phase); }
+    const readings = track(x, rate).filter(r => r.hz && r.t > 0.1 && r.t < seconds - 0.1);
+    assert.ok(readings.length > 40);
+    const err = median(readings.map(r => Math.abs(1200 * Math.log2(r.hz / midiHz(midiAt(r.t))))));
+    assert.ok(err < 4, `median ${err.toFixed(1)} cents off the glide at ${rate} Hz`);
   }
 });
 

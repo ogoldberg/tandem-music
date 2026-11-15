@@ -191,7 +191,9 @@ def clean_notes(data):
         if isinstance(m, bool) or not isinstance(m, int) or not 0 <= m <= 127:
             raise BandError("A note's pitch (m) is a MIDI number from 0 to 127.")
         for v in (t, d):
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or not np.isfinite(v):
+            # An int is checked against the range below as it is: np.isfinite cannot take one too
+            # large for a float (a long JSON integer), which would answer 500 instead of 400.
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or (isinstance(v, float) and not np.isfinite(v)):
                 raise BandError("A note's start (t) and length (d) are numbers of seconds.")
         if t < 0 or t > MAX_INPUT_SECONDS or d <= 0 or d > MAX_INPUT_SECONDS:
             raise BandError(f"A note starts at 0 to {MAX_INPUT_SECONDS} s and lasts more than 0 s.")
@@ -217,7 +219,7 @@ def piano_roll(notes, seconds):
 def load_mrt(folder):
     """Magenta RealTime 2 from the verified folder (<home>/models/mrt2_small/): the exported graph and
     its state, and MusicCoCa from the same folder. Nothing is fetched from the network."""
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ["HF_HUB_OFFLINE"] = "1"  # set outright: HF_HUB_OFFLINE=0 in the environment must not reach the network
     from magenta_rt import musiccoca, paths
     paths.set_magenta_home(folder.parent.parent)  # magenta_rt reads <home>/models/<name>/<name>.mlxfn
     from magenta_rt import MagentaRT2StdMlxfn
