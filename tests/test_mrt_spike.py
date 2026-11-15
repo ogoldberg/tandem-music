@@ -28,9 +28,11 @@ def test_the_tritone_control_moves_every_note_six_semitones():
     assert (a[:, :-6] == b[:, 6:]).all() and a.sum() == b.sum() > 0
 
 
-def test_a_note_starting_inside_a_held_one_is_an_onset():
-    roll = spike.piano_roll([{"m": 60, "t": 0.0, "d": 1.0}, {"m": 60, "t": 0.4, "d": 0.2}], 2.0)
-    assert roll[10, 60] == 2 and roll[11, 60] == 1
+def test_a_note_starting_inside_a_held_one_is_an_onset_whichever_is_listed_first():
+    held, struck = {"m": 60, "t": 0.0, "d": 1.0}, {"m": 60, "t": 0.4, "d": 0.2}
+    for notes in ([held, struck], [struck, held]):
+        roll = spike.piano_roll(notes, 2.0)
+        assert roll[0, 60] == 2 and roll[10, 60] == 2 and roll[11, 60] == 1 and roll[24, 60] == 1
 
 
 def tone(midis, seconds_each):

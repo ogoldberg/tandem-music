@@ -4,7 +4,8 @@ Renders the melody and harmony of tests/fixtures/notation-project.json (F major,
 looped to the length asked for) as Magenta RealTime 2's piano roll (128 pitches, 25 frames a
 second, 2 on a note's first frame and 1 while it is held), with a style in words, into 48 kHz
 stereo music with the exported MLX model, one 40 ms frame at a time (the way live control would
-drive it). The same notes a tritone up are the control. For each output it measures:
+drive it). Two controls: the same notes a tritone up (another key), and the same notes two bars
+later (the same key, out of time: LATE_FRAMES). For each output it measures:
 
   - the pitch-class match GEN.2 uses (docs/AUDIO.md): the cosine similarity of the output's
     pitch-class profile (the share of frames whose strongest chroma bin is each pitch class)
@@ -31,6 +32,7 @@ FIXTURE = ROOT / "tests" / "fixtures" / "notation-project.json"
 FRAME_RATE = 25
 RATE = 48000
 PERIOD = 10.0  # the fixture is four bars at 96 bpm
+LATE_FRAMES = 125  # two bars at 96 bpm (5 s): the time control, beyond the 1 s lag search
 
 
 def fixture_notes():
@@ -177,12 +179,13 @@ def main():
         total = time.perf_counter() - started
         name = f"{args.model}-cfg{args.cfg_notes:g}-shift{shift}.wav"
         sf.write(out / name, y, RATE)
-        own, other = scores(y, [rolls[0 if shift == 0 else 1], rolls[1 if shift == 0 else 0]])
+        mine = rolls[0 if shift == 0 else 1]
+        own, other, late = scores(y, [mine, rolls[1 if shift == 0 else 0], np.roll(mine, LATE_FRAMES, axis=0)])
         runs.append({"shift": shift, "wav": name, "seconds": round(len(y) / RATE, 2),
                      "generate_s": round(total, 1), "realtime_factor": round(total / args.seconds, 2),
                      "step_ms_mean": round(1000 * steps.mean(), 1),
                      "step_ms_p95": round(1000 * float(np.percentile(steps, 95)), 1),
-                     "own": own, "other": other})
+                     "own": own, "other": other, "late": late})
         print(json.dumps(runs[-1]))
     result = {"model": args.model, "style": args.style, "cfg_notes": args.cfg_notes,
               "drums": not args.no_drums, "seed": args.seed, "load_and_warmup_s": round(load_s, 1),

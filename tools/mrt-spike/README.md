@@ -2,7 +2,7 @@
 
 `spike.py` renders the melody and harmony of `tests/fixtures/notation-project.json` as Magenta RealTime 2's piano roll with a style in words, with the exported MLX model, one 40 ms frame at a time, and measures how closely the music follows the notes and how long it takes. The verdict and the numbers are in `docs/AUDIO.md` (Magenta RealTime 2, MRT.0). Nothing in Tandem imports this folder.
 
-It runs in a virtual environment of its own, on Apple silicon, with the models anywhere you like (`MAGENTA_HOME`; about 4.3 GB for both exported models and the shared resources):
+It runs in a virtual environment of its own, on Apple silicon, with the models anywhere you like (`MAGENTA_HOME`; about 4.6 GB for both exported models and the shared resources):
 
 ```bash
 SPIKE=/path/to/a/folder/with/space
@@ -21,4 +21,4 @@ for model in mrt2_small mrt2_base; do
 done
 ```
 
-Each run writes two 30 s WAVs (the notes, and the same notes a tritone up) and `results-<model>-cfg<n>.json` to `--out`. `--manifest` adds the size and SHA-256 of every model file. `--style`, `--cfg-notes`, `--no-drums`, `--seed` and `--seconds` change the run.
+Each run writes two 30 s WAVs (the notes, and the same notes a tritone up), scores each against its own notes, the other notes and its own notes two bars later, and writes `results-<model>-cfg<n>.json` to `--out`. `--manifest` adds the size and SHA-256 of every model file. `--style`, `--cfg-notes`, `--no-drums`, `--seed` and `--seconds` change the run.
