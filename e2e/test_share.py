@@ -9,10 +9,11 @@ import wave
 import zipfile
 
 import numpy as np
+import pytest
 from playwright.sync_api import expect
 
 from test_capture import PHONE, open_capture, phone_page, record
-from test_studio import IDB_GET, OPFS_FILES, count, download
+from test_studio import IDB_GET, OPFS_FILES, count, download, tone_wav
 from conftest import ALL_CONTROLS
 
 # navigator.share with files, as on iOS Safari and Android Chrome: the shared file is kept for the test.
@@ -191,6 +192,38 @@ def test_a_project_file_without_a_recording_opens_like_a_project(studio):
     expect(page.locator("#status")).to_have_text("Project opened")
     assert count(page, "notecount") == 1
     expect(page.locator("#versionlist")).to_have_text("No saved versions yet.")
+
+
+@pytest.mark.parametrize("kind", ["json", "bundle"])
+def test_opening_a_project_without_a_recording_keeps_the_draft_as_a_version_then_clears_its_recording(studio, tmp_path, kind):
+    """#61: the recording loaded before goes with the draft it belongs to: the draft is kept as a version with it, and
+    the project opens without it, so a later save does not write the old recording into the opened project."""
+    page = studio
+    page.wait_for_function("!document.body.inert")
+    page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
+    expect(page.locator("#status")).to_contain_text("Recorded")
+    expect(page.locator("#original")).to_be_enabled()
+    held = page.evaluate(IDB_GET, "draft-audio")["original"]["id"]
+    project = {"format": "tandem-project", "version": 1, "bpm": 120, "notes": [{"m": 62, "t": 0, "d": 1}], "drums": []}
+    if kind == "json":
+        page.set_input_files("#projectfile", {"name": "plain.json", "mimeType": "application/json", "buffer": json.dumps(project).encode()})
+    else:
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as z:
+            z.writestr("project.json", json.dumps(project))
+        open_bundle(page, "plain.tandem.zip", out.getvalue())
+    expect(page.locator("#status")).to_have_text('Project opened. Your previous draft was saved as the version "Before plain".')
+    assert count(page, "notecount") == 1
+    for button in ["#original", "#polish", "#analyze", "#tune"]:
+        expect(page.locator(button)).to_be_disabled()
+    assert page.evaluate(IDB_GET, "draft-audio") == {}
+    versions = page.evaluate(IDB_GET, "versions")
+    assert [v["name"] for v in versions] == ["Before plain"] and versions[0]["audio"]["original"]["id"] == held
+    # Undo brings the notes back; the version brings the recording back.
+    page.click("#versionlist .version:has-text('Before plain') >> text=Restore")
+    expect(page.locator("#status")).to_have_text("Restored version: Before plain")
+    expect(page.locator("#original")).to_be_enabled()
+    assert page.evaluate(IDB_GET, "draft-audio")["original"]["id"] == held
 
 
 def test_a_project_with_only_a_harmony_voice_exports_stems_and_is_kept_as_a_version(studio, tmp_path):
