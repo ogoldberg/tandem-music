@@ -17,11 +17,13 @@ the app's own origin and host), never on the hosted app, and they write and read
 names in a folder the person chose in the dialog. Nothing here imports pywebview: the launcher passes
 the window's dialogs in (WindowDialogs), and tests pass a stand-in.
 """
+import errno
 import io
 import json
 import os
 import re
 import secrets
+import stat
 import threading
 import zipfile
 from pathlib import Path
@@ -89,6 +91,9 @@ def _check(files):
     for name in _recordings(files):
         if not _is_wav(files[name]):
             raise ProjectError(f"{name} is not a WAV recording.")
+    for name in (FILES["polished"], FILES["tuned"]):
+        if name in files and FILES["original"] not in files:  # #55: both are made from the original
+            raise ProjectError(f"The project has {name} without {FILES['original']}, the recording it was made from, so it cannot be opened.")
     if sum(1 for n in files if LAYER_FILE.match(n)) > MAX_LAYERS:
         raise ProjectError(f"A project holds at most {MAX_LAYERS} layer recordings.")
     if sum(1 for n in files if TAKE_FILE.match(n)) > MAX_TAKES:
@@ -195,6 +200,31 @@ def write_folder(folder, files):
             path.unlink()
 
 
+def _read_plain(path, folder_name, limit):
+    """A plain file's bytes, opened without following a link (#64: a link swapped in after the check
+    above is refused too) and checked on the open descriptor; O_NONBLOCK so a FIFO does not hang."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise ProjectError(f"{path.name} in {folder_name} is a link, not a file; put the file itself in the folder.") from None
+        raise ProjectError(f"{path.name} in {folder_name} could not be read: {exc.strerror}.") from None
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise ProjectError(f"{path.name} in {folder_name} is not a file.")
+        if info.st_size > limit:
+            raise ProjectError("The project is too large to open.")
+    except BaseException:
+        os.close(fd)
+        raise
+    with os.fdopen(fd, "rb") as f:
+        data = f.read(limit + 1)
+    if len(data) > limit:
+        raise ProjectError("The project is too large to open.")
+    return data
+
+
 def read_folder(folder):
     """A project folder's files, checked as a project, with tandem.json naming it after the folder."""
     folder = Path(folder)
@@ -213,12 +243,8 @@ def read_folder(folder):
             if (folder / f".{name}.icloud").exists():
                 raise ProjectError(f"{name} is still in iCloud and not on this Mac yet; download the folder in Finder, then open it again.")
             continue
-        if not path.is_file():
-            raise ProjectError(f"{name} in {folder.name} is not a file.")
-        total += path.stat().st_size
-        if total > MAX_BYTES:
-            raise ProjectError("The project is too large to open.")
-        files[name] = path.read_bytes()
+        files[name] = _read_plain(path, folder.name, MAX_BYTES - total)
+        total += len(files[name])
     if FILES["project"] not in files:
         raise ProjectError(f"{folder.name} has no project.json, so it is not a Tandem project folder.")
     _check(files)

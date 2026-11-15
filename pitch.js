@@ -42,7 +42,8 @@ function yin(x, rate, { threshold = 0.15, minHz = 65, maxHz = 1100, minRms = 0.0
 
 // A running tracker for input at `rate`: push(block, t) takes the next block of samples, whose first sample is at
 // context time t, and returns the readings it completed, {t, hz, clarity} with hz null where nothing is sung. A
-// reading's t is the middle of its window. Self-contained apart from `yin`, which the worklet's source holds too.
+// reading's t is the middle of the frames YIN read: the window's first half and one period more (a quarter of
+// the window in from its start where nothing is sung). Self-contained apart from `yin`, which the worklet's source holds too.
 function createPitchTracker(rate, { target = 16000, size = 1024, hop = 256 } = {}) {
   const step = Math.max(1, Math.round(rate / target)), r = rate / step;
   const ring = new Float32Array(size), frame = new Float32Array(size);
@@ -61,7 +62,10 @@ function createPitchTracker(rate, { target = 16000, size = 1024, hop = 256 } = {
         since = 0;
         for (let k = 0; k < size; k++) frame[k] = ring[(at + k) % size];
         const p = yin(frame, r);
-        out.push({ t: t + (i + 1) / rate - size / 2 / r, hz: p ? p.hz : null, clarity: p ? p.clarity : 0 });
+        // YIN compares the window's first half with the same length one period later, so a reading describes
+        // the middle of those frames, (half + period) / 2 from the window's start, not the window's middle.
+        const read = (size / 2 + (p ? r / p.hz : 0)) / 2;
+        out.push({ t: t + (i + 1) / rate - (size - read) / r, hz: p ? p.hz : null, clarity: p ? p.clarity : 0 });
       }
       return out;
     },
