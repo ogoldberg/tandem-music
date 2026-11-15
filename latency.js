@@ -55,7 +55,6 @@ export function detectLatency(samples, rate, times, { window = CALIBRATION.windo
       : "The clicks came back at different delays. Try again somewhere quieter.");
   }
   const seconds = round4(agree.reduce((s, x) => s + x, 0) / agree.length);
-  if (seconds > MAX_LATENCY) throw Error("The clicks came back too late to be believed. Try again.");
   return { seconds, heard: agree.length, of: times.length };
 }
 

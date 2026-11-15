@@ -81,6 +81,8 @@ def test_share_an_idea_and_open_it_in_a_fresh_profile_with_its_audio(browser, br
         phone.click(".idea >> text=Share")
         expect(phone.locator("#status")).to_have_text("Shared Bus stop.")
         [shared] = shares(phone)
+        # The take is kept at the rate the phone's audio runs at (REC.3: the worklet's frames, not a re-encode).
+        take = json.loads(phone.get_attribute("#record", "data-take"))
     assert shared["name"] == "Bus stop.tandem.zip" and shared["type"] == "application/zip" and shared["title"] == "Bus stop"
     data = base64.b64decode(shared["b64"])
 
@@ -95,7 +97,7 @@ def test_share_an_idea_and_open_it_in_a_fresh_profile_with_its_audio(browser, br
     assert project == {"format": "tandem-project", "version": 1, "bpm": 100, "instrument": "piano", "melody_locked": True,
                        "notes": [], "drums": [], "harmony": [], "harmony_instrument": "piano"}
     channels, width, rate, frames = wav_info(original)
-    assert channels == 1 and width == 2 and rate == 48000
+    assert channels == 1 and width == 2 and rate == take["rate"] and frames == take["frames"]
     assert 1.2 <= frames / rate <= 3, frames / rate
     # The fake microphone beeps: the recording is not silence.
     samples = np.frombuffer(original[44:], dtype="<i2")
