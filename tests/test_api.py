@@ -775,6 +775,15 @@ def test_beats_module_is_served_and_precached(client):
     assert "from './beats.js'" in run(client("GET","/")).text
     assert "'./beats.js'" in run(client("GET","/sw.js")).text
 
+def test_latency_module_is_served_and_precached(client):
+    # REC.3: the studio and the capture page import latency.js (lining a take up with the song) at start-up.
+    js=run(client("GET","/latency.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function detectLatency" in js.text
+    assert "from './latency.js'" in run(client("GET","/")).text
+    assert "from './latency.js'" in run(client("GET","/capture")).text
+    assert "'./latency.js'" in run(client("GET","/sw.js")).text
+
 def test_playhead_module_is_served_and_precached(client):
     # PLAY.1: the studio imports playhead.js (play from here and loops) at start-up, so it is precached for offline use.
     js=run(client("GET","/playhead.js"))

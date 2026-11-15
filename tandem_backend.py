@@ -193,6 +193,12 @@ def pitch_js():
 def beats_js():
     return FileResponse(Path(__file__).resolve().parent / "beats.js", media_type="text/javascript")
 
+
+@app.get("/latency.js", include_in_schema=False)
+def latency_js():
+    return FileResponse(Path(__file__).resolve().parent / "latency.js", media_type="text/javascript")
+
+
 @app.get("/worldtune.js", include_in_schema=False)
 def worldtune_js():
     return FileResponse(Path(__file__).resolve().parent / "worldtune.js", media_type="text/javascript")

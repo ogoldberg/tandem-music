@@ -4,6 +4,7 @@
 // studio share them. DOM-free so Node tests import it directly.
 
 import { cleanLinks, linkedIds } from "./recordings.js";
+import { cleanBeat } from "./beats.js";
 
 export const IDEAS_KEY = "ideas";
 export const MAX_IDEA_NAME = 60;
@@ -23,7 +24,11 @@ export function createIdeaStore(kv, { now = () => Date.now() } = {}) {
     return value;
   }
   const read = async () => entriesOf(await kv.get(IDEAS_KEY)).filter(isEntry);
-  const summary = ({ id, name, savedAt, duration }) => ({ id, name, savedAt, duration });
+  // REC.3: an idea recorded over a starter beat keeps which one and its tempo ({id, bpm}); others have no beat.
+  const summary = ({ id, name, savedAt, duration, beat }) => {
+    const b = cleanBeat(beat);
+    return b ? { id, name, savedAt, duration, beat: b } : { id, name, savedAt, duration };
+  };
 
   return {
     async list() {
@@ -32,16 +37,18 @@ export function createIdeaStore(kv, { now = () => Date.now() } = {}) {
 
     // Store a new idea for a recording already kept by recordings.js. Call it inside recordings.hold()
     // with the put, so the recording cannot be collected before it is linked here.
-    async add({ duration, audio }) {
+    async add({ duration, audio, beat = null }) {
       const link = cleanLinks({ original: audio }).original;
       if (!link) throw Error("An idea needs a kept recording.");
       if (!(Number.isFinite(duration) && duration >= 0)) throw Error("An idea needs a recording length.");
+      const b = beat === null ? null : cleanBeat(beat);
+      if (beat !== null && !b) throw Error("That is not a starter beat this version knows.");
       return kv.update(IDEAS_KEY, value => {
         const entries = entriesOf(value);
         const savedAt = now();
         let id = String(savedAt), n = 1;
         while (entries.some(e => e?.id === id)) id = `${savedAt}-${n++}`;
-        const entry = { id, name: "", savedAt, duration, audio: link };
+        const entry = { id, name: "", savedAt, duration, audio: link, ...(b ? { beat: b } : {}) };
         return [[entry, ...entries], summary(entry)];
       });
     },

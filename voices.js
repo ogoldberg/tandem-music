@@ -157,3 +157,15 @@ export function playNote(ac, instrument, m, t, d, destination = ac.destination) 
   }
   return plan;
 }
+
+// A drum hit on oscillators (kick, snare or hat), for when the drum samples are missing or still loading; the studio
+// and the capture page's starter beat (REC.3) both use it.
+export function synthDrum(ac, k, t, destination = ac.destination) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = k === "hat" ? "square" : "sine";
+  o.frequency.setValueAtTime(k === "kick" ? 140 : k === "snare" ? 210 : 1200, t);
+  o.frequency.exponentialRampToValueAtTime(k === "kick" ? 52 : k === "snare" ? 100 : 700, t + 0.12);
+  g.gain.setValueAtTime(k === "hat" ? 0.025 : 0.14, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + (k === "kick" ? 0.22 : 0.10));
+  o.connect(g); g.connect(destination); o.start(t); o.stop(t + 0.24);
+}

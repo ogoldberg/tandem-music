@@ -313,3 +313,89 @@ def test_vendor_files_are_cached_on_first_use_and_served_offline(phone_on_own_se
     # no-store skips the browser's HTTP cache (the files are sent as immutable), so this reads the
     # service worker's vendor cache, the copy that lasts.
     assert page.evaluate(FETCH_SIZES_NO_STORE, files) == sizes
+
+
+# REC.3: every sound started, with its context, kind and time (see e2e/test_recording.py).
+from test_recording import SOUND_LOG, SET_LATENCY, DRUM_OSC  # noqa: E402
+
+
+def test_record_over_a_starter_beat_lined_up_and_opened_with_the_beat_as_drums(phone):
+    page = phone
+    page.add_init_script(SOUND_LOG)
+    open_capture(page)
+    page.evaluate(SET_LATENCY, 0.18)
+    # The beat options are folded away until opened, so the record button stays the page.
+    expect(page.locator("#beat")).to_be_hidden()
+    page.click("#takeopts summary")
+    expect(page.locator("#beat option")).to_have_count(5)
+    page.select_option("#beat", "four")
+    page.fill("#bpm", "120")
+    page.dispatch_event("#bpm", "change")
+    page.check("#countin")
+    expect(page.locator("#beatnote")).to_contain_text("Use headphones")
+    box = page.locator("#record").bounding_box()
+    assert box["y"] + box["height"] <= 844
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.screenshot(path=str(__import__("pathlib").Path(__import__("os").environ.get("TANDEM_E2E_SHOTS") or __import__("tempfile").gettempdir()) / "capture-beat.png"))
+
+    # Every status shown, in order (a beat of the count-in lasts 0.5 s).
+    page.evaluate("""() => { const s = document.getElementById('status'); window.__statuses = [];
+      new MutationObserver(() => { const t = s.textContent; if (window.__statuses.at(-1) !== t) window.__statuses.push(t); })
+        .observe(s, { childList: true, characterData: true, subtree: true }); }""")
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording over Four on the floor at 120 bpm… tap Stop when the idea is down.", timeout=10000)
+    shown = page.evaluate("window.__statuses")
+    assert shown[shown.index("Count-in: 1 of 4"):][:4] == ["Count-in: 1 of 4", "Count-in: 2 of 4", "Count-in: 3 of 4", "Count-in: 4 of 4"]
+    info = json.loads(page.locator("#record").get_attribute("data-take"))
+    page.wait_for_timeout(2600)
+    page.click("#record")
+    expect(page.locator("#status")).to_contain_text("idea on this device, over Four on the floor at 120 bpm.")
+
+    # The count-in's clicks a beat apart before the take's zero, then the beat from zero: a kick every half second.
+    sounds = page.evaluate("window.__sounds")
+    clicks = [s for s in sounds if s["kind"] == "osc" and s["f"] in (1600, 1000)]
+    assert [round(c["t"] - info["zero"], 4) for c in clicks] == [-2, -1.5, -1, -0.5]
+    ctx = clicks[0]["ctx"]
+    hits = sorted(round(s["t"] - info["zero"], 3) for s in sounds if s["ctx"] == ctx and (s["kind"] == "buffer" or s["f"] in DRUM_OSC))
+    # Four on the floor at 120 bpm (a beat is 0.5 s): a kick on every beat, the snare on 2 and 4, the hi-hat between.
+    want = sorted([b * 0.5 for b in range(16)] + [bar * 2 + x for bar in range(4) for x in (0.5, 1.5)] + [b * 0.5 + 0.25 for b in range(16)])
+    assert len(hits) >= 12 and hits == want[:len(hits)]
+    # The take is moved by the measured round trip.
+    assert info["latency"] == 0.18 and info["start"] == pytest.approx(info["zero"] + 0.18, abs=1e-6)
+    assert info["beat"] == {"id": "four", "bpm": 120}
+
+    # The take is exactly the frames from its moved start to Stop.
+    done = json.loads(page.locator("#record").get_attribute("data-take"))
+    assert done["start"] == info["start"] and abs(done["frames"] - (done["end"] - done["start"]) * done["rate"]) <= 1
+    stored = ideas(page)
+    assert len(stored) == 1 and stored[0]["beat"] == {"id": "four", "bpm": 120} and 2.2 < stored[0]["duration"] < 3.5
+    expect(page.locator(".idea small")).to_contain_text("over Four on the floor at 120 bpm")
+    # The take is a WAV of exactly its frames.
+    wav = page.evaluate("""async () => { const r = await (await navigator.storage.getDirectory()).getDirectoryHandle('recordings');
+      for await (const e of r.values()) { const f = await e.getFile(); const b = new Uint8Array(await f.arrayBuffer());
+        const riff = String.fromCharCode(...b.slice(0, 4)), d = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(b.buffer);
+        return { riff, seconds: d.duration, type: f.type }; } }""")
+    assert wav["riff"] == "RIFF" and wav["seconds"] == pytest.approx(stored[0]["duration"], abs=0.002)
+    # The choices are kept for the next take.
+    page.reload()
+    expect(page.locator("#beat")).to_have_value("four")
+    expect(page.locator("#bpm")).to_have_value("120")
+    expect(page.locator("#countin")).to_be_checked()
+
+    # Opened in the studio, the idea is at the beat's tempo with the beat as its drums, covering the take.
+    page.click(".idea >> text=Open in studio")
+    expect(page.locator("#status")).to_contain_text("with its beat as the drums")
+    bars = -(-stored[0]["duration"] // 2)
+    expect(page.locator("#hitcount")).to_have_text(f"{int(bars * 10)} hits")
+    assert page.evaluate(IDB_GET, "draft")["bpm"] == 120
+
+
+def test_a_capture_take_without_a_beat_or_count_in_is_not_moved(phone):
+    page = phone
+    page.add_init_script(SOUND_LOG)
+    open_capture(page)
+    page.evaluate(SET_LATENCY, 0.18)
+    record(page)
+    stored = ideas(page)
+    assert "beat" not in stored[0]
+    expect(page.locator(".idea small")).not_to_contain_text("over")

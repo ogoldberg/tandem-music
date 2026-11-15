@@ -1,6 +1,6 @@
 // Starter beats (BEAT.1): a few built-in grooves written as ordinary drum hits ({k, t}, the project's
 // drum part) at the project tempo, so they play, edit, quantize and export like beatboxed drums.
-// Pure, DOM-free: index.html, capture.html and the Node tests import it.
+// Pure, DOM-free: index.html, capture.html (REC.3: the beat it records over), bundle.js and the Node tests import it.
 
 export const BEATS_PER_BAR = 4;
 export const BAR_CHOICES = Object.freeze([4, 8, 16, 32]);
@@ -67,4 +67,26 @@ export function withBeat(drums, hits, { keep = false } = {}) {
   const old = (drums || []).map(h => ({ ...h }));
   const fresh = hits.filter(h => !old.some(o => o.k === h.k && Math.abs(o.t - h.t) < 0.02)).map(h => ({ ...h }));
   return [...old, ...fresh].sort((a, c) => a.t - c.t || ORDER[a.k] - ORDER[c.k]);
+}
+
+// The groove's hits due in [from, to) when its first bar starts at `zero` and it repeats until stopped (the capture
+// page's beat, REC.3), each at its time (`zero` plus its place in the song). A ticker asks for the next window each time.
+export function grooveWindow(id, { bpm, zero, from, to }) {
+  const g = grooveById(id), bar = barSeconds(bpm), beat = bar / BEATS_PER_BAR, out = [];
+  for (let b = Math.max(0, Math.floor((from - zero) / bar)); zero + b * bar < to; b++) {
+    for (const [k, beats] of Object.entries(g.bar)) {
+      for (const x of beats) { const s = round6(b * bar + x * beat), t = round6(zero + s); if (t >= from && t < to) out.push({ k, t, s }); }
+    }
+  }
+  return out.sort((a, c) => a.t - c.t || ORDER[a.k] - ORDER[c.k]);
+}
+
+// The tempo range of a project (the backend's ChatProject accepts 45 to 220 bpm).
+export const MIN_BPM = 45, MAX_BPM = 220;
+
+// The beat an idea was recorded over ({id, bpm}), or null when there was none or it is not one this version knows.
+export function cleanBeat(beat) {
+  if (!beat || typeof beat !== "object" || !GROOVES.some(g => g.id === beat.id)) return null;
+  const bpm = Number(beat.bpm);
+  return Number.isFinite(bpm) && bpm >= MIN_BPM && bpm <= MAX_BPM ? { id: beat.id, bpm } : null;
 }
