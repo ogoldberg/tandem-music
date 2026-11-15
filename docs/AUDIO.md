@@ -175,12 +175,67 @@ Nothing is played aloud: `render.py` writes each seed-0 MPS result as a Tandem p
 
 **Verdict:** keep `harmony.js` only for now; don't adopt the model. It does write accompaniment that follows the melody and never touches it (ADR-004), but only when `harmony.js` starts it, it fits the melody's chords less often than the rules do, it writes no useful drums, its only weights MODEL.1 can load as published are the large model's (41-175 s for 30 s on this Mac), and making it fast means rewriting its sampling loop. If the listening check finds the variety worth that, the shape to try is a Vary accompaniment button in the Mac app: the medium model, converted files hosted pinned, `harmony.js`'s first bar as the prompt, the result as the harmony part in one edit. No ADR, since nothing is adopted. Still to judge by ear *(HUMAN)*: the WAVs (medium and large, 1-bar prompt) beside `harmony.js`'s chords and bass, and whether the model's part sounds like playing along or like noodling.
 
+## Pitch trackers (PITCH.0 spike)
+A spike outside the app (`tools/pitch-spike/`, commands in its README): two neural pitch trackers made for singing, against the two the studio uses. **RMVPE** is `rmvpe.onnx` from `lj1995/VoiceConversionWebUI` at `e6d0c1a1` (tagged MIT; 361,688,443 bytes, SHA-256 `5370e71a…`), run by ONNX Runtime 1.32.0 on the CPU with the preprocessing of RVC's `infer/lib/rmvpe.py` (MIT), the code those weights come with. **PESTO** is Sony CSL's `mir-1k_g7` checkpoint (LGPL-3.0) from the `SonyCSLParis/pesto` repository at `62bc0c97`: offline in PyTorch 2.15.0 over the whole clip, and its streaming model exported to ONNX and fed one 10 ms step at a time with its cache, in ONNX Runtime (Python) and in ONNX Runtime Web 1.31.1 (WebAssembly, one thread) in headless Chromium 141. **YIN** twice: the VOX.1 benchmark's scorer (`yin` in `tests/test_vocal_benchmark.py`, 150-600 Hz) and the live guide's own tracker (`pitch.js` `createPitchTracker`, the code SING.1's worklet runs, fed 128-frame quanta in Node). **Basic Pitch's contour** in Chromium through the vendored model and `contour.js` `pitchContour`, with the contour editor's settings (VOX.3: salience 0.3) and Transcribe's (TRANS.2: 0.15, nothing below MIDI 36, subharmonics).
+
+The clips: the VOX.1 phrase (C4 E4 G4 F4 sung 30-45 cents off) in its four variants at 16, 22.05, 44.1 and 48 kHz; 3 s of white noise alone; and the SEP.1 fixture's voice (WORLD-synthesized vowels with vibrato, 0.3% jitter, a consonant-like dip at each note) alone, in the mix and separated by HTDemucs (9.0 s separated in 1.1 s on MPS, through the Mac app's own `separation.separate`). The truth is the pitch the fixtures sing, frame by frame (`spike.vox_truth`, `spike.sep_truth`; `tests/test_pitch_spike.py` checks that synthesizing from it gives `render()`'s samples and that it is the f0 the SEP.1 fixture hands WORLD). Each reading is scored against the true pitch at its own time stamp, leaving out frames within 50 ms of where the truth turns sung or silent: the median and 90th percentile of the error over readings within 50 cents (the 90th percentile is the worst clip's), the share of readings more than 50 cents off ("gross") and an octave or two off, the share of sung frames read as sung, and the share of silent frames read as sung. Measured on 2026-11-15 on the operator's Mac (Apple M5, 32 GB); means over the clips in each group (VOX.1 groups: the four rates; PESTO streaming has no 22.05 kHz model, below).
+
+| Tracker | Clips | Median / p90 cents | Gross | Octave | Sung found | Silence read as sung |
+|---|---|---|---|---|---|---|
+| YIN, benchmark scorer | VOX.1 steady / vibrato / noise / glides | 0.2 / 0.6, 1.7 / 2.6, 0.3 / 0.9, 0.2 / 3.9 | 0.0-0.4% | 0% | 99.4-100% | 0% |
+| | SEP.1 voice alone / separated | 3.9 / 10.8, 4.5 / 12.8 | 0.7%, 4.2% | 0.1%, 1.0% | 96.8%, 84.8% | 0% |
+| | SEP.1 mix | nothing read | | | 0% | 0% |
+| YIN, live guide (`pitch.js`) | VOX.1 steady / vibrato / noise / glides | 0.3 / 0.6, 8.2 / 13.1, 0.3 / 0.8, 0.4 / 30.2 | 0-4.3% | 0% | 100% | 0% |
+| | SEP.1 voice alone / separated | 10.8 / 20.6, 11.3 / 21.1 | 2.7%, 10.2% | 0%, 2.8% | 96.5%, 86.8% | 0% |
+| | SEP.1 mix | | 100% | 0% | 17.6% | 41.7% |
+| Basic Pitch contour, VOX.3 | VOX.1 steady / vibrato / noise / glides | 1.5 / 6.4, 3.5 / 8.7, 1.9 / 3.5, 1.5 / 7.8 | 0-0.8% | 0% | 97.8-100% | 0% |
+| | SEP.1 voice alone / separated | 4.5 / 11.5, 5.5 / 17.8 | 0%, 4.0% | 0%, 0.3% | 95.0%, 83.6% | 0%, 4.1% |
+| | SEP.1 mix | 10.8 / 25.2 | 90.1% | 0.5% | 94.7% | 46.6% |
+| Basic Pitch contour, TRANS.2 | VOX.1 (all four) | as VOX.3 | 0-1.8% | 0% | 100% | 0-12.5% |
+| | SEP.1 voice alone / separated | 4.5 / 12.2, 6.1 / 20.4 | 2.6%, 7.8% | 0%, 0.3% | 100%, 99.1% | 0%, 28.8% |
+| RMVPE | VOX.1 steady / vibrato / noise / glides | 2.1 / 8.4, 1.1 / 3.0, 1.7 / 8.4, 1.8 / 8.1 | 0-3.8% | 0% | 96.3-100% | 0% |
+| | SEP.1 voice alone / separated | 3.9 / 10.8, 4.4 / 16.4 | 0%, 3.1% | 0% | 100%, 99.2% | 0% |
+| | SEP.1 mix | 7.9 / 21.3 | 11.4% | 0% | 83.2% | 3.3% |
+| PESTO, offline, confidence ≥ 0.2 | VOX.1 steady / vibrato / noise / glides | 4.8 / 11.7, 9.5 / 18.2, 4.8 / 11.7, 6.7 / 11.7 | 0-0.2% | 0% | 100% | 0% |
+| | SEP.1 voice alone / separated | 8.0 / 20.1, 8.9 / 22.3 | 0.3%, 1.1% | 0%, 0.3% | 97.0%, 84.3% | 0% |
+| | SEP.1 mix | 16.5 / 39.7 | 50.3% | 0% | 62.4% | 12.2% |
+| PESTO, streaming, confidence ≥ 0.1 | VOX.1 steady / vibrato / noise / glides (44.1, 48, 16 kHz) | 3.3 / 11.7, 10.5 / 21.3, 3.3 / 11.7, 6.7 / 15.8 | 0-2.8% | 0% | 100% | 100% on digital silence, 0% with noise |
+| | SEP.1 voice alone / separated | 11.4 / 27.2, 11.2 / 29.0 | 2.1%, 12.4% | 0%, 4.9% | 97.1%, 89.7% | 2.2%, 0% |
+| | SEP.1 mix | 15.3 / 34.5 | 51.9% | 0.2% | 82.4% | 20.2% |
+
+White noise alone was read as sung on 0% of frames by every tracker but Basic Pitch (4.3% with the VOX.3 settings, 99.6% with Transcribe's, whose notes are then kept only where the note activation agrees). ONNX Runtime Web gives PESTO's streaming model exactly the Python results.
+
+**PESTO's confidence.** PESTO publishes no voicing threshold, and none fits both: at 0.5 it found 65% of the separated voice (offline) and 32% (streaming); offline, 0.2 finds 84% and reads no silence as sung; streaming, 0.1 finds 90% but reads digital silence (the VOX.1 lead-in) as sung everywhere, and 0.2 finds 70% (`spike.py sweep`). Both thresholds were picked on these clips. A live PESTO would need a level gate like YIN's.
+
+**Time stamps.** The time shift that minimizes each tracker's error on the vibrato clips: 0 ms for RMVPE, 0 to -2 ms for PESTO offline, YIN's scorer and Basic Pitch, 8 ms for PESTO streaming (each step's reading describes the audio about 8 ms before the end of the step, so it is about 8 ms late plus the step's compute), and **10-15 ms for the live guide**: `pitch.js` stamps a reading at the middle of its 64 ms window, but YIN's difference sum reads only the window's first half plus the lag, so the reading describes audio about 14 ms earlier. That lag is also most of its 8-cent vibrato error (25 cents at 5.5 Hz moves about 10 cents in 12 ms) and its gross readings at note changes. Too small to see on the guide; filed in FIX.1.
+
+Time per second of audio on the 44.1 kHz clips:
+
+| Tracker | Time per second of audio | Per 10 ms step | Model |
+|---|---|---|---|
+| YIN, live guide (Node) | 4.7 ms | | none |
+| YIN, benchmark scorer (Python) | 48 ms | | none |
+| RMVPE, ONNX Runtime CPU | 24 ms (load 1.8 s) | | 362 MB |
+| PESTO offline, PyTorch CPU | 49 ms | | 0.5 MB checkpoint |
+| PESTO streaming, ONNX Runtime Python | 181 ms | 1.66 ms mean, 3.8 ms p99 | 17 MB at 44.1/48 kHz, 8.8 MB at 16 kHz |
+| PESTO streaming, ONNX Runtime Web (Chromium, wasm, 1 thread) | 410 ms | 4.2 ms mean, 4.6-4.7 ms p99 (2.8 ms at 16 kHz); load 1.35 s | as above, plus the 14.8 MB wasm runtime |
+| Basic Pitch contour (headless Chromium) | 713 ms | | the vendored model |
+
+**Weights and MODEL.1.** `rmvpe.onnx` is an ONNX graph (opset 10, input `[1, 128, time]` log-mel), not a pickle: it fits MODEL.1's pinned size and SHA-256 as published, though running it would add ONNX Runtime to `requirements-models.txt` (the `rmvpe.pt` beside it is a pickle). PESTO's default `mir-1k_g7.ckpt` (534,664 bytes) is a Lightning pickle that `torch.load(weights_only=True)` refuses (it holds an `omegaconf` `ListConfig`), so MODEL.1 could not load it; the older `mir-1k.ckpt` loads with `weights_only=True`. An ONNX export is a conversion someone runs once and the app would host pinned (publishing it is the operator's decision), and the export took work: the PyPI wheel 2.0.1 ships no weights and no streaming mode, the repository's packaging leaves out its `pesto.utils`, torch 2.15's default exporter cannot convert the model's `roll` (the TorchScript exporter can, `dynamo=False`; ONNX Runtime then matches PyTorch to 1.5e-5 semitones), and at 22.05 kHz the 220-sample step is shorter than its lowest CQT kernel, so that rate does not export. PESTO's LGPL-3.0 also covers the weights, which LIC.1 would have to weigh before shipping them in a page.
+
+**Verdict:** keep YIN and Basic Pitch; adopt neither model. No ADR, since nothing is adopted.
+- **Live guide: keep YIN.** On clean singing it reads within 0.3 cents (8 on vibrato, from its time stamp); on the separated voice it is about level with streaming PESTO (11 cents median, 10% gross against 11 cents and 12%), in about a ninetieth of the time (4.7 against 410 ms per second of audio). Streaming PESTO in ONNX Runtime Web takes 4.2 ms per 10 ms step on one thread, more than the 2.9 ms an AudioWorklet has for each 128-frame quantum at 44.1 kHz, so it would have to run in a Worker beside the worklet; it adds about 32 MB (model and runtime), reads digital silence as sung without a gate, and its weights need converting and LIC.1.
+- **Contour and Transcribe: keep Basic Pitch.** RMVPE is the best tracker here on hard audio: on the separated voice it found 99% of the sung frames with 3.1% gross (Basic Pitch's VOX.3 settings 84% and 4.0%), and in the mix it still follows the voice (11% gross against 90%), and on the CPU it took 24 ms per second of audio against Basic Pitch's 713 in the browser. But it gives a pitch line and no notes, where Basic Pitch gives both from one run (TRANS.2's melody and VOX.3's targets), it is no more precise on clean singing (1-2 cents against 1.5-3.5), and at 362 MB it could only be a Mac app model. If real takes (VOX.2) show Basic Pitch losing the line on separated or mixed singing, the shape to try is RMVPE as the Mac app's sung line after Separate, beside Basic Pitch's notes.
+- **Benchmark scorer: keep YIN.** It is the most precise of the six on VOX.1's clean synthetic phrases (0.2-1.7 cents median, under 4 cents at the 90th percentile), which the benchmark's 3-cent thresholds need; RMVPE's 20-cent bins and PESTO's 1-11 cents are too coarse to score them.
+
+What it does not show: these are synthetic voices with known pitch and one synthetic mix; no real singing, room, breath or consonant noise beyond what the fixtures make, and no listening. Nothing is played aloud.
+
 ## Models to watch
 Checked on 2026-11-15 and not filed as tasks; each line says why. The spikes that are filed are AMT.0, PITCH.0, WORDS.0 and ROFORMER.0 in `docs/ROADMAP.md`.
 - **ACE-Step** (https://github.com/ace-step/ACE-Step, code and weights Apache 2.0) and **YuE** (https://github.com/multimodal-art-projection/YuE, Apache 2.0): whole songs with vocals from words and lyrics. They write a new song rather than build on the person's idea (ADR-004).
 - **Seed-VC** (https://github.com/Plachtaa/seed-vc, GPL-3.0, archived) and **RVC** (https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI, MIT): voice conversion. They could make the sung harmony (HARM.3) sound more like the person, but converting into another real person's voice needs their consent, and Seed-VC's GPL would bind the app's code; not before LIC.1.
 - **Beat This!** (https://github.com/CPJKU/beat_this, code and weights MIT) and audio chord recognition: beats and chords from a recording. Useful only once importing existing songs matters; today the tempo and chords come from the person's own notes (ARR.1a, ARR.1c).
-- **Transformers.js** (https://github.com/huggingface/transformers.js, Apache 2.0) and **ONNX Runtime Web** (https://github.com/microsoft/onnxruntime, MIT): runtimes, not models. Worth it only when a model should run in the browser (PESTO in PITCH.0 is the first candidate).
+- **Transformers.js** (https://github.com/huggingface/transformers.js, Apache 2.0) and **ONNX Runtime Web** (https://github.com/microsoft/onnxruntime, MIT): runtimes, not models. Worth it only when a model should run in the browser; PITCH.0 measured PESTO in ONNX Runtime Web and kept YIN.
 - **Lyria RealTime** (Google's Gemini API, experimental): live music steered by text prompts. It is a paid hosted service with no published price for it, steered by words rather than the person's notes, and it would send the session to Google; Magenta RealTime 2 (MRT.0) runs on the Mac instead.
 
 ## Research/evaluation plan
