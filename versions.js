@@ -36,6 +36,8 @@ export function projectFromState(state) {
     // TAKE.1: the kept takes and the comp of them the song uses, once there is a second take (their audio is
     // the take recordings; the comp is the "original" recording).
     ...(state.takes && typeof state.takes === "object" ? { takes: state.takes } : {}),
+    // SONG.1: the song's named sections, when there are any (sections.js cleanSections).
+    ...(Array.isArray(state.sections) && state.sections.length ? { sections: state.sections } : {}),
     // MIX.1: the mixer, when anything in it differs from the defaults (mixer.js cleanMix).
     ...(state.mix && typeof state.mix === "object" && Object.keys(state.mix).length ? { mix: state.mix } : {}),
   };

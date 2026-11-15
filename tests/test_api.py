@@ -351,6 +351,19 @@ def test_chat_project_accepts_recorded_layers_and_their_mixer_channels():
         with pytest.raises(Exception):
             server.ChatProject(mix=bad)
 
+def test_chat_project_accepts_song_sections_as_sections_js_writes_them():
+    # SONG.1: named stretches of the song, in time order and never overlapping.
+    assert server.ChatProject().sections==[]
+    sections=[{"name":"Verse","from":0.0,"to":4.0},{"name":"Chorus","from":4.0,"to":8.0},{"name":"Outro","from":10.0,"to":12.0}]
+    got=server.ChatProject(sections=sections)
+    assert [s.model_dump(by_alias=True) for s in got.sections]==sections
+    for bad in ([{"name":"","from":0,"to":1}],[{"name":" Verse","from":0,"to":1}],[{"name":"A","from":1,"to":1}],[{"name":"A","from":-1,"to":1}],
+                [{"name":"A","from":0,"to":601}],[{"name":"A","from":0,"to":1,"extra":1}],[{"name":"x"*41,"from":0,"to":1}],
+                [{"name":"A","from":2,"to":4},{"name":"B","from":0,"to":2}],[{"name":"A","from":0,"to":3},{"name":"B","from":2,"to":4}],
+                [{"name":"A","from":i,"to":i+1} for i in range(33)]):
+        with pytest.raises(Exception):
+            server.ChatProject(sections=bad)
+
 def test_layer_names_are_checked_as_layers_js_trims_them():
     # A name inside may hold anything cleanLayers keeps (a line break, U+0085); only what JavaScript's trim removes
     # may not start or end it.
@@ -406,6 +419,14 @@ def test_layers_module_is_served_and_precached(client):
     assert "export function cleanLayers" in js.text
     assert "from './layers.js'" in run(client("GET","/")).text
     assert "'./layers.js'" in run(client("GET","/sw.js")).text
+
+def test_sections_module_is_served_and_precached(client):
+    # SONG.1: the studio's module script imports sections.js statically, so it cannot start offline without it.
+    js=run(client("GET","/sections.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function repeatSection" in js.text
+    assert "from './sections.js'" in run(client("GET","/")).text
+    assert "'./sections.js'" in run(client("GET","/sw.js")).text
 
 def test_new_instruments_are_accepted_everywhere():
     # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.
