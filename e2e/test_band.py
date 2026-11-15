@@ -120,6 +120,15 @@ def played(page):
     return bands, min(others), first
 
 
+
+def live_gain(page, part):
+    """Press Play and return the gain of the part's mixer bus while it plays (MIX.1: a muted part is scheduled at gain 0)."""
+    page.click("#play")
+    page.wait_for_function("(document.getElementById('timeline').dataset.mix || '').length > 0")
+    gain = json.loads(page.get_attribute("#timeline", "data-mix"))[part]
+    page.click("#stop")
+    return gain
+
 def test_the_band_is_offered_only_in_the_mac_app(studio):
     show_part(studio, "band")
     expect(studio.locator("#bandnote")).to_be_visible()
@@ -175,7 +184,7 @@ def test_a_band_follows_the_melody_and_is_kept_played_undone_and_exported(page, 
     # Muted, it is out of the stems and the mix, and still in the project.
     page.check("#bandmute")
     assert draft(page)["band"]["muted"] is True
-    assert played(page)[0] == [], "a muted band does not play"
+    assert live_gain(page, "band") == 0, "a muted band is silent"
     assert "band.wav" not in stems(page)
     page.click("#undo")
     expect(page.locator("#bandmute")).not_to_be_checked()

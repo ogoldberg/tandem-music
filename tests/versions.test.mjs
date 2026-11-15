@@ -41,6 +41,13 @@ test("projectFromState keeps the sung harmony only when there is one (HARM.3)", 
   assert.equal("voice2_sung" in projectFromState(project()), false);
 });
 
+test("projectFromState keeps the mix only when something in it was changed (MIX.1)", () => {
+  const mix = { drums: { level: -6 }, voice: { mute: false } };
+  assert.deepEqual(projectFromState({ ...project(), mix }).mix, mix);
+  assert.equal("mix" in projectFromState({ ...project(), mix: {} }), false);
+  assert.equal("mix" in projectFromState(project()), false);
+});
+
 test("projectFromState keeps the harmony voice and its instrument only when it has notes (HARM.1)", () => {
   const voice2 = [{ m: 64, t: 0, d: 0.4 }];
   const p = projectFromState({ ...project(), voice2, voice2_instrument: "strings" });

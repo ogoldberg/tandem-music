@@ -331,9 +331,10 @@ Asked for by the operator on 2026-11-13, in this order: fixing how notes are edi
 - [ ] **TAKE.1** Several takes of a part, and pick or combine the best
   - Keep every take of a recording instead of replacing it; choose the take to use, or comp sections of different takes into one.
   - **Acceptance:** Node tests of the comp edit list; a Chromium test records two takes, picks one, comps a section from the other and undoes; takes survive a reload.
-- [ ] **MIX.1** A mixer: volume, mute and solo for every part
+- [x] **MIX.1** A mixer: volume, mute and solo for every part
   - Melody, harmony, drums, band, voice as instrument and the vocal takes each get a level, mute and solo, used by Play, Export WAV and the stems and saved in the project.
   - **Acceptance:** Node tests of the gain math; a Chromium test checks a muted part is silent and a level change scales its stem in Export WAV.
+  - Done: `mixer.js` gives every part (your voice, melody, chords, harmony voice, sung harmony, drums, band, voice as instrument) a level from -30 to +6 dB, a mute and a solo, on a strip under each lane's name; each change is an edit, kept in the optional project field `mix` (only what differs from the defaults). Play routes each part through its own gain node, so a change is heard while the song plays; Export WAV and the stems leave out a silenced part and scale the rest. Your voice (the most finished take) is muted by default, so nothing changes until it is unmuted, and then it is the `voice.wav` stem. The MIDI file, MusicXML and DAWproject ignore the mix (docs/ARCHITECTURE.md, Mixer). Not yet judged by ear on real devices.
 - [ ] **SONG.1** Song sections: label verse and chorus, then repeat and reorder them
   - **Depends:** EDIT.3
   - Mark ranges of the song as named sections and repeat, move or delete a section across all parts at once.
