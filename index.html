@@ -63,7 +63,7 @@ import {detectPhrases,movePhrase,transposePhrase,copyPhraseToEnd,phraseOf} from 
 import {KEY_NAMES,SCALES,noteName,noteCentre,scalePitchClasses,snapToScale,stepInScale,snapNotesToScale,previewCorrection,contourRange,resizeNote} from './contour.js';
 import {loopRegion,createPlan,songTime,clipProject,timelineEnd} from './playhead.js';
 import {evolutionPlan,stageAt,mixEvolution,contentSeconds} from './evolution.js';
-const $=id=>document.getElementById(id), state={bpm:100,instrument:'piano',notes:[],drums:[],melody_locked:true,harmony:[],harmony_instrument:'piano',voice2:[],voice2_instrument:'piano',band:null,timbre:null,voice2_sung:null,mix:{}};
+const $=id=>document.getElementById(id), state={bpm:100,instrument:'piano',notes:[],drums:[],melody_locked:true,harmony:[],harmony_instrument:'piano',voice2:[],voice2_instrument:'piano',band:null,timbre:null,voice2_sung:null,mix:{},layers:[]};
 // HARM.2: the harmony lines on offer ({lines, i, key}) while trying them, else null. Not part of the project: Keep writes the shown line into voice2 as one edit, and any edit, undo or redo ends the trial.
 let lineTry=null;
 $('instrument').replaceChildren(...INSTRUMENTS.map(k=>new Option(VOICES[k].label,k)));$('harmonyinstrument').replaceChildren(...INSTRUMENTS.map(k=>new Option(VOICES[k].label,k)));$('voice2instrument').replaceChildren(...INSTRUMENTS.map(k=>new Option(VOICES[k].label,k)));$('voice2interval').replaceChildren(...Object.entries(VOICE_INTERVALS).map(([k,v])=>new Option(v.label[0].toUpperCase()+v.label.slice(1),k)));
