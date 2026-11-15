@@ -327,3 +327,210 @@ export function harmonyLines(project, { key = null, chords = null } = {}) {
   }
   return out;
 }
+
+// CHORD.1: chord symbols for the harmony part, read from its notes (the project keeps no chord
+// list, so a symbol is always what the notes say), and a chord changed by rewriting its notes.
+// `rank` breaks near-ties in favour of the plainer chord.
+export const CHORD_QUALITIES = Object.freeze([
+  { id: "major", suffix: "", label: "Major", tones: [0, 4, 7], rank: 0 },
+  { id: "minor", suffix: "m", label: "Minor", tones: [0, 3, 7], rank: 0 },
+  { id: "dom7", suffix: "7", label: "Seventh", tones: [0, 4, 7, 10], rank: 0.01 },
+  { id: "maj7", suffix: "maj7", label: "Major seventh", tones: [0, 4, 7, 11], rank: 0.01 },
+  { id: "m7", suffix: "m7", label: "Minor seventh", tones: [0, 3, 7, 10], rank: 0.01 },
+  { id: "sus2", suffix: "sus2", label: "Suspended second", tones: [0, 2, 7], rank: 0.02 },
+  { id: "sus4", suffix: "sus4", label: "Suspended fourth", tones: [0, 5, 7], rank: 0.02 },
+  { id: "dim", suffix: "dim", label: "Diminished", tones: [0, 3, 6], rank: 0.02 },
+  { id: "aug", suffix: "aug", label: "Augmented", tones: [0, 4, 8], rank: 0.03 },
+  { id: "m7b5", suffix: "m7♭5", label: "Half-diminished", tones: [0, 3, 6, 10], rank: 0.02 },
+  { id: "dim7", suffix: "dim7", label: "Diminished seventh", tones: [0, 3, 6, 9], rank: 0.03 },
+].map(q => Object.freeze({ ...q, tones: Object.freeze(q.tones) })));
+const QUALITY = Object.fromEntries(CHORD_QUALITIES.map(q => [q.id, q]));
+// Notes starting this close together are struck together.
+const TOGETHER = 0.03;
+
+function checkChord(chord) {
+  if (!chord || !Number.isInteger(chord.root) || chord.root < 0 || chord.root > 11 || !QUALITY[chord.quality]) {
+    throw new Error("Choose a chord: a root 0..11 and one of the chord kinds.");
+  }
+  return QUALITY[chord.quality];
+}
+
+export function chordName(chord) {
+  return KEY_NAMES[chord.root] + checkChord(chord).suffix;
+}
+
+// The chord the notes sound inside [start, end), each pitch class weighted by how long it sounds
+// there. A chord's tones count for it and other notes against it, a tone of the chord that is not
+// played costs a quarter (a tenth for the perfect fifth, which chords often leave out), the lowest note as the root and a chord of the key (chordsForKey) each
+// add a little. So a full chord is named exactly, and a root and fifth (a bass line) is the key's
+// own chord on that root. Returns {root, quality, name} or null when nothing sounds.
+function nameSpan(notes, start, end, key) {
+  const w = new Array(12).fill(0);
+  let total = 0, low = Infinity;
+  for (const n of notes) {
+    const o = Math.min(end, n.t + n.d) - Math.max(start, n.t);
+    if (o <= 1e-6) continue;
+    w[pc(n.m)] += o; total += o; low = Math.min(low, n.m);
+  }
+  if (!total) return null;
+  const inKey = key ? chordsForKey(key) : [];
+  let best = null, bestScore = -Infinity;
+  for (let root = 0; root < 12; root++) {
+    for (const q of CHORD_QUALITIES) {
+      const pcs = q.tones.map(x => (root + x) % 12);
+      let covered = 0, missing = 0;
+      q.tones.forEach((x, i) => { covered += w[pcs[i]]; if (!w[pcs[i]]) missing += x === 7 && q.tones.length === 4 ? 0.4 : 1; });
+      let score = (2 * covered - total) / total - 0.25 * missing - q.rank;
+      if (pc(low) === root) score += 0.1;
+      if (inKey.some(c => c.root === root && c.quality === q.id)) score += 0.05;
+      if (score > bestScore + 1e-9) { best = { root, quality: q.id }; bestScore = score; }
+    }
+  }
+  return { ...best, name: chordName(best) };
+}
+
+export function nameChord(notes, { key = null } = {}) {
+  const clean = validNotes(notes);
+  if (!clean.length) return null;
+  return nameSpan(clean, Math.min(...clean.map(n => n.t)), Math.max(...clean.map(n => n.t + n.d)), key);
+}
+
+// The harmony part's chords in time order: one a 4/4 bar at the tempo, the bars starting at the
+// first harmony note (as generateHarmony lays them), and a new one inside a bar where two or more
+// pitch classes are struck together and name a different chord. A bar where nothing sounds has
+// none. Each is {t, d, root, quality, name, indices}, indices being the notes that start in it.
+export function readChords(harmony, { bpm, key = null } = {}) {
+  bpm = Number(bpm);
+  if (!Number.isFinite(bpm) || bpm <= 0) throw new Error("Set a tempo before reading the chords.");
+  const notes = validNotes(harmony);
+  if (!notes.length) return [];
+  const bar = (60 / bpm) * BEATS_PER_BAR;
+  const origin = Math.min(...notes.map(n => n.t)), end = Math.max(...notes.map(n => n.t + n.d));
+  const bars = Math.max(1, Math.ceil((end - origin) / bar - 1e-6));
+  const onsets = [...new Set(notes.map(n => n.t))].sort((a, b) => a - b);
+  const out = [];
+  for (let b = 0; b < bars; b++) {
+    const start = origin + b * bar, stop = start + bar;
+    // Where a chord is struck inside the bar (a time within TOGETHER of the bar line is the bar line).
+    const cuts = [start];
+    for (const t of onsets) {
+      if (t < start + TOGETHER || t >= stop - TOGETHER || t - cuts[cuts.length - 1] < TOGETHER) continue;
+      const struck = new Set(notes.filter(n => Math.abs(n.t - t) < TOGETHER).map(n => pc(n.m)));
+      if (struck.size >= 2) cuts.push(t);
+    }
+    cuts.push(stop);
+    let last = null;
+    for (let i = 0; i + 1 < cuts.length; i++) {
+      const c = nameSpan(notes, cuts[i], cuts[i + 1], key);
+      if (!c) { last = null; continue; }
+      if (last && last.name === c.name) { last.d = round3(cuts[i + 1] - last.t); continue; }
+      last = { t: round3(cuts[i]), d: round3(cuts[i + 1] - cuts[i]), ...c };
+      out.push(last);
+    }
+  }
+  const eps = 1e-6, list = Array.isArray(harmony) ? harmony : [];
+  for (const c of out) {
+    c.indices = [];
+    list.forEach((n, i) => { if (notes.includes(n) && n.t >= c.t - eps && n.t < c.t + c.d - eps) c.indices.push(i); });
+  }
+  return out;
+}
+
+// The pitch with pitch class p nearest m (the lower one on a tie), inside the MIDI range.
+function nearestPc(m, p) {
+  const down = m - (((m - p) % 12) + 12) % 12, up = down + 12;
+  const best = m - down <= up - m ? down : up;
+  return best < 0 ? best + 12 : best > 127 ? best - 12 : best;
+}
+
+// All the chord's tones once, in close position, as near the old voicing as possible.
+function voiceNear(pcs, old) {
+  const mean = xs => xs.reduce((s, x) => s + x, 0) / xs.length;
+  const oldMean = mean(old), oldLow = Math.min(...old);
+  let best = null, bestCost = Infinity;
+  for (let low = Math.max(0, oldLow - 12); low <= Math.min(127, oldLow + 12); low++) {
+    if (!pcs.includes(pc(low))) continue;
+    const notes = [low];
+    while (notes.length < pcs.length) {
+      let m = notes[notes.length - 1] + 1;
+      while (!pcs.includes(pc(m)) || notes.some(x => pc(x) === pc(m))) m++;
+      notes.push(m);
+    }
+    if (notes[notes.length - 1] > 127) continue;
+    const cost = Math.abs(mean(notes) - oldMean) + 0.5 * Math.abs(low - oldLow);
+    if (cost < bestCost - 1e-9) { best = notes; bestCost = cost; }
+  }
+  return best;
+}
+
+// Change one chord from readChords to {root, quality} and return the new harmony notes; the input
+// is unchanged. Notes struck three or more together are revoiced as the new chord near where they
+// were, with the same start and length; other notes (a bass line, a single line) each move to the
+// new chord's tone in the same role (root to root, third to third, fifth to fifth; a note outside
+// the old chord moves with the root) in the nearest octave, and when that line would still read as
+// another chord, its last one or two notes that are not the root take the new chord's third or
+// seventh, whichever makes it read as the chord asked for. A note held into the
+// chord from before stops where it starts; a chord with no note of its own gets the new chord voiced
+// near the one before it. key is the one readChords was given, so the line is read the same way.
+export function changeChord(harmony, chord, to, { key = null } = {}) {
+  const q = checkChord(to);
+  if (!chord || !Number.isFinite(chord.t) || !Number.isFinite(chord.d) || chord.d <= 0 || !Array.isArray(chord.indices)) {
+    throw new Error("Choose a chord of the harmony part to change.");
+  }
+  const oldQ = checkChord(chord), eps = 1e-6, start = chord.t, end = chord.t + chord.d;
+  const notes = validNotes(harmony).map(n => ({ m: n.m, t: n.t, d: n.d }));
+  const pcsNew = q.tones.map(x => (to.root + x) % 12);
+  const inside = [], kept = [];
+  for (const n of notes) {
+    if (n.t >= start - eps && n.t < end - eps) inside.push(n);
+    else {
+      if (n.t < start - eps && n.t + n.d > start + eps) n.d = round3(start - n.t);
+      kept.push(n);
+    }
+  }
+  const made = [];
+  if (!inside.length) {
+    const before = kept.filter(n => n.t < start).sort((a, b) => b.t - a.t);
+    const ref = before.length ? before.filter(n => Math.abs(n.t - before[0].t) < TOGETHER).map(n => n.m) : [60];
+    for (const m of voiceNear(pcsNew, ref)) made.push({ m, t: round3(start), d: round3((end - start) * RELEASE) });
+  } else {
+    const groups = [];
+    for (const n of [...inside].sort((a, b) => a.t - b.t || a.m - b.m)) {
+      const g = groups[groups.length - 1];
+      if (g && Math.abs(n.t - g[0].t) < TOGETHER) g.push(n); else groups.push([n]);
+    }
+    const line = [];
+    for (const g of groups) {
+      if (g.length >= 3) {
+        const voiced = voiceNear(pcsNew, g.map(n => n.m));
+        for (const m of voiced) made.push({ m, t: g[0].t, d: g[0].d });
+        continue;
+      }
+      for (const n of g) {
+        const role = oldQ.tones.findIndex(x => (chord.root + x) % 12 === pc(n.m));
+        const p = role < 0 ? (pc(n.m) - chord.root + to.root + 12) % 12 : (to.root + q.tones[role < q.tones.length ? role : 0]) % 12;
+        const m = nearestPc(n.m, p), note = { m, t: n.t, d: n.d };
+        made.push(note); line.push({ note, root: role === 0 });
+      }
+    }
+    // A bass line's root and fifth fit several chords: give it the tones that say which.
+    const matches = () => { const r = nameSpan([...made, ...kept], start, end, key); return r && r.root === to.root && r.quality === to.quality; };
+    // Try the third, then the seventh, on the last note that is not a root, then on the last two,
+    // fewest changes first; keep the first that reads as the chord asked for.
+    const free = line.filter(x => !x.root).slice(-2).reverse(), first = free.map(x => x.note.m);
+    const markers = [q.tones[1], q.tones[3]].filter(x => x !== undefined).map(x => (to.root + x) % 12);
+    const tries = [[]];
+    for (const a of markers) tries.push([a]);
+    if (free.length > 1) for (const a of markers) for (const b of markers) tries.push([a, b]);
+    if (!matches()) {
+      for (const pcs of tries.slice(1)) {
+        free.forEach((x, k) => { x.note.m = k < pcs.length ? nearestPc(first[k], pcs[k]) : first[k]; });
+        if (matches()) break;
+      }
+      if (!matches()) free.forEach((x, k) => { x.note.m = first[k]; });
+    }
+  }
+  const out = [...kept, ...made].sort((a, b) => a.t - b.t || a.m - b.m);
+  if (out.length > MAX_HARMONY_NOTES) throw new Error(`That chord would take the harmony part over the ${MAX_HARMONY_NOTES}-note limit.`);
+  return out;
+}

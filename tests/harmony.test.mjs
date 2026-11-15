@@ -255,3 +255,126 @@ test("harmonyLines needs a melody and a key, and leaves the project unchanged", 
   const oct = harmonyLines({ bpm: 120, notes: sharp }, { key: C_MAJOR }).find(l => l.id === "octave");
   assert.equal(oct.notes.length, TUNE.length - 1);
 });
+
+// CHORD.1: chord symbols read from the harmony notes, and changing one rewrites its notes.
+import { CHORD_QUALITIES, chordName, nameChord, readChords, changeChord } from "../harmony.js";
+const KEY_C = { tonic: 0, mode: "major" }, KEY_AM = { tonic: 9, mode: "minor" };
+const at = (ms, t = 0, d = 1.9) => ms.map(m => ({ m, t, d }));
+
+test("chord qualities and names", () => {
+  assert.deepEqual(CHORD_QUALITIES.map(q => q.id), ["major", "minor", "dom7", "maj7", "m7", "sus2", "sus4", "dim", "aug", "m7b5", "dim7"]);
+  assert.equal(chordName({ root: 0, quality: "major" }), "C");
+  assert.equal(chordName({ root: 9, quality: "minor" }), "Am");
+  assert.equal(chordName({ root: 7, quality: "dom7" }), "G7");
+  assert.equal(chordName({ root: 3, quality: "maj7" }), "E♭maj7");
+  assert.equal(chordName({ root: 11, quality: "m7b5" }), "Bm7♭5");
+  assert.throws(() => chordName({ root: 12, quality: "major" }), /chord/);
+  assert.throws(() => chordName({ root: 0, quality: "power" }), /chord/);
+});
+
+test("nameChord names triads and sevenths in any inversion and register", () => {
+  for (const [ms, name] of [
+    [[60, 64, 67], "C"], [[64, 67, 72], "C"], [[55, 60, 64], "C"], [[57, 60, 64], "Am"], [[62, 65, 69], "Dm"],
+    [[55, 59, 62, 65], "G7"], [[60, 64, 67, 71], "Cmaj7"], [[62, 65, 69, 72], "Dm7"], [[59, 62, 65], "Bdim"],
+    [[60, 64, 68], "Caug"], [[60, 65, 67], "Csus4"], [[60, 62, 67], "Csus2"], [[59, 62, 65, 69], "Bm7♭5"], [[59, 62, 65, 68], "Bdim7"],
+    [[61, 65, 68], "C♯"], [[63, 66, 70], "E♭m"],
+  ]) assert.equal(nameChord(at(ms), { key: KEY_C })?.name, name, ms.join(" "));
+  assert.equal(nameChord([], { key: KEY_C }), null);
+});
+
+test("nameChord reads a root and fifth by the key: the key's own chord on that root", () => {
+  assert.equal(nameChord([{ m: 36, t: 0, d: 1 }, { m: 43, t: 1, d: 1 }], { key: KEY_C }).name, "C");
+  assert.equal(nameChord([{ m: 45, t: 0, d: 1 }, { m: 52, t: 1, d: 1 }], { key: KEY_C }).name, "Am");
+  assert.equal(nameChord([{ m: 40, t: 0, d: 1 }, { m: 47, t: 1, d: 1 }], { key: KEY_AM }).name, "E", "the major V of a minor key");
+  assert.equal(nameChord([{ m: 40, t: 0, d: 1 }, { m: 47, t: 1, d: 1 }], { key: null }).name, "E", "major without a key");
+  assert.equal(nameChord([{ m: 41, t: 0, d: 1 }], { key: KEY_C }).name, "F", "one note: the key's chord on it");
+});
+
+test("nameChord weighs notes by how long they sound: a short passing note does not change the chord", () => {
+  assert.equal(nameChord([...at([60, 64, 67], 0, 2), { m: 62, t: 1, d: 0.1 }], { key: KEY_C }).name, "C");
+});
+
+const twoBars = (style, key = KEY_C) => {
+  const notes = melody([[60, 64, 67, 64], [65, 69, 72, 69], [67, 71, 74, 71], [72, 67, 64, 60]]);
+  return generateHarmony({ bpm: 120, notes }, { style, key });
+};
+
+test("readChords gives the generated chords back, one a bar, for chords and for a bass line", () => {
+  for (const style of STYLES) {
+    const h = twoBars(style);
+    const read = readChords(h.notes, { bpm: 120, key: h.key });
+    assert.deepEqual(read.map(c => c.name), h.chords.map(c => c.name), style);
+    assert.deepEqual(read.map(c => [c.t, c.d]), h.chords.map(c => [c.t, c.d]), style);
+    for (const c of read) assert.ok(c.indices.every(i => h.notes[i].t >= c.t - 1e-6 && h.notes[i].t < c.t + c.d), "indices are the notes starting in the chord");
+  }
+});
+
+test("readChords splits a bar where a new chord starts inside it and merges a chord struck again", () => {
+  const notes = [...at([60, 64, 67], 0, 0.45), ...at([60, 64, 67], 0.5, 0.45), ...at([65, 69, 72], 1, 0.9), { m: 41, t: 1, d: 0.9 }];
+  const read = readChords(notes, { bpm: 120, key: KEY_C });
+  assert.deepEqual(read.map(c => [c.name, c.t, c.d]), [["C", 0, 1], ["F", 1, 1]]);
+});
+
+test("readChords leaves out a bar where nothing sounds and does not mutate its input", () => {
+  const notes = [...at([60, 64, 67], 0, 1.8), ...at([65, 69, 72], 4, 1.8)];
+  const copy = structuredClone(notes);
+  assert.deepEqual(readChords(notes, { bpm: 120, key: KEY_C }).map(c => [c.name, c.t]), [["C", 0], ["F", 4]]);
+  assert.deepEqual(notes, copy);
+  assert.deepEqual(readChords([], { bpm: 120 }), []);
+  assert.throws(() => readChords(notes, { bpm: 0 }), /tempo/);
+});
+
+test("changeChord revoices a chord near its old voicing and keeps its rhythm; the rest is unchanged", () => {
+  const h = twoBars("chords"), read = readChords(h.notes, { bpm: 120, key: h.key });
+  const target = read[1], copy = structuredClone(h.notes);
+  const out = changeChord(h.notes, target, { root: 2, quality: "minor" });
+  assert.deepEqual(h.notes, copy, "input unchanged");
+  const after = readChords(out, { bpm: 120, key: h.key });
+  assert.deepEqual(after.map(c => c.name), read.map((c, i) => (i === 1 ? "Dm" : c.name)));
+  const old = target.indices.map(i => h.notes[i]), now = after[1].indices.map(i => out[i]);
+  assert.equal(now.length, 3);
+  for (const n of now) assert.ok(n.t === old[0].t && n.d === old[0].d, "same onset and length");
+  const mean = xs => xs.reduce((s, n) => s + n.m, 0) / xs.length;
+  assert.ok(Math.abs(mean(now) - mean(old)) <= 4, "stays near the old voicing");
+  const outside = (ns, c) => ns.filter(n => n.t < c.t - 1e-6 || n.t >= c.t + c.d - 1e-6);
+  assert.deepEqual(outside(out, target), outside(h.notes, target), "notes of the other chords are untouched");
+});
+
+test("changeChord to a seventh adds its fourth note", () => {
+  const h = twoBars("chords"), read = readChords(h.notes, { bpm: 120, key: h.key });
+  const out = changeChord(h.notes, read[2], { root: 7, quality: "dom7" });
+  const after = readChords(out, { bpm: 120, key: h.key });
+  assert.equal(after[2].name, "G7");
+  assert.equal(after[2].indices.length, 4);
+});
+
+test("changeChord moves a bass line's notes to the new chord's tones, and its third shows a chord the key would not give", () => {
+  const h = twoBars("bass"), read = readChords(h.notes, { bpm: 120, key: h.key });
+  for (const [root, quality, name] of [[5, "major", "F"], [2, "minor", "Dm"], [2, "major", "D"], [10, "major", "B♭"], [7, "dom7", "G7"]]) {
+    const out = changeChord(h.notes, read[0], { root, quality }, { key: h.key });
+    const after = readChords(out, { bpm: 120, key: h.key });
+    assert.equal(after[0].name, name);
+    const now = after[0].indices.map(i => out[i]), old = read[0].indices.map(i => h.notes[i]);
+    assert.deepEqual(now.map(n => [n.t, n.d]), old.map(n => [n.t, n.d]), "same rhythm");
+    assert.equal(pc(now[0].m), root, "the first note is the root");
+    for (const n of now) assert.ok(n.m >= BASS_LOW - 6 && n.m < BASS_LOW + 19, "stays in the bass register");
+  }
+});
+
+test("changeChord trims a note held into the chord and fills a chord with no note of its own", () => {
+  const notes = [...at([60, 64, 67], 0, 3)];
+  const read = readChords(notes, { bpm: 120, key: KEY_C });
+  assert.deepEqual(read.map(c => [c.name, c.t, c.d]), [["C", 0, 2], ["C", 2, 2]]);
+  const out = changeChord(notes, read[1], { root: 5, quality: "major" }, { key: KEY_C });
+  assert.deepEqual(out.filter(n => n.t === 0).map(n => n.d), [2, 2, 2], "the held chord stops where the new one starts");
+  const after = readChords(out, { bpm: 120, key: KEY_C });
+  assert.deepEqual(after.map(c => c.name), ["C", "F"]);
+  assert.ok(after[1].indices.length === 3);
+});
+
+test("changeChord checks its input", () => {
+  const h = twoBars("chords"), read = readChords(h.notes, { bpm: 120, key: h.key });
+  assert.throws(() => changeChord(h.notes, read[0], { root: -1, quality: "major" }), /chord/);
+  assert.throws(() => changeChord(h.notes, read[0], { root: 0, quality: "power" }), /chord/);
+  assert.throws(() => changeChord(h.notes, null, { root: 0, quality: "major" }), /chord/);
+});
