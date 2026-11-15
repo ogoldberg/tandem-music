@@ -66,6 +66,7 @@ def test_levels_mutes_and_solos_shape_the_stems_and_export_wav(studio, tmp_path)
     # Nobody mixed this song: every part at 0 dB, the voice muted (there is no take yet).
     expect(page.locator("#level-drums")).to_have_value("0")
     expect(page.locator("#mute-voice")).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#solo-voice")).to_have_attribute("title", re.compile("unmute it first"))
     expect(page.locator("#mute-melody")).to_have_attribute("aria-pressed", "false")
     before = stems(page)
     assert set(before) == {"mix.wav", "melody.wav", "drums.wav"}
@@ -143,6 +144,7 @@ def test_the_voice_joins_the_mix_when_unmuted(studio, tmp_path):
     assert "voice.wav" not in first and "vocal-original.wav" in first
     page.click("#mute-voice")
     expect(page.locator("#mute-voice")).to_have_attribute("aria-pressed", "false")
+    expect(page.locator("#solo-voice")).to_have_attribute("title", "Solo: hear only the soloed parts")
     set_level(page, "voice", -6)
     mixed = stems(page)
     factor = 10 ** (-6 / 20)
