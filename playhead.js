@@ -81,6 +81,8 @@ export function timelineEnd(project, extra = []) {
   const ends = notes.map(n => (n.t || 0) + (n.d || 0.3))
     .concat((project.drums || []).map(h => (h.t || 0) + 0.3))
     .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []))
-    .concat(layerSeconds(project));
+    .concat(layerSeconds(project))
+    // SONG.1: a section past the last note still shows on the Timeline and the Sections band.
+    .concat((Array.isArray(project.sections) ? project.sections : []).map(s => s && Number.isFinite(s.to) ? s.to : 0));
   return Math.max(8, ...ends);
 }

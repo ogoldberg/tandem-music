@@ -19,6 +19,8 @@ MIDI_PORTS = ["midichannel", "midiinput", "midioutput", "midirecord"]
 LINE_TRIAL = ["voice2cancel", "voice2keep", "voice2next"]
 # TAKE.1: the comp controls, shown once there are two takes.
 TAKES = ["compfrom", "compin", "comploop", "comptake", "compto"]
+# SONG.1: a section's tools are shown once a section is chosen in the Sections band.
+SECTION_TOOLS = ["sectionrepeat", "sectionearlier", "sectionlater", "sectiondelete", "sectionunmark"]
 CONTROL = re.compile(r'<(button|input|select|textarea)\b[^>]*\bid="([^"]+)"')
 
 
@@ -222,8 +224,8 @@ def test_every_control_of_the_studio_is_in_the_all_controls_view(browser, server
         wrong = [r for r in report if r[1] not in ("shown", "feature")]
         assert not wrong, wrong
         # Hidden here only because the feature is not available or not in use: the Mac app's controls, the MIDI ports
-        # (shown after Connect MIDI), the harmony line trial (shown after Create harmony), the comp controls (shown with two takes) and the file pickers behind their buttons.
-        assert sorted(r[0] for r in report if r[1] == "feature") == sorted(MAC_APP + MIDI_PORTS + LINE_TRIAL + TAKES + ["audiofile", "projectfile"])
+        # (shown after Connect MIDI), the harmony line trial (shown after Create harmony), the comp controls (shown with two takes), the section tools (shown with a section chosen) and the file pickers behind their buttons.
+        assert sorted(r[0] for r in report if r[1] == "feature") == sorted(MAC_APP + MIDI_PORTS + LINE_TRIAL + TAKES + SECTION_TOOLS + ["audiofile", "projectfile"])
         # The guided view's own controls are not in the studio's layout, and the roll is back in its place.
         assert page.evaluate("document.getElementById('melodyroll').closest('.lane').dataset.lane === 'melody'")
         assert page.evaluate("document.getElementById('melodytools').closest('[data-panel-part]').dataset.panelPart === 'melody'")
