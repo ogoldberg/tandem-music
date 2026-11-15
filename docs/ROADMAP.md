@@ -92,6 +92,7 @@ This is the working task list, in strategic order: protect the deployment, prove
   - Live pitch guide (from the review of #93): a test where the take runs past the song's end, so the roll rescales and the pitch line is rebuilt (`drawGuide` in `index.html`).
   - Hear how it grew (from the review of #90): mixing every stage of a three-minute song takes about two seconds before it starts to play, longer on a phone; say so in the status, or render the first sections first and start playing while the rest renders.
   - Guided view (from the review of #82): without the Origin Private File System, Record a beat's warning points to a control the guided view has (a Download your voice button next to it, or Share's Stems + MIDI) instead of "Download your voice first"; the no-OPFS test in `e2e/test_guided.py` fails on page errors and `console.error` like the other guided tests.
+  - Takes (from the review of #98): a test that Separate and Use the full recording drop only the comp in use's vocal targets from Undo (`clearDerived(false, {thisComp: true})` in `index.html`), in `e2e/test_separation.py`, which needs the separation model (the `separation` CI job).
   - **Acceptance:** each issue closed by the PR with a test that fails before its fix (Node, pytest or e2e), or with a reason where it cannot be tested; the long-take memory measured before and after on a 10-minute take.
 
 ### 5. Vocal quality and editing
@@ -350,6 +351,27 @@ Asked for by the operator on 2026-11-13, in this order: fixing how notes are edi
 - [ ] **GENRE.1** Optional genre that sets better defaults
   - A project genre (None by default, so nothing changes unless chosen): it picks the harmony progression and voicing, how a beatbox is read into a groove, swing and grid defaults, a likely tempo range for Detect tempo, starting instruments, the band's style text and context for the AI chat. Every choice it makes can still be changed. Confirm the list of effects with the operator before building.
   - **Acceptance:** Node tests that each genre's defaults are applied and None leaves today's behaviour byte for byte; a Chromium test picks a genre and checks the generated harmony and drums differ as specified.
+
+### 9b. Composing without sound (operator idea, 2026-11-15)
+Seeing and shaping the music with the volume off: at night, on a train, or for someone who hears little or nothing. It is a second way in beside singing, not a replacement for it, so confirm it against `docs/PRODUCT.md` (update that doc's scope) before SILENT.1 is built. SILENT.1 and SILENT.2 are useful with the sound on too. Related work, checked on 2026-11-15: Choi et al., "Enhancing Collaborative Signing Songwriting Experience of the d/Deaf Individuals", IJHCS 2025 (a music-sensory substitution system with visual and vibrotactile feedback for mixed-hearing songwriting pairs, https://www.dgp.toronto.edu/~suhyeon423/publications/collab-signing/); Bradbury, Crawford and Roy (University of Maryland), Haptic Aesthetics for Access and Inclusion, a Mozilla Foundation project for a vibrotactile wearable and compositional software (https://www.mozillafoundation.org/en/what-we-do/artists-make-technology/haptic-aesthetics-for-access-and-inclusion/); Cavdir, an audio-tactile compositional vocabulary co-designed with a Deaf co-designer, Frontiers in Computer Science 2024 (https://doi.org/10.3389/fcomp.2023.1162758); MUSTEM, four-band vibrotactile music tested with seven Deaf users, arXiv 2511.12045.
+- [ ] **SILENT.1** See tension and resolution: each melody note against the chord under it
+  - **Depends:** ARR.1c
+  - In the melody roll, a view that colours each melody note by how it sits on the harmony at that moment (a chord tone, a scale tone outside the chord, or outside the key) and marks where a phrase (`phrases.js`) ends on the key's tonic or dominant chord, from `harmony.js`'s key and chords. Only what the notes and chords say: no claim about how it feels. Off by default; shown in the guided Notes step and the all-controls view.
+  - **Acceptance:** Node tests of the note classes and cadence marks on fixtures (a melody of chord tones, one with passing tones, one with notes outside the key); a Chromium test turns the view on and checks the classes on the roll and that an edit updates them.
+- [ ] **SILENT.2** Draw a melody: a line drawn on the roll becomes notes in the key
+  - **Depends:** VOX.3, EDIT.3
+  - A Draw line mode on the melody roll: the drawn line is read like a sung contour (`contour.js`'s key and scale snapping, held pitch makes one note) on the project's grid, previewed, then kept as one edit that adds or replaces the notes in its span.
+  - **Acceptance:** Node tests that a drawn staircase gives those scale notes on the grid and a slide joins the note it settles on; a Chromium test draws a line with the mouse, keeps it and undoes it.
+- [ ] **SILENT.3** Explain and compare in the chat
+  - **Depends:** AI.2, SILENT.1, SILENT.5
+  - Ask the chat why a phrase feels unresolved, or how two named versions differ: the prompt carries SILENT.1's note classes and cadences (and both versions' notes), the reply describes them in words and may suggest actions through the existing `normalize_actions` path and melody lock. The reply is labelled as the model's reading, not a measurement.
+  - **Acceptance:** tests with a mocked provider that the prompt carries the classes and both versions, and that suggested actions are filtered as today; a real-model check under AI.2.
+- [ ] **SILENT.4** Spike: feel the drums and bass through the phone's vibration
+  - **Depends:** SILENT.5
+  - On Android Chrome only (`navigator.vibrate`; iOS Safari has no vibration API): while playing with the sound off, the kick and the bass notes' onsets as pulses at the tempo. On/off pulses carry rhythm, not pitch or timbre, so this is an experiment.
+  - **Acceptance:** a written verdict after trying it on a real Android phone (keep, needs a wearable, or drop); nothing kept user-facing unless kept.
+- [ ] **SILENT.5** *(HUMAN)* Talk to Deaf and hard-of-hearing musicians before building past SILENT.2
+  - What they would want from a silent way in, what vocabulary and views make sense to them, and whether SILENT.4 is worth pursuing; the related work above co-designed with Deaf participants. Record what was learned in `docs/PRODUCT.md`.
 
 ### 10. Later
 - [x] **ARR.1** Better arrangement: richer instruments, harmony, swing and phrase-aware editing
