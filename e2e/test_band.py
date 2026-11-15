@@ -31,18 +31,45 @@ TONE = 0.3  # the stand-in band: a 220 Hz tone at this level
 
 
 def stand_in_runtime(home):
-    """A runtime whose musicgen-melody files are installed (a stand-in file pinned in their place)."""
+    """A runtime whose musicgen-melody and mrt2_small files are installed (a stand-in file pinned in their place)."""
     body = b"stand-in weights"
-    spec = models.ModelSpec(band.MODEL_ID, models.MUSICGEN_MELODY.label,
-                            (models.ModelFile("config.json", "https://example.test/c", hashlib.sha256(body).hexdigest(), len(body)),),
-                            packages=())
-    runtime = models.ModelRuntime(home, [spec])
-    folder = runtime.store.folder(spec)
-    folder.mkdir(parents=True)
-    (folder / "config.json").write_bytes(body)
-    st = (folder / "config.json").stat()
-    (folder / models.RECORD).write_text(json.dumps({"config.json": {"sha256": spec.files[0].sha256, "size": st.st_size, "mtime_ns": st.st_mtime_ns}}))
+    specs = [models.ModelSpec(real.id, real.label,
+                              (models.ModelFile("config.json", "https://example.test/c", hashlib.sha256(body).hexdigest(), len(body)),),
+                              packages=()) for real in (models.MUSICGEN_MELODY, models.MRT2_SMALL)]
+    runtime = models.ModelRuntime(home, specs)
+    for spec in specs:
+        folder = runtime.store.folder(spec)
+        folder.mkdir(parents=True)
+        (folder / "config.json").write_bytes(body)
+        st = (folder / "config.json").stat()
+        (folder / models.RECORD).write_text(json.dumps({"config.json": {"sha256": spec.files[0].sha256, "size": st.st_size, "mtime_ns": st.st_mtime_ns}}))
     return runtime
+
+
+class StandInMRT:
+    """MRT.1: records each step's notes and drums and plays a 220 Hz tone at TONE, one 40 ms stereo frame a step."""
+
+    def __init__(self, seen):
+        self.seen = seen
+
+    def embed_style(self, text, use_mapper=False):
+        self.seen.append({"style": text, "frames": [], "drums": set()})
+        return "embedding"
+
+    def tokenize_style(self, embedding):
+        return np.arange(12)
+
+    def generate(self, conditioning, cfg_scales, frames, state):
+        run = self.seen[-1]
+        run["frames"].append(conditioning["notes"])
+        run["drums"].add(conditioning["drums"][0])
+        step = band.MRT_RATE // band.MRT_FRAME_RATE
+        t = ((state or 0) * step + np.arange(step)) / band.MRT_RATE
+        tone = TONE * np.sin(2 * np.pi * 220 * t)
+
+        class Wav:
+            samples = np.stack([tone, tone], 1).astype(np.float32)
+        return Wav(), (state or 0) + 1
 
 
 @pytest.fixture
@@ -57,6 +84,8 @@ def app(monkeypatch, tmp_path):
         return (TONE * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
     monkeypatch.setattr(band, "load_musicgen", lambda folder, on=None: ("model", "tokenizer"))
     monkeypatch.setattr(band, "generate", generate)
+    notes_runs = []
+    monkeypatch.setattr(band, "load_mrt", lambda folder: (StandInMRT(notes_runs), ("style", "notes", "drums")))
 
     def start(runtime=None):
         for key in list(os.environ):
@@ -67,7 +96,8 @@ def app(monkeypatch, tmp_path):
         handle = desk.start_server(port, secret, desktop_api=ProjectFolders(Dialogs()),
                                    ai_settings=AISettings(tmp_path / "ai", MemoryKeys()), models=runtime, band=band.Band(runtime))
         made.append(handle)
-        return {"url": f"http://127.0.0.1:{port}", "port": port, "secret": secret, "runtime": runtime, "seen": seen}
+        return {"url": f"http://127.0.0.1:{port}", "port": port, "secret": secret, "runtime": runtime, "seen": seen,
+                "notes_runs": notes_runs}
     yield start
     for server, thread in made:
         desk.stop_server(server, thread)
@@ -106,14 +136,14 @@ WATCH_STARTS = """() => {
 }"""
 
 
-def played(page):
+def played(page, seconds=4):
     """Press Play, wait for it to start and return (band starts, the earliest other start, the first part event's time)."""
     page.evaluate("window.starts = []")
     page.click("#play")
     expect(page.locator("#status")).to_have_text(re.compile("^Playing composition"))
     starts = page.evaluate("window.starts")
     page.click("#stop")
-    bands = [s for s in starts if s["seconds"] and abs(s["seconds"] - 4) < 0.05 and abs(s["peak"] - TONE) < 0.01]
+    bands = [s for s in starts if s["seconds"] and abs(s["seconds"] - seconds) < 0.05 and abs(s["peak"] - TONE) < 0.01]
     others = [s["when"] for s in starts if s not in bands]
     d = draft(page)
     first = min(n["t"] for n in d["notes"] + d["drums"] + d["harmony"])
@@ -250,6 +280,7 @@ def test_the_download_is_confirmed_with_its_size_and_licence(page, app, tmp_path
     problems = open_app(page, desktop)
     page.click("#demo")
     page.fill("#bandstyle", "rock")
+    page.select_option("#bandfollows", "melody")
     page.click("#genband")
     expect(page.locator("#bandstatus")).to_have_text(re.compile(
         r"^The band needs MusicGen-Melody, a 6\.23 GB download kept on this Mac\. MusicGen-Melody weights are CC-BY-NC 4\.0: "
@@ -265,6 +296,7 @@ def test_missing_packages_are_named(page, app, tmp_path):
     problems = open_app(page, desktop)
     page.click("#demo")
     page.fill("#bandstyle", "rock")
+    page.select_option("#bandfollows", "melody")
     page.click("#genband")
     expect(page.locator("#bandstatus")).to_have_text(
         "Could not generate the band: it needs the Python packages tandem_not_installed (python -m pip install -r requirements-models.txt).")
@@ -285,6 +317,7 @@ def test_a_band_finished_after_another_project_opened_is_not_added_to_it(page, a
     problems = open_app(page, desktop)
     page.click("#demo")
     page.fill("#bandstyle", "rock")
+    page.select_option("#bandfollows", "melody")
     page.click("#genband")
     expect(page.locator("#bandstatus")).to_have_text(re.compile("Holding the band"))
     try:
@@ -337,3 +370,98 @@ def test_a_reload_keeps_every_recording_with_a_band(page, app, tmp_path):
     expect(page.locator("#polished")).to_be_enabled(timeout=30_000)
     expect(page.locator("#polishinfo")).to_have_text(re.compile("^Restored the polished vocal"))
     assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+
+
+def test_a_band_from_the_notes_plays_them_and_is_kept_played_undone_and_exported(page, app):
+    """MRT.1: Magenta RealTime 2 plays the melody and chords notes, frame by frame from zero."""
+    desktop = app()
+    problems = open_app(page, desktop)
+    show_part(page, "band")
+    page.click("#demo")
+    show_part(page, "harmony")
+    page.click("#genharmony")
+    expect(page.locator("#harmonycount")).not_to_have_text("0 notes")
+    show_part(page, "band")
+    # The example has drums: a band from the notes is chosen, and its own drums are off until asked for.
+    expect(page.locator("#bandfollows")).to_have_value("notes")
+    expect(page.locator("#banddrumsrow")).to_be_visible()
+    expect(page.locator("#banddrums")).not_to_be_checked()
+    page.select_option("#bandfollows", "melody")
+    expect(page.locator("#banddrumsrow")).to_be_hidden()
+    page.select_option("#bandfollows", "notes")
+    page.check("#banddrums")
+    page.fill("#bandstyle", "pop band with piano")
+    page.click("#genband")
+    expect(page.locator("#bandstatus")).to_have_text(re.compile(r"^Generated [\d.]+ s of band"), timeout=60_000)
+    assert desktop["seen"] == [], "MusicGen was not used"
+    (run,) = desktop["notes_runs"]
+    d = draft(page)
+    assert d["harmony"], "the chords part has notes"
+    notes = d["notes"] + d["harmony"]
+    # The band lasts as long as the notes, the chords included, and half a second more.
+    assert max(n["t"] + n["d"] for n in d["harmony"]) > max(n["t"] + n["d"] for n in d["notes"]), "the chords last longer"
+    seconds = round(max(n["t"] + n["d"] for n in notes) + 0.5, 1)
+    expect(page.locator("#bandstatus")).to_have_text(re.compile(rf"^Generated {seconds:g} s of band"))
+    want = band.piano_roll(notes, seconds)
+    assert run["style"] == "pop band with piano" and run["drums"] == {1}
+    assert len(run["frames"]) == len(want) == round(seconds * 25)
+    assert all(f == want[i].tolist() for i, f in enumerate(run["frames"])), "each step got its frame of the notes"
+    assert run["frames"][0][60] == 2, "the first melody note starts the band at zero"
+    expect(page.locator("#bandinfo")).to_have_text(re.compile(
+        r'^Generated audio: Magenta RealTime 2 played "pop band with piano" from the melody and chords notes, with its drums, '
+        rf"{seconds:g} s from the start\. Magenta RealTime 2 is by Google; its weights are CC-BY 4\.0\.$"))
+    b = d["band"]
+    assert {k: b[k] for k in ("style", "follows", "seconds", "muted", "model", "drums")} == {
+        "style": "pop band with piano", "follows": "notes", "seconds": seconds, "muted": False, "model": "mrt2_small", "drums": True}
+    wait_for_draft_audio(page, ["band"])
+    # Play schedules it once, from the project's zero.
+    page.evaluate(WATCH_STARTS)
+    bands, earliest, first = played(page, seconds)
+    assert len(bands) == 1, bands
+    assert bands[0]["when"] == pytest.approx(earliest - first, abs=1e-3)
+    # It is a part stem from zero at the band's level, and in the mix.
+    files = stems(page)
+    x, rate = samples_of(files["band.wav"])
+    assert rate == 44100 and abs(np.max(np.abs(x[:rate])) - 0.8 * TONE) < 0.02
+    assert np.argmax(np.abs(x) > 0.02) / rate < 0.005
+    mix, _ = samples_of(files["mix.wav"])
+    parts = [n for n in files if n.endswith(".wav") and n not in ("mix.wav", "band.wav")]
+    assert {"melody.wav", "drums.wav", "harmony.wav"} <= set(parts), parts
+    rest = sum(samples_of(files[n])[0] for n in parts)
+    assert np.max(np.abs(mix - rest - x)) < 2 * len(parts) / 32768
+    # Undo removes it, Redo brings it back, and a reload keeps it with its engine.
+    page.click("#undo")
+    expect(page.locator("#playbandtrack")).to_be_disabled()
+    assert draft(page)["band"] is None
+    page.click("#redo")
+    expect(page.locator("#playbandtrack")).to_be_enabled()
+    wait_for_draft_audio(page, ["band"])
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    expect(page.locator("#playbandtrack")).to_be_enabled()
+    expect(page.locator("#bandinfo")).to_have_text(re.compile("^Generated audio: Magenta RealTime 2 played"))
+    assert draft(page)["band"]["model"] == "mrt2_small"
+    assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+
+
+def test_a_band_from_the_notes_confirms_its_download_and_needs_notes(page, app, tmp_path):
+    spec = dataclasses.replace(models.MRT2_SMALL, packages=())
+    desktop = app(models.ModelRuntime(tmp_path / "empty", [spec]))
+    problems = open_app(page, desktop)
+    page.fill("#bandstyle", "rock")
+    expect(page.locator("#bandfollows")).to_have_value("notes")
+    page.click("#genband")
+    expect(page.locator("#bandstatus")).to_have_text(
+        "The band needs Magenta RealTime 2, a 1.04 GB download kept on this Mac. Magenta RealTime 2 is by Google; "
+        "its weights are CC-BY 4.0. Select Download and generate to go ahead.")
+    expect(page.locator("#genband")).to_have_text("Download and generate")
+    assert desktop["runtime"].jobs.running() == []
+    # Installed but with no notes, it says what is missing instead of sending anything.
+    desktop = app()
+    page2 = page.context.new_page()
+    problems2 = open_app(page2, desktop)
+    page2.fill("#bandstyle", "rock")
+    page2.click("#genband")
+    expect(page2.locator("#bandstatus")).to_have_text(re.compile("Could not generate the band: there are no melody or chords notes"))
+    assert desktop["notes_runs"] == []
+    assert not problems and not problems2, "Browser reported errors:\n" + "\n".join(problems + problems2)

@@ -12,14 +12,27 @@ MusicgenMelodyFeatureExtractor does it, because that class needs torchaudio, whi
 the torch Tandem pins: a 16384-point power spectrogram every 4096 samples at 32 kHz, folded into
 12 pitch classes, keeping only the strongest one in each frame.
 
+MRT.1: a second engine plays the project's own notes. Google's Magenta RealTime 2 (the small model,
+230M, exported for MLX; weights CC-BY 4.0, LIC.1; `MRT2_SMALL` in models.CATALOG) is steered by a
+128-pitch piano roll every 40 ms frame (`piano_roll`: 2 on a note's first frame, 1 while it is held),
+a style in words and drums on or off. The window sends the melody and harmony notes; the model is
+stepped one frame at a time with that frame's notes from zero (`generate_notes`), the way MRT.0's spike
+measured it, and the 48 kHz stereo it plays is folded to mono, like the other band.
+
 Routes (behind tandem_desktop.guarded_app; answers are JSON unless noted, never cached):
   POST /api/desktop/band?style=&bpm=&key=&seconds=   the melody as a 16-bit PCM WAV: 202 with the job
-  GET  /api/desktop/band/<job id>/band.wav           the band, mono 16-bit WAV at 32 kHz, `seconds` long
+  POST /api/desktop/band/notes?style=&seconds=&drums=  {"notes": [{m, t, d}]} as JSON: 202 with the job
+  GET  /api/desktop/band/<job id>/band.wav           the band, mono 16-bit WAV (32 kHz from MusicGen,
+                                                     48 kHz from Magenta RealTime 2), `seconds` long
 
-One generation runs at a time (a second is answered 409). The job (read and cancelled at
-/api/desktop/jobs/<id>) reports progress while the model runs; the audio of the last KEEP_RESULTS
-generations is kept in memory for the window to fetch.
+One generation runs at a time, whichever engine (a second is answered 409), and one engine's model is
+held in memory at a time. The job (read and cancelled at /api/desktop/jobs/<id>) reports progress
+while the model runs; the audio of the last KEEP_RESULTS generations is kept in memory for the
+window to fetch.
 """
+import gc
+import json
+import os
 import re
 import threading
 import urllib.parse
@@ -42,6 +55,14 @@ N_FFT = 16384
 HOP = 4096
 FRAME_RATE = 50  # EnCodec 32 kHz tokens per second
 GUIDANCE = 3.0
+NOTES_PATH = BAND_PATH + "/notes"
+MRT_MODEL_ID = models.MRT2_SMALL.id
+MRT_RATE = 48000
+MRT_FRAME_RATE = 25  # one piano-roll frame and one model step every 40 ms
+MRT_NOTES_GUIDANCE = 1.0  # the library's default, which MRT.0 measured
+MAX_NOTES = 4096
+MAX_NOTES_BODY = 1 << 20
+BUSY = "A band is already being generated; wait for it or cancel it."
 KEY_RE = re.compile(r"^[A-G][#b]? (major|minor)$")
 
 
@@ -150,6 +171,84 @@ def generate(loaded, x, rate, text, seconds, job=None):
     return audio.astype(np.float32)
 
 
+def clean_notes(data):
+    """The notes of a /band/notes body ({"notes": [{m, t, d}]}): MIDI pitch 0-127, start and length in
+    seconds, at most MAX_NOTES."""
+    try:
+        body = json.loads(data)
+    except (ValueError, UnicodeDecodeError):
+        raise BandError("Send the notes as JSON.") from None
+    notes = body.get("notes") if isinstance(body, dict) else None
+    if not isinstance(notes, list):
+        raise BandError("Send the notes as JSON: {\"notes\": [{\"m\": 60, \"t\": 0, \"d\": 0.5}]}.")
+    if len(notes) > MAX_NOTES:
+        raise BandError(f"A band plays at most {MAX_NOTES} notes.")
+    out = []
+    for n in notes:
+        if not isinstance(n, dict) or set(n) - {"m", "t", "d"}:
+            raise BandError("Each note is {m, t, d}.")
+        m, t, d = n.get("m"), n.get("t"), n.get("d")
+        if isinstance(m, bool) or not isinstance(m, int) or not 0 <= m <= 127:
+            raise BandError("A note's pitch (m) is a MIDI number from 0 to 127.")
+        for v in (t, d):
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not np.isfinite(v):
+                raise BandError("A note's start (t) and length (d) are numbers of seconds.")
+        if t < 0 or t > MAX_INPUT_SECONDS or d <= 0 or d > MAX_INPUT_SECONDS:
+            raise BandError(f"A note starts at 0 to {MAX_INPUT_SECONDS} s and lasts more than 0 s.")
+        out.append({"m": m, "t": float(t), "d": float(d)})
+    return out
+
+
+def piano_roll(notes, seconds):
+    """Magenta RealTime 2's piano roll for `seconds` of `notes`: (frames, 128) int8, one frame per
+    40 ms from zero, 2 on a note's first frame, 1 on the frames it is held (at least one frame each)."""
+    frames = int(round(seconds * MRT_FRAME_RATE))
+    roll = np.zeros((frames, 128), dtype=np.int8)
+    for n in notes:
+        start = int(round(n["t"] * MRT_FRAME_RATE))
+        if start >= frames:
+            continue
+        end = min(frames, max(start + 1, int(round((n["t"] + n["d"]) * MRT_FRAME_RATE))))
+        roll[start + 1:end, n["m"]] = np.maximum(roll[start + 1:end, n["m"]], 1)
+        roll[start, n["m"]] = 2
+    return roll
+
+
+def load_mrt(folder):
+    """Magenta RealTime 2 from the verified folder (<home>/models/mrt2_small/): the exported graph and
+    its state, and MusicCoCa from the same folder. Nothing is fetched from the network."""
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    from magenta_rt import musiccoca, paths
+    paths.set_magenta_home(folder.parent.parent)  # magenta_rt reads <home>/models/<name>/<name>.mlxfn
+    from magenta_rt import MagentaRT2StdMlxfn
+    from magenta_rt.config import DRUM_PIANOROLL, MUSICCOCA, PIANOROLL_WITH_ONSETS
+    mrt = MagentaRT2StdMlxfn(size=folder.name, style_model=musiccoca.MusicCoCa(resource_dir=folder))
+    return mrt, (MUSICCOCA.key, PIANOROLL_WITH_ONSETS.key, DRUM_PIANOROLL.key)
+
+
+def generate_notes(loaded, roll, style, drums, job=None):
+    """The band playing `roll` (from piano_roll), mono float32 at MRT_RATE, one 40 ms step per frame.
+    `loaded` is load_mrt's (model, (style key, notes key, drums key))."""
+    mrt, (style_key, notes_key, drums_key) = loaded
+    tokens = mrt.tokenize_style(mrt.embed_style(style, use_mapper=True)).tolist()[:12]
+    state, chunks = None, []
+    for i, frame in enumerate(roll):
+        if job is not None and i % MRT_FRAME_RATE == 0:
+            job.report(0.05 + 0.9 * i / len(roll), "Playing your notes with the band")
+        conditioning = {style_key: tokens, notes_key: frame.tolist(), drums_key: [1 if drums else 0]}
+        wav, state = mrt.generate(conditioning=conditioning, cfg_scales={"notes": MRT_NOTES_GUIDANCE},
+                                  frames=1, state=state)
+        chunks.append(np.asarray(wav.samples, dtype=np.float32))
+    y = np.concatenate(chunks, 0) if chunks else np.zeros(0, dtype=np.float32)
+    audio = y.mean(axis=1) if y.ndim == 2 else y
+    n = int(round(len(roll) / MRT_FRAME_RATE * MRT_RATE))
+    audio = audio[:n] if len(audio) >= n else np.pad(audio, (0, n - len(audio)))
+    peak = float(np.max(np.abs(audio))) if len(audio) else 0.0
+    if peak > 0.99:
+        audio = audio * (0.99 / peak)
+    return audio.astype(np.float32)
+
+
 def _number(query, name, low, high, default=None):
     raw = query.get(name, [None])[0]
     if raw in (None, ""):
@@ -174,11 +273,29 @@ class Band:
         self._results = OrderedDict()
         self._lock = threading.Lock()
 
-    def _model(self, folder):
+    def _model(self, engine, folder):
+        """The engine's model, loaded once; loading one engine lets the other's go first, so only one
+        large model is held in memory."""
         with self._load_lock:
-            if self._loaded is None:
-                self._loaded = load_musicgen(folder, self.device_name)
-            return self._loaded
+            if self._loaded is None or self._loaded[0] != engine:
+                self._loaded = None
+                gc.collect()
+                model = load_musicgen(folder, self.device_name) if engine == MODEL_ID else load_mrt(folder)
+                self._loaded = (engine, model)
+            return self._loaded[1]
+
+    def _run(self, model_id, label, work):
+        """A generation as a MODEL.1 job, refused while either engine is generating."""
+        with self._lock:
+            if any(self.runtime.jobs.running(kind="run", model=m) for m in (MODEL_ID, MRT_MODEL_ID)):
+                raise models.ModelBusy(BUSY)
+            return self.runtime.run(model_id, label, work, busy=BUSY)
+
+    def _keep(self, job, wav):
+        with self._lock:
+            self._results[job.id] = wav
+            while len(self._results) > KEEP_RESULTS:
+                self._results.popitem(last=False)
 
     def start(self, data, style, bpm=None, key=None, seconds=None):
         x, rate = decode_wav(data, MAX_INPUT_SECONDS, "The band")
@@ -192,17 +309,37 @@ class Band:
 
         def work(folder, job):
             job.report(0.02, "Loading MusicGen-Melody")
-            loaded = self._model(folder)
+            loaded = self._model(MODEL_ID, folder)
             band = generate(loaded, x, rate, text, seconds, job)
             job.check()
-            with self._lock:
-                self._results[job.id] = encode_wav(band, RATE)
-                while len(self._results) > KEEP_RESULTS:
-                    self._results.popitem(last=False)
+            self._keep(job, encode_wav(band, RATE))
             return {"seconds": round(seconds, 2), "rate": RATE, "prompt": text}
 
-        return self.runtime.run(MODEL_ID, "Generate the band", work,
-                                busy="A band is already being generated; wait for it or cancel it.")
+        return self._run(MODEL_ID, "Generate the band", work)
+
+    def start_notes(self, data, style, seconds=None, drums=True):
+        """MRT.1: Magenta RealTime 2 plays the notes in `data` (a /band/notes body) from zero."""
+        notes = clean_notes(data)
+        text = clean_style(style)
+        if not notes:
+            raise BandError("There are no notes for the band to play; add a melody or chords first.")
+        end = max(n["t"] + n["d"] for n in notes)
+        seconds = min(MAX_SECONDS, end) if seconds is None else seconds
+        if not (1 <= seconds <= MAX_SECONDS):
+            raise BandError(f"A band is 1 to {MAX_SECONDS} seconds long.")
+        roll = piano_roll(notes, seconds)
+        if not roll.any():
+            raise BandError("No note starts in the band's length, so there is nothing for it to play.")
+
+        def work(folder, job):
+            job.report(0.02, "Loading Magenta RealTime 2")
+            mrt = self._model(MRT_MODEL_ID, folder)
+            band = generate_notes(mrt, roll, text, drums, job)
+            job.check()
+            self._keep(job, encode_wav(band, MRT_RATE))
+            return {"seconds": round(seconds, 2), "rate": MRT_RATE, "style": text, "drums": bool(drums)}
+
+        return self._run(MRT_MODEL_ID, "Generate the band from the notes", work)
 
     def audio(self, job_id):
         with self._lock:
@@ -224,6 +361,20 @@ class Band:
                 if data is None:
                     return await models._reply(send, 413, {"error": "The melody recording is too large."})
                 job = await anyio.to_thread.run_sync(lambda: self.start(data, style, bpm, key, seconds))
+                return await models._reply(send, 202, job.public())
+            if path == NOTES_PATH:
+                if method != "POST":
+                    return await models._reply(send, 405, {"error": "Method not allowed"})
+                query = urllib.parse.parse_qs(scope.get("query_string", b"").decode("latin-1"))
+                style = query.get("style", [""])[0]
+                seconds = _number(query, "seconds", 1, MAX_SECONDS)
+                drums = query.get("drums", ["1"])[0]
+                if drums not in ("0", "1"):
+                    raise BandError("drums must be 0 or 1.")
+                data = await _body(scope, receive, MAX_NOTES_BODY)
+                if data is None:
+                    return await models._reply(send, 413, {"error": "Too many notes for one band."})
+                job = await anyio.to_thread.run_sync(lambda: self.start_notes(data, style, seconds, drums == "1"))
                 return await models._reply(send, 202, job.public())
             rest = path[len(BAND_PATH) + 1:].split("/") if path.startswith(BAND_PATH + "/") else []
             if len(rest) == 2 and rest[1] == "band.wav":

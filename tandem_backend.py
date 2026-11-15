@@ -290,14 +290,24 @@ class ProjectHit(BaseModel):
     t: float = Field(ge=0,le=600,allow_inf_nan=False)
 class ProjectBand(BaseModel):
     """GEN.2: the backing band generated in the Mac app. Its audio is a recording kept beside the project
-    (the band slot), never in it; this records what made it. No AI action edits it."""
+    (the band slot), never in it; this records what made it. No AI action edits it. MRT.1: model
+    mrt2_small (Magenta RealTime 2) plays the melody and harmony notes (follows "notes"), with its
+    drums on or off; MusicGen-Melody follows the melody or the recording."""
     model_config=ConfigDict(extra="forbid")
     id: str = Field(pattern=r"^[A-Za-z0-9-]{1,64}$")
     style: str = Field(min_length=1,max_length=200)
-    follows: Literal["melody","recording"]
+    follows: Literal["melody","recording","notes"]
     seconds: float = Field(ge=1,le=30,allow_inf_nan=False)
     muted: bool = False
-    model: Literal["musicgen-melody"] = "musicgen-melody"
+    model: Literal["musicgen-melody","mrt2_small"] = "musicgen-melody"
+    drums: bool | None = Field(default=None,strict=True)
+    @model_validator(mode="after")
+    def _engine(self):
+        if (self.model == "mrt2_small") != (self.follows == "notes"):
+            raise ValueError("a band from the notes is made by mrt2_small, and only it follows the notes")
+        if self.drums is not None and self.model != "mrt2_small":
+            raise ValueError("only a band from the notes has its own drums setting")
+        return self
 class ProjectTimbre(BaseModel):
     """TIMBRE.1: the recorded voice played as an instrument by a RAVE model in the Mac app. Its audio is a
     recording kept beside the project (the timbre slot), never in it. No AI action edits it."""

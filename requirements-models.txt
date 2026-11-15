@@ -16,3 +16,9 @@ einops==0.8.2
 transformers==5.22.2
 # TIMBRE.1: the voice played as an instrument with RAVE models (CC-BY-NC 4.0, LIC.1) needs only torch and
 # julius above: the models are TorchScript, run by torch itself.
+# MRT.1: a band from the notes with Google's Magenta RealTime 2 (weights CC-BY 4.0, code Apache 2.0; LIC.1),
+# the small model exported for MLX: Apple silicon only. The exported graphs at the pinned revision need MLX
+# 0.31.1 exactly (MLX 0.32 refuses them). magenta-rt brings JAX, flax, librosa and a TFLite runtime with it.
+magenta-rt[mlx]==2.0.3; sys_platform == "darwin" and platform_machine == "arm64"
+mlx==0.31.1; sys_platform == "darwin" and platform_machine == "arm64"
+mlx-metal==0.31.1; sys_platform == "darwin" and platform_machine == "arm64"

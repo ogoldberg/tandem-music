@@ -285,9 +285,20 @@ def test_chat_project_accepts_an_optional_band():
     # GEN.2: the generated band is described in the project; its audio never is.
     assert server.ChatProject().band is None
     band={"id":"b-1","style":"lo-fi band","follows":"melody","seconds":12.5,"muted":True,"model":"musicgen-melody"}
-    assert server.ChatProject(band=band).band.model_dump()==band
+    assert server.ChatProject(band=band).band.model_dump(exclude_unset=True)==band
     for bad in ({**band,"audio":"UklGRg=="},{**band,"seconds":31},{**band,"follows":"drums"},{**band,"model":"other"},
                 {**band,"id":"../x"},{**band,"style":""},{**band,"style":"x"*201}):
+        with pytest.raises(Exception):
+            server.ChatProject(band=bad)
+
+def test_chat_project_accepts_a_band_from_the_notes():
+    # MRT.1: Magenta RealTime 2 (mrt2_small) plays the notes, with its drums on or off; only it follows the notes.
+    band={"id":"b-2","style":"pop band","follows":"notes","seconds":30,"muted":False,"model":"mrt2_small","drums":False}
+    assert server.ChatProject(band=band).band.model_dump()==band
+    assert server.ChatProject(band={k:v for k,v in band.items() if k!="drums"}).band.drums is None
+    for bad in ({**band,"model":"musicgen-melody"},{**band,"follows":"melody"},{**band,"drums":"yes"},
+                {k:v for k,v in band.items() if k!="model"},
+                {"id":"b-1","style":"rock","follows":"melody","seconds":4,"model":"musicgen-melody","drums":True}):
         with pytest.raises(Exception):
             server.ChatProject(band=bad)
 
