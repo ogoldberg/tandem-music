@@ -11,7 +11,7 @@ from playwright.sync_api import expect
 from test_capture import PHONE
 from test_studio import IDB_DRAFT, count
 
-MAC_APP = ["aibaseurl", "aiforget", "aikey", "aimodel", "aiprovider", "aisave", "bandfollows", "bandmute", "bandstyle",
+MAC_APP = ["aibaseurl", "aiforget", "aikey", "aimodel", "aiprovider", "aisave", "banddrums", "bandfollows", "bandmute", "bandstyle",
            "downloadband", "genband", "gentimbre", "openfolder", "playband", "playbandtrack", "playtimbretrack", "playvocal",
            "removeband", "removetimbre", "savefolder", "separate", "timbreinstrument", "timbremute", "usefull"]
 MIDI_PORTS = ["midichannel", "midiinput", "midioutput", "midirecord"]
