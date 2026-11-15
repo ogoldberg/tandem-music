@@ -163,6 +163,39 @@ def test_in_the_studio_the_voice_is_measured_against_the_melody_note_sounding(to
     wait_until(page, "async () => !!document.getElementById('finish').dataset.take", "the take has finished")
 
 
+def test_a_take_past_the_songs_end_rescales_the_roll_and_rebuilds_the_pitch_line(tone_studio, tmp_path):
+    """FIX.1 (review of #93): the roll shows at least 8 s; once the take runs past its end (less half a second) the
+    roll's scale grows, and the pitch line drawn so far is rebuilt on the new scale (drawGuide in index.html)."""
+    page = tone_studio
+    open_project(page, tmp_path, [{"m": 69, "t": 0, "d": 1}])
+    page.uncheck("#countin")
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording…", timeout=8000)
+    wait_for_readings(page, 10)
+    line = """() => { const n = document.getElementById('pitchnow'), path = document.querySelector('#melodyroll svg.pitchline path');
+      const nums = (path.getAttribute('d').match(/-?[0-9.]+/g) || []).map(Number);
+      return { from: +n.dataset.from, to: +n.dataset.to, count: +n.dataset.count, xs: nums.filter((_, i) => i % 2 === 0),
+               moves: (path.getAttribute('d').match(/M/g) || []).length }; }"""
+    before = page.evaluate(line)
+    page.wait_for_function("+document.getElementById('pitchnow').dataset.to > 9", timeout=20000)
+    after = page.evaluate(line)
+    page.click("#finish")
+    wait_until(page, "async () => !!document.getElementById('finish').dataset.take", "the take has finished")
+    # Before the end, the roll is 8 s wide: x is the reading's time over 8 s.
+    assert abs(before["xs"][-1] - before["to"] / 8 * 97) < 0.3, before
+    # After it, the scale is wider, and every point is on it: the line is one stroke, its points in time order and
+    # evenly spread from the first reading to the last (a line kept on the old scale jumps back where it changed).
+    end = after["to"] / after["xs"][-1] * 97
+    assert end > 9.5, end
+    xs = after["xs"]
+    # (Readings before the take's zero, the round trip it was moved by, are not drawn.)
+    assert after["moves"] == 1 and 0 <= after["count"] - len(xs) <= 10, after
+    assert xs == sorted(xs)
+    assert xs[0] < 0.1 / end * 97 + 0.2, (xs[0], end)
+    mid = len(xs) // 2
+    assert abs(xs[mid] - (xs[0] + xs[-1]) / 2) < 0.5, (xs[0], xs[mid], xs[-1])
+
+
 def test_in_the_studio_between_melody_notes_the_voice_is_measured_against_the_key(tone_studio, tmp_path):
     page = tone_studio
     # The melody comes in only at 60 s; until then the chosen key, E♭ major, has B♭ nearest: 75 cents flat.
