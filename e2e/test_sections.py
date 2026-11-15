@@ -89,3 +89,24 @@ def test_a_section_cannot_overlap_another(studio):
     mark(page, "Bridge", 1.8, 3.0)
     expect(page.locator("#status")).to_contain_text("overlaps Chorus")
     assert [s["name"] for s in sections(page)] == ["Chorus"]
+
+
+def test_a_version_restores_its_sections_and_one_without_sections_clears_them(studio):
+    page = studio
+    page.click("#demo")
+    page.fill("#versionname", "No sections")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: No sections")
+    mark(page, "Chorus", 1.2, 2.4)
+    page.fill("#versionname", "With chorus")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: With chorus")
+
+    page.click("#versionlist .version:has-text('No sections') >> text=Restore")
+    expect(page.locator("#status")).to_contain_text("Restored version: No sections")
+    expect(page.locator("#sections")).to_be_hidden()
+    assert sections(page) == []
+
+    page.click("#versionlist .version:has-text('With chorus') >> text=Restore")
+    expect(page.locator("#status")).to_contain_text("Restored version: With chorus")
+    assert sections(page) == [{"name": "Chorus", "from": 1.2, "to": 2.4}]
