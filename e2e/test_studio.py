@@ -813,6 +813,46 @@ def test_export_wav_does_not_hang_when_sample_requests_stall(browser, server_url
     context.close()
 
 
+def test_the_export_status_names_the_voices_that_were_not_ready_when_the_render_started(browser, server_url):
+    """#46: samples that finish loading during the render are not in the WAV (its notes were already scheduled on
+    the oscillator voices), so the status still names those voices. The render is held until they have loaded."""
+    context = browser.new_context(service_workers="block")
+    context.add_init_script(ALL_CONTROLS)
+    # Hold the first render until the test lets it go.
+    context.add_init_script("""(() => { const start = OfflineAudioContext.prototype.startRendering;
+      OfflineAudioContext.prototype.startRendering = function () {
+        if (window.__holdRender) { window.__rendering = true; const self = this;
+          return new Promise(r => { window.__release = () => r(start.call(self)); }); }
+        return start.call(this); }; })()""")
+    page = context.new_page()
+    problems = []
+    page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
+    page.on("console", lambda msg: problems.append(f"console.{msg.type}: {msg.text}") if msg.type == "error" else None)
+    held = []
+    page.route("**/vendor/gm-samples-1/**", lambda route: held.append(route))
+    page.goto(server_url + "/")
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    page.click("#demo")
+    page.evaluate("window.__holdRender = true")
+    with page.expect_download(timeout=60_000) as info:
+        page.click("#exportwav")
+        page.wait_for_function("window.__rendering === true", timeout=40_000)
+        # The wait for the samples has run out and the notes are scheduled; now the samples load.
+        for route in held:
+            route.continue_()
+        page.unroute("**/vendor/gm-samples-1/**")
+        page.wait_for_timeout(3000)
+        page.evaluate("window.__holdRender = false; window.__release()")
+    info.value.path()
+    expect(page.locator("#status")).to_have_text("Exported the WAV with synthesized Marimba, drums (samples still loading)")
+    # ... and the next export uses the samples and says nothing about synthesized voices.
+    with page.expect_download(timeout=40_000):
+        page.click("#exportwav")
+    expect(page.locator("#status")).to_have_text("Exported the WAV")
+    assert not problems, problems
+    context.close()
+
+
 def test_opening_a_project_with_an_unknown_instrument_is_rejected(studio, tmp_path):
     page = studio
     bad = tmp_path / "bad.json"

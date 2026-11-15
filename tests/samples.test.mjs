@@ -124,6 +124,20 @@ test("planSample fades a recording that ends before the key release over the voi
   ]);
 });
 
+test("#46: a recording that ends during the release fades out by its end instead of being cut", () => {
+  // Piano at its root: the recording lasts 1.6 s, the key is released at 1.5 s, and the release would run past
+  // the recording's end; the fade ends with the recording.
+  const r = VOICES.piano.env.release;
+  assert.ok(r > 0.1);
+  const p = planSample("piano", 60, { duration: 1.5 + r / 2, loop: null }, 60, 0, 1.5);
+  assert.deepEqual(p.gain, [
+    { kind: "set", time: 0, value: LEVELS.piano },
+    { kind: "set", time: 1.5, value: LEVELS.piano },
+    { kind: "exp", time: 1.5 + r / 2, value: FLOOR },
+  ]);
+  assert.equal(p.stop, 1.5 + r / 2);
+});
+
 test("planSample keeps a looped (sustained) note sounding for as long as the key is held", () => {
   const p = planSample("strings", 60, { duration: 3, loop: [0.8, 2.95] }, 60, 0, 10);
   assert.deepEqual(p.loop, [0.8, 2.95]);
