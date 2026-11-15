@@ -186,6 +186,29 @@ def test_a_project_saved_to_a_folder_opens_with_its_audio_after_a_relaunch(page,
         desk.stop_server(server, thread)
 
 
+def test_a_folder_without_a_recording_keeps_the_draft_as_a_version_then_clears_its_recording(page, desktop, tmp_path):
+    """#61: opening a project folder with no recording while one is loaded keeps the draft as a version with that
+    recording, then opens without it, so Save to folder cannot write the old recording into the opened folder."""
+    problems = open_app(page, desktop)
+    page.set_input_files("#audiofile", str(held_tones_wav(tmp_path / "take.wav", 2)))
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Recorded 2\.0s\."))
+    folder = tmp_path / "Verse"
+    folder.mkdir()
+    (folder / "project.json").write_text(json.dumps(
+        {"format": "tandem-project", "version": 1, "bpm": 132, "notes": [{"m": 62, "t": 0, "d": 1}], "drums": []}))
+    desktop["dialogs"].folder = str(folder)
+    page.click("#openfolder")
+    expect(page.locator("#status")).to_have_text(
+        'Opened Verse (it has no recording). Your previous draft was saved as the version "Before Verse".')
+    expect(page.locator("#original")).to_be_disabled()
+    expect(page.locator("#bpm")).to_have_value("132")
+    desktop["dialogs"].save = str(folder)
+    page.click("#savefolder")
+    expect(page.locator("#status")).to_have_text(f"Saved the project folder {folder}.")
+    assert sorted(p.name for p in folder.iterdir()) == ["project.json", "tandem.json"]
+    assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+
+
 def test_a_cancelled_dialog_changes_nothing_and_a_wrong_folder_is_explained(page, desktop, tmp_path):
     problems = open_app(page, desktop)
     page.click("#savefolder")

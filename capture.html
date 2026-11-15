@@ -35,7 +35,7 @@ select{font:inherit;border:1px solid #455c78;background:#263950;color:white;bord
 import {openKV,persistence,PERSISTENCE_TEXT} from './storage.js';
 import {openRecordings} from './recordings.js';
 import {createVersionStore} from './versions.js';
-import {createIdeaStore,ideaTitle,formatDuration} from './ideas.js';
+import {createIdeaStore,ideaTitle,formatDuration,storageProblem} from './ideas.js';
 import {writeBundle,toWav,encodeWav,ideaProject,bundleFileName,BUNDLE_TYPE} from './bundle.js';
 import {monoSamples} from './recordings.js';
 import {countIn,clickTimes,createTakeCollector,startCapture,takeStart} from './take.js';
@@ -265,7 +265,7 @@ try{
   $('record').disabled=false;status(navigator.mediaDevices?.getUserMedia?'Ready. Tap Record and sing.':'This browser cannot record from the microphone.');
   if(!navigator.mediaDevices?.getUserMedia)$('record').disabled=true;
   await render();
-}catch(e){status('Ideas cannot be kept in this browser: '+e.message+' A private window cannot keep them; open Tandem in a normal window or from the home screen.');if(ideas)await render().catch(()=>{})}
+}catch(e){status(storageProblem(e));if(ideas)await render().catch(()=>{})}
 showPersistence();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 </script></body></html>

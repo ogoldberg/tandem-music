@@ -5,6 +5,7 @@
 
 import { cleanLinks, linkedIds } from "./recordings.js";
 import { cleanBeat } from "./beats.js";
+import { BLOCKED_ERROR } from "./storage.js";
 
 export const IDEAS_KEY = "ideas";
 export const MAX_IDEA_NAME = 60;
@@ -91,4 +92,12 @@ export function ideaTitle(idea, formatTime = ms => new Date(ms).toLocaleString()
 export function formatDuration(seconds) {
   const s = Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : 0;
   return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+
+// The capture page's line when ideas cannot be kept: the error as a sentence (#52: a full stop before the advice),
+// then the private-window advice, except when another tab holds the database, whose own message says what to do (#58).
+export function storageProblem(err) {
+  const raw = String(err?.message ?? "").trim(), said = raw ? ": " + (/[.!?]$/.test(raw) ? raw : raw + ".") : ".";
+  const line = "Ideas cannot be kept in this browser" + said;
+  return err?.name === BLOCKED_ERROR ? line : line + " A private window cannot keep them; open Tandem in a normal window or from the home screen.";
 }

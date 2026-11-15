@@ -3,6 +3,7 @@
 These tests use fresh browser contexts without conftest's ALL_CONTROLS script, so the studio opens as it does for a
 new person: in the guided view. Recordings come from Chromium's fake microphone (a beeping tone)."""
 import re
+import wave
 from contextlib import contextmanager
 
 import httpx
@@ -25,9 +26,11 @@ CONTROL = re.compile(r'<(button|input|select|textarea)\b[^>]*\bid="([^"]+)"')
 
 
 @contextmanager
-def guided_page(browser, server_url, **extra):
+def guided_page(browser, server_url, *, init=None, **extra):
     options = {**PHONE, "is_mobile": True, "permissions": ["microphone"], "base_url": server_url, **extra}
     context = browser.new_context(**options)
+    if init:
+        context.add_init_script(init)
     page = context.new_page()
     problems = []
     page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
@@ -274,13 +277,9 @@ def test_recording_a_beat_after_singing_keeps_the_sung_song_as_a_version_first(b
 
 
 def test_without_recording_storage_record_a_beat_says_the_take_is_lost_and_saves_no_version(browser, server_url):
-    context = browser.new_context(**PHONE, is_mobile=True, permissions=["microphone"], base_url=server_url)
     # No Origin Private File System: versions cannot keep recordings, so no version can keep the voice.
-    context.add_init_script("delete StorageManager.prototype.getDirectory;")
-    page = context.new_page()
-    page.goto("/")
-    page.wait_for_function("document.getElementById('notecount').textContent !== '' && !document.body.inert")
-    try:
+    # FIX.1 (review of #82): the warning's Download your voice is a button beside it, and the page reports no errors.
+    with guided_page(browser, server_url, init="delete StorageManager.prototype.getDirectory;") as page:
         use_server_transcriber(page)
         page.click('[data-mode="vocal"]')
         record_take(page)
@@ -289,10 +288,15 @@ def test_without_recording_storage_record_a_beat_says_the_take_is_lost_and_saves
         expect(page.locator("#gbeatmsg")).to_have_text(
             "A beat take becomes the recording the song uses; your singing stays as Take 1 only until this page is closed, "
             "as this browser cannot keep recordings. Download your voice first if you want to keep it.")
+        expect(page.locator("#gbeatdownload")).to_be_visible()
+        with page.expect_download() as info:
+            page.click("#gbeatdownload")
+        assert info.value.suggested_filename == "tandem-voice.wav"
+        with wave.open(str(info.value.path())) as w:
+            assert w.getnframes() / w.getframerate() > 2
+        expect(page.locator("#gstatus")).to_have_text("Downloaded your voice.")
         expect(page.locator("#gbeatyes")).to_have_text("Record a beat anyway")
         page.click("#gbeatyes")
         expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
         expect(page.locator('[data-mode="rhythm"]')).to_have_attribute("aria-pressed", "true")
         assert page.evaluate("document.getElementById('versionlist').textContent") == "No saved versions yet."
-    finally:
-        context.close()

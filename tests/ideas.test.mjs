@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createIdeaStore, IDEAS_KEY, MAX_IDEA_NAME, ideaTitle, formatDuration } from "../ideas.js";
+import { createIdeaStore, IDEAS_KEY, MAX_IDEA_NAME, ideaTitle, formatDuration, storageProblem } from "../ideas.js";
+import { BLOCKED_ERROR } from "../storage.js";
 import { memoryKV } from "./memory-kv.mjs";
 
 const link = (c = "a") => ({ id: c.repeat(64), type: "audio/webm" });
@@ -130,4 +131,18 @@ test("REC.3: an idea recorded over a starter beat keeps the beat and its tempo; 
   // A stored beat this version does not know is left out of what the idea reports, and the idea still opens.
   await kv.update(IDEAS_KEY, v => [v.map(e => (e.id === over.id ? { ...e, beat: { id: "polka", bpm: 120 } } : e)), true]);
   assert.equal("beat" in (await ideas.get(over.id)), false);
+});
+
+test("#52, #58: why ideas cannot be kept: the error as a sentence, and the private-window advice only when it can help", () => {
+  const advice = /private window/;
+  // A raw error without a full stop gets one before the advice.
+  const raw = storageProblem(Error("The operation is insecure"));
+  assert.match(raw, /^Ideas cannot be kept in this browser: The operation is insecure\. A private window/);
+  assert.equal(storageProblem(Error("No space left.")).includes("left.. "), false);
+  assert.match(storageProblem(Error("No space left.")), /left\. A private window/);
+  // Another tab holding the database: closing it is the advice, not a private window.
+  const blocked = Object.assign(Error("Another Tandem tab is still using an older version of the saved work. Close other Tandem tabs, then reload this one."), { name: BLOCKED_ERROR });
+  assert.equal(storageProblem(blocked), "Ideas cannot be kept in this browser: " + blocked.message);
+  assert.doesNotMatch(storageProblem(blocked), advice);
+  assert.match(storageProblem(Error("")), /^Ideas cannot be kept in this browser\. A private window/);
 });

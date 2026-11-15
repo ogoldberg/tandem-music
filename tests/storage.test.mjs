@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
+import { BLOCKED_ERROR,
   migrateLegacy, persistence, storageError, openKV, PERSISTENCE_TEXT,
   DRAFT_KEY, VERSIONS_KEY, LEGACY_DRAFT_KEY, LEGACY_VERSIONS_KEY,
 } from "../storage.js";
@@ -146,7 +146,7 @@ function blockedFactory() {
 
 test("openKV refuses a blocked open with a message instead of waiting forever (#40)", { timeout: 5000 }, async () => {
   const factory = blockedFactory();
-  await assert.rejects(openKV(factory), /Close other Tandem tabs/);
+  await assert.rejects(openKV(factory), e => /Close other Tandem tabs/.test(e.message) && e.name === BLOCKED_ERROR);
 });
 
 test("openKV closes a connection that opens after it gave up on a blocked open (#40)", { timeout: 5000 }, async () => {

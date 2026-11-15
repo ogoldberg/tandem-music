@@ -49,6 +49,8 @@ const isProject = p => !!p && typeof p === "object" && Array.isArray(p.notes) &&
 const isEntry = e => !!e && typeof e === "object" && typeof e.id === "string" && typeof e.name === "string"
   && Number.isFinite(e.savedAt) && isProject(e.project);
 
+const sameLinks = links => JSON.stringify(Object.keys(links).sort().map(k => [k, links[k].id, links[k].type]));
+
 export function createVersionStore(kv, { now = () => Date.now(), limit = MAX_VERSIONS } = {}) {
   if (!kv || typeof kv.get !== "function" || typeof kv.update !== "function") {
     throw TypeError("Expected a key-value store with get and update");
@@ -93,6 +95,14 @@ export function createVersionStore(kv, { now = () => Date.now(), limit = MAX_VER
     async get(id) {
       const entry = (await read()).find(e => e.id === id);
       return entry ? copy(entry.project) : null;
+    },
+
+    // #52: the newest version holding exactly this project and these recording links, or null; opening an idea
+    // or a file then does not save the same draft again as another version, which would push out older ones.
+    async findSame(project, audio = null) {
+      const stored = JSON.stringify(projectFromState(project)), links = sameLinks(cleanLinks(audio));
+      const entry = (await read()).find(e => JSON.stringify(e.project) === stored && sameLinks(cleanLinks(e.audio)) === links);
+      return entry ? { id: entry.id, name: entry.name, savedAt: entry.savedAt } : null;
     },
 
     // The recording links saved with a version, or null if it has none.

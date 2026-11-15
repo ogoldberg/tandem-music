@@ -246,3 +246,18 @@ test("removing a version drops its links from audioIds", async () => {
   await store.remove(v.id);
   assert.deepEqual([...(await store.audioIds())], []);
 });
+
+test("#52: findSame names a version holding exactly this project and these recordings, else null", async () => {
+  const store = createVersionStore(memoryKV(), { now: clock() });
+  const links = { original: { id: A, type: "audio/wav" }, tuned: { id: B, type: "audio/wav" } };
+  assert.equal(await store.findSame(project(), links), null);
+  const kept = await store.save("Mine", project(), links);
+  await store.save("Other", project(120));
+  assert.deepEqual(await store.findSame(project(), { tuned: links.tuned, original: links.original }), { id: kept.id, name: "Mine", savedAt: kept.savedAt });
+  // Anything different is not the same: the notes, a recording more or less, another recording.
+  assert.equal(await store.findSame(project(100, [{ m: 62, t: 0, d: 0.4 }]), links), null);
+  assert.equal(await store.findSame(project(), { original: links.original }), null);
+  assert.equal(await store.findSame(project(), { ...links, original: { id: C, type: "audio/wav" } }), null);
+  assert.equal(await store.findSame(project(), null), null);
+  assert.deepEqual((await store.findSame(project(120), {})).name, "Other");
+});

@@ -136,8 +136,15 @@ def test_playing_it_captions_each_stage_at_the_playhead(studio, tmp_path):
     page.click("#polish")
     expect(page.locator("#polished")).to_be_enabled(timeout=30_000)
 
+    # FIX.1: while every stage is mixed, the status says so (each status line is recorded as it is shown).
+    page.evaluate("""() => { const el = document.getElementById('status'); window.__said = [];
+      new MutationObserver(() => window.__said.push(el.textContent)).observe(el, { childList: true, characterData: true, subtree: true }); }""")
     page.click("#evolution")
     expect(page.locator("#status")).to_contain_text("Playing how the song grew: Your take, as recorded, then Cleaned up")
+    said = page.evaluate("window.__said")
+    mixing = "Mixing each stage of how the song grew; a long song takes a few seconds."
+    assert mixing in said and said.index(mixing) < max(i for i, t in enumerate(said) if t.startswith("Playing how")), said
+    assert said[said.index("Loading instruments") + 1] == mixing, said
     page.wait_for_function("document.getElementById('timeline').dataset.stage > ''", timeout=20_000)
     seconds, stages = SONG, ["original", "polished", "melody", "harmony", "drums"]
     seen = []

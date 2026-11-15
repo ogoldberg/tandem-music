@@ -122,6 +122,60 @@ def test_a_dragged_section_loops_until_stop(studio):
     page.click("#stop")
 
 
+def test_the_timeline_works_from_the_keyboard(studio):
+    """FIX.1 (review of #89): Tab reaches the Timeline; the arrow keys move a cursor a beat at a time, Home and End go
+    to the start and the end, Enter plays from the cursor, and Shift with the arrows marks a section to loop."""
+    page = studio
+    page.click("#demo")
+    beat = 60 / float(page.locator("#bpm").input_value())
+    page.focus("#timeline")
+    expect(page.locator("#timeline")).to_be_focused()
+    expect(page.locator("#timeline .kbcursor")).to_have_count(0)
+    cursor = lambda: float(page.locator("#timeline").get_attribute("data-cursor"))
+    for _ in range(4):
+        page.keyboard.press("ArrowRight")
+    assert abs(cursor() - 4 * beat) < 1e-6
+    expect(page.locator("#timeline .kbcursor")).to_be_visible()
+    left = page.locator("#timeline .kbcursor").evaluate("e => parseFloat(e.style.left)")
+    assert abs(left - 4 * beat / 8 * 97) < 0.01
+    page.keyboard.press("ArrowLeft")
+    assert abs(cursor() - 3 * beat) < 1e-6
+    expect(page.locator("#timeinfo")).to_have_text(f"At {3 * beat:.1f} s: Enter plays from here, Shift and the arrows mark a section")
+    page.keyboard.press("Enter")
+    expect(page.locator("#status")).to_contain_text(f"Playing composition from {3 * beat:.1f} s")
+    wait_playing(page)
+    _, t = head(page)
+    assert 3 * beat - 0.1 < t < 3 * beat + 1, t
+    page.click("#stop")
+    expect(page.locator("#status")).to_have_text("Stopped")
+    # Home and End, and nothing past either.
+    page.focus("#timeline")
+    page.keyboard.press("Home")
+    page.keyboard.press("ArrowLeft")
+    assert cursor() == 0
+    page.keyboard.press("End")
+    page.keyboard.press("ArrowRight")
+    assert abs(cursor() - 8) < 1e-6
+    # Shift and the arrows mark a section from where the cursor was; Play loops it.
+    page.keyboard.press("Home")
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("Shift+ArrowRight")
+    page.keyboard.press("Shift+ArrowRight")
+    page.keyboard.press("Shift+ArrowRight")
+    expect(page.locator("#loop")).to_have_attribute("aria-pressed", "true")
+    start, end = loop_bounds(page)
+    assert abs(start - beat) < 0.06 and abs(end - 4 * beat) < 0.06, (start, end)
+    # An arrow without Shift moves the cursor and keeps the section.
+    page.keyboard.press("ArrowRight")
+    assert loop_bounds(page) == (start, end)
+    page.click("#play")
+    expect(page.locator("#status")).to_contain_text(f"looping {start:.1f} to {end:.1f} s")
+    page.click("#stop")
+    # Leaving the Timeline hides the cursor.
+    page.focus("#play")
+    expect(page.locator("#timeline .kbcursor")).to_be_hidden()
+
+
 def test_a_short_drag_is_a_click_and_a_too_short_section_is_not_a_loop(studio):
     page = studio
     page.click("#demo")

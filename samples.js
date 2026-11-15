@@ -64,8 +64,10 @@ export function planSample(instrument, root, sample, m, t, d) {
     gain.push({ kind: "set", time: Math.max(t, natural - release), value: level }, { kind: "exp", time: natural, value: FLOOR });
     stop = natural;
   } else {
-    gain.push({ kind: "set", time: off, value: level }, { kind: "exp", time: off + release, value: FLOOR });
-    stop = Math.min(natural, off + release + 0.02);
+    // #46: a recording that ends during the release fades out by its own end instead of being cut mid-fade.
+    const end = Math.min(off + release, natural);
+    gain.push({ kind: "set", time: off, value: level }, { kind: "exp", time: end, value: FLOOR });
+    stop = Math.min(natural, end + 0.02);
   }
   return { root, rate, loop: sample.loop, gain, start: t, stop };
 }
