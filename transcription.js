@@ -75,7 +75,8 @@ export const MELODY_SALIENCE = 0.15;
  * sungNotes, TRANS.2): a note lasts as long as its pitch is held, a new note starts where the pitch
  * steps to another, and a slide joins the note it settles on. Notes are clipped to `maxSeconds`
  * and the earliest `maxNotes` are kept.
- * `loadModule` is injectable so tests run without the browser bundle.
+ * `loadModule` is injectable so tests run without the browser bundle. `progress(percent, backend)` gets
+ * TensorFlow.js's backend ("webgl", or "cpu" when slow: see slowBackendNote) with each step.
  */
 export async function transcribeWithBasicPitch(audioBuffer, progress = () => {}, { maxSeconds = PROJECT_MELODY_LIMITS.maxSeconds, maxNotes = PROJECT_MELODY_LIMITS.maxNotes, loadModule = loadBasicPitch } = {}) {
   const run = await runBasicPitch(audioBuffer, progress, maxSeconds, loadModule);
@@ -108,6 +109,14 @@ export async function detectVocalTargets(audioBuffer, progress = () => {}, { loa
   return { notes: mergeFragments(run.notes({ maxNotes: VOCAL_TARGET_LIMITS.maxNotes, confidence: true }), contour), contour };
 }
 
+// FIX.1 (#18): without WebGL (no GPU, a blocked GPU, or a headless browser without SwiftShader) TensorFlow.js
+// runs Basic Pitch on its pure-JavaScript "cpu" backend, many times slower: a 3-minute take did not finish in
+// 240 s on CI. Each progress step passes the backend in use, and the studio adds this to its status.
+export function slowBackendNote(backend, { server = false } = {}) {
+  if (backend !== "cpu") return "";
+  return " (slow here: this browser has no WebGL graphics acceleration, so Basic Pitch runs on the processor" + (server ? "; the server listener is quicker but simpler)" : ")");
+}
+
 const nextTask = () => new Promise(resolve => setTimeout(resolve, 0));
 
 async function runBasicPitch(audioBuffer, progress, maxSeconds, loadModule) {
@@ -115,7 +124,7 @@ async function runBasicPitch(audioBuffer, progress, maxSeconds, loadModule) {
     throw new TypeError("Expected a decoded AudioBuffer");
   }
   if (audioBuffer.duration > maxSeconds) throw new Error(`For browser transcription, use a recording under ${maxSeconds} seconds.`);
-  const { BasicPitch, outputToNotesPoly, noteFramesToTime, addPitchBendsToNoteEvents } = await loadModule();
+  const { BasicPitch, outputToNotesPoly, noteFramesToTime, addPitchBendsToNoteEvents, getBackend = () => null } = await loadModule();
   const model = new BasicPitch(BASIC_PITCH_MODEL);
   // REC.1: the model runs one window of audio at a time on the page's thread, and those steps follow each
   // other without ever handing the thread back, so the page drew nothing until the end and the progress
@@ -129,7 +138,7 @@ async function runBasicPitch(audioBuffer, progress, maxSeconds, loadModule) {
   const preparedBuffer = await resampleForBasicPitch(audioBuffer);
   await model.evaluateModel(preparedBuffer,
     (f,o,c)=>{frames.push(...f);onsets.push(...o);contours.push(...c)},
-    p=>progress(Math.round(Math.max(0, Math.min(1, p))*100))
+    p=>progress(Math.round(Math.max(0, Math.min(1, p))*100), getBackend())
   );
   if (!frames.length) return null;
   const raw = outputToNotesPoly(frames,onsets,.25,.25,5);

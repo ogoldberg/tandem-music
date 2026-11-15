@@ -49,7 +49,7 @@ import {readBundle,isBundle,writeBundle,toWav,ideaProject,BUNDLE_TYPE} from './b
 import {midiFile,exportKey,arrangementSeconds,sumStems,monoOf,stemsZip,STEM_RATE,PROGRAMS} from './daw.js';
 import {musicXml} from './notation.js';
 import {dawProject} from './dawproject.js';
-import {tuneInChunks,harmonyTargets,keepSpans,harmonyFingerprint,HARMONY_LOWEST,HARMONY_HIGHEST} from './tuning.js';
+import {tuneInChunks,sectionLimits,harmonyTargets,keepSpans,harmonyFingerprint,HARMONY_LOWEST,HARMONY_HIGHEST} from './tuning.js';
 import {STEPS,HELPERS,PITCH_AMOUNTS,BEAT_STYLES,normalizeSettings,readSettings,writeSettings,afterTake,stepSummaries,speedText,pitchAmountName,nextStep,previousStep,isChords} from './guide.js';
 import {midiSupported,listPorts,partChannels,readMessage,createKeyRecorder,addTake,songEvents,silence,createSender,COUNT_IN_BEATS} from './midi.js';
 import {estimateTempo,quantizeProject} from './groove.js';
@@ -790,8 +790,8 @@ let resizeTimer=null;window.addEventListener('resize',()=>{clearTimeout(resizeTi
 $('detectvocal').onclick=async()=>{
   try{
     status('Detecting vocal notes…');
-    const {detectVocalTargets}=await import('./transcription.js');
-    const {notes,contour}=await detectVocalTargets(await decoded(take()),p=>status('Detecting vocal notes: '+p+'%'));
+    const {detectVocalTargets,slowBackendNote}=await import('./transcription.js');
+    const {notes,contour}=await detectVocalTargets(await decoded(take()),(p,b)=>status('Detecting vocal notes: '+p+'%'+slowBackendNote(b)));
     vocalContour=contour;selectedTarget=null;
     edit('Detect sung notes',()=>{vocalNotes=notes.map(n=>({...n}));originalVocalNotes=notes.map(n=>({...n}))});
     status(notes.length+' vocal notes ready to edit.');
@@ -824,7 +824,7 @@ async function tuneBlob(blob,{strength,notes,label}){
  const onDevice=$('tuneengine').value==='device';
  const tune=onDevice?({samples,sampleRate,notes,strength})=>deviceTune({samples,sampleRate,strength,notes,...(notes?.length?{vibrato:tuningSettings().vibrato}:tuningKey.scale!=='chromatic'?{scale:keyPcs()}:{})}):null;
  const limits=onDevice?null:await localLimits();
- const result=await tuneInChunks(mono,buf.sampleRate,{strength,notes,send,tune,...(limits?{chunkSeconds:limits.tune_seconds,maxNotes:limits.tune_notes}:{}),onProgress:p=>status(p.waiting?'Rate limited; resuming section '+(p.index+1)+' of '+p.count+' in '+p.waiting+' s…':p.count>1?label+', section '+(p.index+1)+' of '+p.count+'…':label+'…')});
+ const result=await tuneInChunks(mono,buf.sampleRate,{strength,notes,send,tune,...(limits?sectionLimits(limits):{}),onProgress:p=>status(p.waiting?'Rate limited; resuming section '+(p.index+1)+' of '+p.count+' in '+p.waiting+' s…':p.count>1?label+', section '+(p.index+1)+' of '+p.count+'…':label+'…')});
  return {...result,rate:buf.sampleRate,onDevice};
 }
 $('tune').onclick=async()=>{if(allTargetsRemoved()){status('Every vocal target was removed. Undo or Reset note edits before tuning.');return}try{
@@ -890,9 +890,9 @@ $('analyze').onclick=async()=>{try{
  let obj;
  if(mode==='melody' && $('transcriber').value==='basic-pitch'){
    status('Loading Basic Pitch on this device…');
-   const {transcribeWithBasicPitch}=await import('./transcription.js');
+   const {transcribeWithBasicPitch,slowBackendNote}=await import('./transcription.js');
    const buffer=await decoded(take());
-   const notes=await transcribeWithBasicPitch(buffer,p=>status('Transcribing on device: '+p+'%'));
+   const notes=await transcribeWithBasicPitch(buffer,(p,b)=>status('Transcribing on device: '+p+'%'+slowBackendNote(b,{server:true})));
    obj={notes,drums:[]};
  }else{
    obj=await(await audioRequest('/api/analyze',mode)).json();
@@ -1042,7 +1042,7 @@ function renderLayers(){$('reclayer').disabled=!audio;if(!audio)$('reclayer').ch
 // Transcribe a layer into the melody, the chords part or the drums, in place of what that part holds, as one edit: the melody and
 // chords with the chosen listener (Basic Pitch on this device, or the server), the drums with the server's beatbox reader.
 async function transcribeLayer(id,into){const l=state.layers.find(x=>x.id===id),blob=layerBlob(id);if(!l||!blob)throw Error("that layer's recording is not on this device");if(!LAYER_TARGETS.includes(into))throw Error('unknown part');status('Transcribing '+l.name+'…');let notes=[],drums=[];
- if(into!=='drums'&&$('transcriber').value==='basic-pitch'){status('Loading Basic Pitch on this device…');const {transcribeWithBasicPitch}=await import('./transcription.js');notes=await transcribeWithBasicPitch(await decoded(blob),p=>status('Transcribing '+l.name+' on device: '+p+'%'))}
+ if(into!=='drums'&&$('transcriber').value==='basic-pitch'){status('Loading Basic Pitch on this device…');const {transcribeWithBasicPitch,slowBackendNote}=await import('./transcription.js');notes=await transcribeWithBasicPitch(await decoded(blob),(p,b)=>status('Transcribing '+l.name+' on device: '+p+'%'+slowBackendNote(b,{server:true})))}
  else{const form=new FormData();form.append('file',monoWav(await decoded(blob)),'layer.wav');const obj=await(await request('/api/analyze?mode='+(into==='drums'?'rhythm':'melody'),{method:'POST',body:form})).json();notes=obj.notes||[];drums=obj.drums||[]}
  edit('Transcribe '+l.name+' into the '+INTO_NAMES[into],()=>{if(into==='drums')state.drums=drums;else if(into==='harmony')state.harmony=notes;else state.notes=notes;state.layers=setInto(state.layers,id,into)});
  const n=into==='drums'?state.drums.length:notes.length;status('Transcribed '+l.name+' into the '+INTO_NAMES[into]+': '+n+(into==='drums'?' drum hits':' notes')+'. What the part held before is kept in Undo.')}

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { planChunks, notesForChunk, stitchChunks, chooseSeams, encodeWav16, decodeWav16, tuneInChunks, CHUNK_SECONDS, OVERLAP_SECONDS, SEAM_SECONDS, SEAM_MARGIN_SECONDS } from "../tuning.js";
+import { planChunks, notesForChunk, stitchChunks, chooseSeams, encodeWav16, decodeWav16, tuneInChunks, sectionLimits, LOCAL_SECTION_SECONDS, CHUNK_SECONDS, OVERLAP_SECONDS, SEAM_SECONDS, SEAM_MARGIN_SECONDS } from "../tuning.js";
 
 const sine = (n, sr, hz = 220, amp = 0.5) => Float32Array.from({ length: n }, (_, i) => amp * Math.sin(2 * Math.PI * hz * i / sr));
 const maxJump = x => { let m = 0; for (let i = 1; i < x.length; i++) m = Math.max(m, Math.abs(x[i] - x[i - 1])); return m; };
@@ -261,4 +261,19 @@ test("harmonyFingerprint changes with any note of the line and not with their or
   assert.notEqual(harmonyFingerprint(a), harmonyFingerprint([a[0], { m: 68, t: 1, d: 1 }]));
   assert.notEqual(harmonyFingerprint(a), harmonyFingerprint([a[0], { m: 67, t: 1.001, d: 1 }]));
   assert.notEqual(harmonyFingerprint(a), harmonyFingerprint([a[0]]));
+});
+
+// FIX.1 (#59): the Mac app's server takes 600 s a request, but a 10-minute take goes to it in 2-minute sections.
+test("the Mac app's server tunes a 10-minute take in sections of two minutes, not one request", async () => {
+  const limits = { tune_seconds: 600, tune_notes: 4096 };
+  assert.deepEqual(sectionLimits(limits), { chunkSeconds: LOCAL_SECTION_SECONDS, maxNotes: 4096 });
+  assert.equal(LOCAL_SECTION_SECONDS, 120);
+  const sr = 8000, samples = new Float32Array(600 * sr), sent = [];
+  const send = async ({ wav }) => { sent.push(decodeWav16(wav).samples.length / sr); return { wav, corrected: 0 }; };
+  const out = await tuneInChunks(samples, sr, { strength: 1, send, ...sectionLimits(limits) });
+  assert.equal(out.chunks, 6);
+  assert.ok(sent.every(s => s <= LOCAL_SECTION_SECONDS), String(sent));
+  assert.equal(out.samples.length, samples.length);
+  // A server that allows less than two minutes keeps its own cap.
+  assert.equal(sectionLimits({ tune_seconds: 25, tune_notes: 128 }).chunkSeconds, 25);
 });

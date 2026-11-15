@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeBasicPitchNotes, resampleForBasicPitch, transcribeWithBasicPitch, detectVocalTargets, BASIC_PITCH_SAMPLE_RATE, PROJECT_MELODY_LIMITS, VOCAL_TARGET_LIMITS } from "../transcription.js";
+import { normalizeBasicPitchNotes, resampleForBasicPitch, transcribeWithBasicPitch, detectVocalTargets, slowBackendNote, BASIC_PITCH_SAMPLE_RATE, PROJECT_MELODY_LIMITS, VOCAL_TARGET_LIMITS } from "../transcription.js";
 import { frameTime } from "../contour.js";
 test("sorts and converts Basic Pitch notes into portable project schema",()=>{
   assert.deepEqual(normalizeBasicPitchNotes([
@@ -63,7 +63,7 @@ test("vocal target limits clip the last note to the recording length",()=>{
 
 // A stand-in for the Basic Pitch module whose model hears `pitchAt(t)` (MIDI, NaN when nothing is sung):
 // each frame's contour peaks at that pitch and its note activation is high there (TRANS.2 reads both).
-function sungModel(seconds,pitchAt,calls=[]){
+function sungModel(seconds,pitchAt,calls=[],backend){
   const contours=[],frames=[];
   for(let r=0;frameTime(r)<seconds;r++){
     const m=pitchAt(frameTime(r)),c=new Array(264).fill(0),f=new Array(88).fill(0);
@@ -73,6 +73,7 @@ function sungModel(seconds,pitchAt,calls=[]){
   return async()=>({
     BasicPitch:class{constructor(url){calls.push(url)}async evaluateModel(buffer,onFrames,onProgress){onFrames(frames,frames.map(()=>new Array(88).fill(0)),contours);onProgress(1)}},
     outputToNotesPoly:()=>[],addPitchBendsToNoteEvents:(_c,raw)=>raw,noteFramesToTime:()=>[],
+    ...(backend?{getBackend:()=>backend}:{}),
   });
 }
 // One sung note per `every` seconds, sung for its first half, alternating between E4 and G4.
@@ -149,4 +150,19 @@ test("the page gets a task between the model's windows, so it can draw the progr
   const timer=setInterval(()=>ticks++,0);
   try{await transcribeWithBasicPitch(buffer22k(4),()=>{},{loadModule:load})}finally{clearInterval(timer)}
   assert.ok(seen.at(-1)>seen[0], `timer ticks seen at each window: ${seen}`);
+});
+
+// FIX.1 (#18): without WebGL, TensorFlow.js runs Basic Pitch on its slow "cpu" backend; progress says which.
+test("each progress step names TensorFlow.js's backend, and only the cpu backend is called slow",async()=>{
+  const seen=[];
+  await transcribeWithBasicPitch(buffer22k(3),(p,b)=>seen.push([p,b]),{loadModule:sungModel(3,()=>64,[],"cpu")});
+  assert.deepEqual(seen,[[100,"cpu"]]);
+  const fast=[];
+  await detectVocalTargets(buffer22k(3),(p,b)=>fast.push(b),{loadModule:sungModel(3,()=>64,[],"webgl")});
+  assert.deepEqual(fast,["webgl"]);
+  assert.match(slowBackendNote("cpu"),/no WebGL graphics acceleration/);
+  assert.doesNotMatch(slowBackendNote("cpu"),/server/);
+  assert.match(slowBackendNote("cpu",{server:true}),/server listener is quicker/);
+  assert.equal(slowBackendNote("webgl",{server:true}),"");
+  assert.equal(slowBackendNote(null),"");
 });

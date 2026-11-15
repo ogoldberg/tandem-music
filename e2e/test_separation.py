@@ -187,3 +187,61 @@ def test_a_separation_can_be_cancelled(page, app, tmp_path):
     expect(page.locator("#playvocal")).to_be_disabled()
     assert set(draft_audio(page)) == {"original"}
     assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+
+
+def detect_targets(page):
+    page.click("#detectvocal")
+    expect(page.locator("#undo")).to_have_attribute("title", "Undo: Detect sung notes", timeout=120_000)
+    expect(page.locator("#resetvocal")).to_be_enabled()
+
+
+@pytest.mark.model
+def test_separate_and_use_the_full_recording_drop_only_the_comp_in_uses_targets(page, app, tmp_path):
+    """FIX.1 (review of #98): Separate and Use the full recording change only the recording of the comp in use, so
+    Undo history loses that comp's vocal targets and keeps the ones set on the other take."""
+    need_model()
+    home = os.environ.get("TANDEM_TEST_MODEL_HOME")
+    if not home:
+        if REQUIRE:
+            pytest.fail("TANDEM_REQUIRE_SEPARATION=1 needs TANDEM_TEST_MODEL_HOME")
+        pytest.skip("set TANDEM_TEST_MODEL_HOME to a folder for the HTDemucs weights")
+    desktop = app(home=home)
+    rt = desktop["runtime"]
+    if not rt.store.installed(models.HTDEMUCS):
+        assert rt.jobs.wait(rt.start_download("htdemucs").id, timeout=900).state == "done"
+    problems = open_app(page, desktop)
+    song = song_wav(tmp_path / "song.wav")
+    page.set_input_files("#audiofile", str(song))
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Recorded 9\.0s\."))
+    detect_targets(page)                       # Take 1's targets
+    again = tmp_path / "song-again.wav"        # the same file again would fire no change event
+    again.write_bytes(song.read_bytes())
+    page.set_input_files("#audiofile", str(again))
+    expect(page.locator("#takes")).to_be_visible()
+    expect(page.locator("#undo")).to_have_attribute("title", "Undo: Record Take 2")
+    expect(page.locator("#resetvocal")).to_be_disabled()
+    detect_targets(page)                       # Take 2's targets, Take 2 in use
+
+    def check_history():
+        # The Detect on Take 2 lost its targets with the recording they were set on, so it is a no-op and leaves history:
+        # Undo goes from Record Take 2 straight to Take 1, whose targets stay (dropping every comp's targets, as before
+        # FIX.1, would drop that Detect too). Redo comes back to Take 2 without targets.
+        expect(page.locator("#resetvocal")).to_be_disabled()
+        expect(page.locator("#undo")).to_have_attribute("title", "Undo: Record Take 2")
+        page.click("#undo")
+        expect(page.locator("#undo")).to_have_attribute("title", "Undo: Detect sung notes")
+        expect(page.locator("#resetvocal")).to_be_enabled()
+        page.click("#redo")
+        expect(page.locator("#redo")).to_be_disabled()
+        expect(page.locator("#undo")).to_have_attribute("title", "Undo: Record Take 2")
+        expect(page.locator("#resetvocal")).to_be_disabled()
+
+    page.click("#separate")
+    expect(page.locator("#separateinfo")).to_have_text(re.compile(r"^Separated the voice from the music"), timeout=900_000)
+    check_history()
+    expect(page.locator("#playvocal")).to_be_enabled()
+    detect_targets(page)                       # targets on the separated voice
+    page.click("#usefull")
+    expect(page.locator("#separateinfo")).to_have_text(re.compile("^Using the full recording again"))
+    check_history()
+    assert not problems, "Browser reported errors:\n" + "\n".join(problems)
