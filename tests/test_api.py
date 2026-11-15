@@ -340,6 +340,44 @@ def test_chat_project_accepts_recorded_layers_and_their_mixer_channels():
         with pytest.raises(Exception):
             server.ChatProject(mix=bad)
 
+def test_layer_names_are_checked_as_layers_js_trims_them():
+    # A name inside may hold anything cleanLayers keeps (a line break, U+0085); only what JavaScript's trim removes
+    # may not start or end it.
+    for name in ("Ooh\nyeah","\u0085Ooh","Ooh\u0085","Ooh\x1f"):
+        assert server.ChatProject(layers=[{"id":"x","name":name,"seconds":1}]).layers[0].name==name
+    for name in ("\nOoh","Ooh\t","\u00a0Ooh","Ooh\u3000","\ufeffOoh","\u2028"):
+        with pytest.raises(Exception):
+            server.ChatProject(layers=[{"id":"x","name":name,"seconds":1}])
+
+def test_chat_project_accepts_kept_takes_and_their_comp():
+    # TAKE.1: the takes as takes.js cleanTakes writes them; never any audio.
+    assert server.ChatProject().takes is None
+    takes={"list":[{"id":"first","name":"Take 1","seconds":5.0},{"id":"second","name":"Take 2","seconds":6.0}],
+           "comp":[{"take":"first","from":0.0,"to":1.5},{"take":"second","from":1.5,"to":3.0},{"take":"first","from":3.0,"to":5.0}]}
+    got=server.ChatProject(takes=takes).takes
+    assert got.model_dump(by_alias=True)==takes
+    comp=takes["comp"]
+    for bad in ({"list":[],"comp":comp},{"list":takes["list"],"comp":[]},{**takes,"audio":"UklGRg=="},
+                {"list":takes["list"],"comp":[{"take":"nope","from":0,"to":1}]},
+                {"list":takes["list"],"comp":[{"take":"first","from":0,"to":5.5}]},
+                {"list":takes["list"],"comp":[{"take":"first","from":2,"to":2}]},
+                {"list":takes["list"],"comp":[{"take":"first","from":-1,"to":2}]},
+                {"list":takes["list"],"comp":[{"take":"first","from":2,"to":4},{"take":"second","from":1,"to":3}]},
+                {"list":takes["list"]+[takes["list"][0]],"comp":comp},
+                {"list":[{"id":"A","name":"x","seconds":1}],"comp":[{"take":"A","from":0,"to":1}]},
+                {"list":[{"id":"a","name":" x","seconds":1}],"comp":[{"take":"a","from":0,"to":1}]},
+                {"list":[{"id":f"t{i}","name":"x","seconds":1} for i in range(9)],"comp":[{"take":"t0","from":0,"to":1}]}):
+        with pytest.raises(Exception):
+            server.ChatProject(takes=bad)
+
+def test_takes_module_is_served_and_precached(client):
+    # TAKE.1: recordings.js and bundle.js import takes.js, so the studio and the capture page need it offline.
+    js=run(client("GET","/takes.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function cleanTakes" in js.text
+    assert "from './takes.js'" in run(client("GET","/")).text
+    assert "'./takes.js'" in run(client("GET","/sw.js")).text
+
 def test_chat_accepts_a_project_with_layers(client, monkeypatch):
     # TRACK.1: the studio sends its whole state to /api/chat, layers and their channels included.
     monkeypatch.setenv("TANDEM_PROVIDER","openai-compatible")

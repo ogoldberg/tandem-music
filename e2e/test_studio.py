@@ -302,12 +302,16 @@ def test_undo_redo_across_manual_ai_load_and_vocal_target_edits(studio, tmp_path
     page.click("#redo")
     expect(page.locator("#vocalnoteeditor .target")).not_to_have_count(0)
 
-    # A new recording drops the old recording's targets from history instead of restoring them later.
+    # TAKE.1: a new recording is a take of its own, recorded as one edit with no targets; Undo brings back the first
+    # recording with the targets set on it, and Redo the new take without them.
     page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones-48k-2.wav")))
     expect(page.locator("#vocalnoteeditor")).to_have_text("Press Detect sung notes to edit the pitch targets.")
-    assert history_state(page) == {"undo": (True, "Undo: Add note"), "redo": (False, "Nothing to redo")}
+    assert history_state(page) == {"undo": (True, "Undo: Record Take 2"), "redo": (False, "Nothing to redo")}
     page.click("#undo")
-    expect(page.locator("#status")).to_have_text("Undid: Add note")
+    expect(page.locator("#status")).to_have_text("Using the take.")
+    expect(page.locator("#vocalnoteeditor .target")).not_to_have_count(0)
+    page.click("#redo")
+    expect(page.locator("#status")).to_contain_text("Using Take 2")
     expect(page.locator("#vocalnoteeditor")).to_have_text("Press Detect sung notes to edit the pitch targets.")
 
 
@@ -1287,6 +1291,9 @@ def test_versions_keep_their_own_recordings(studio, tmp_path):
     import_recording(page, tone_wav(tmp_path / "b.wav", seconds=0.4))
     wait_until(page, f"async () => (await ({IDB_GET})('draft-audio'))?.original?.id !== '{a}'", "the draft links take B")
     b = draft_audio(page)["original"]["id"]
+    # TAKE.1: B is a take of its own and A is kept as Take 1; removed, A is linked only from the version Take A.
+    page.click("#takelist .takerow[data-used='false'] >> text=Remove")
+    wait_until(page, f"async () => !Object.values(await ({IDB_GET})('draft-audio') || {{}}).some(l => l.id === '{a}')", "the draft no longer links take A")
     page.fill("#versionname", "Take B")
     page.click("#saveversion")
     expect(page.locator("#status")).to_have_text("Saved version: Take B")

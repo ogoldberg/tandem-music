@@ -8,7 +8,7 @@
 //                 accompaniment.wav when it was separated (SEP.1); band.wav when a band was generated (GEN.2);
 //                 timbre.wav when the voice was played as an instrument (TIMBRE.1); harmony-voice-sung.wav when
 //                 the take was sung back on the harmony voice (HARM.3); layer-<id>.wav for each recorded layer the
-//                 project lists (TRACK.1, layers.js)
+//                 project lists (TRACK.1, layers.js); take-<id>.wav for each take it keeps (TAKE.1, takes.js)
 //
 // Written uncompressed (WAV hardly compresses, and every zip tool reads stored entries); read stored or
 // deflated, at the top or inside one folder, ignoring Finder's __MACOSX entries. DOM-free so Node tests
@@ -16,6 +16,7 @@
 
 import { AUDIO_SLOTS, monoSamples } from "./recordings.js";
 import { LAYER_FILE, isLayerKey, layerFile, layerIdOf, layerKey } from "./layers.js";
+import { TAKE_FILE, isExtraKey, takeFile, takeIdOf, takeKey } from "./takes.js";
 import { cleanBeat, grooveHits, barsToCover } from "./beats.js";
 
 export const BUNDLE_EXT = ".tandem.zip";
@@ -191,10 +192,10 @@ export function writeBundle({ name = "", savedAt = null, project, recordings = {
     { name: BUNDLE_FILES.meta, data: encoder.encode(JSON.stringify(meta, null, 2)) },
     { name: BUNDLE_FILES.project, data: encoder.encode(JSON.stringify({ format: "tandem-project", version: 1, ...project }, null, 2)) },
   ];
-  for (const slot of [...AUDIO_SLOTS, ...Object.keys(recordings).filter(isLayerKey)]) {
+  for (const slot of [...AUDIO_SLOTS, ...Object.keys(recordings).filter(isExtraKey)]) {
     if (!recordings[slot]) continue;
     if (!isWav(recordings[slot])) throw Error(`The ${slot} recording must be WAV.`);
-    files.push({ name: isLayerKey(slot) ? layerFile(layerIdOf(slot)) : BUNDLE_FILES[slot], data: recordings[slot] });
+    files.push({ name: isLayerKey(slot) ? layerFile(layerIdOf(slot)) : takeIdOf(slot) ? takeFile(takeIdOf(slot)) : BUNDLE_FILES[slot], data: recordings[slot] });
   }
   return zipFiles(files, options);
 }
@@ -205,7 +206,7 @@ function parse(bytes, file) {
   try { return JSON.parse(new TextDecoder().decode(bytes)); } catch (err) { throw Error(`${file} could not be read: ${err.message}`); }
 }
 
-// {name, savedAt, project, recordings: {original?, polished?, tuned?, vocal?, accompaniment?, band?, timbre?, voice2_sung?, "layer-<id>"?}} with each recording as WAV bytes.
+// {name, savedAt, project, recordings: {original?, polished?, tuned?, vocal?, accompaniment?, band?, timbre?, voice2_sung?, "layer-<id>"?, "take-<id>"?}} with each recording as WAV bytes.
 export async function readBundle(bytes, options) {
   const all = await unzipFiles(bytes, options);
   const files = new Map([...all].filter(([n]) => !n.startsWith("__MACOSX/") && !n.split("/").pop().startsWith("._")));
@@ -230,13 +231,13 @@ export async function readBundle(bytes, options) {
     if (!isWav(data)) throw Error(`${BUNDLE_FILES[slot]} is not a WAV recording.`);
     recordings[slot] = data;
   }
-  // TRACK.1: each layer's recording, by the layer's id.
+  // TRACK.1: each layer's recording, by the layer's id; TAKE.1: each kept take's, by the take's id.
   for (const [file, data] of files) {
     if (!file.startsWith(folder)) continue;
-    const m = LAYER_FILE.exec(file.slice(folder.length));
-    if (!m) continue;
-    if (!isWav(data)) throw Error(`${file.slice(folder.length)} is not a WAV recording.`);
-    recordings[layerKey(m[1])] = data;
+    const name = file.slice(folder.length), layer = LAYER_FILE.exec(name), take = TAKE_FILE.exec(name);
+    if (!layer && !take) continue;
+    if (!isWav(data)) throw Error(`${name} is not a WAV recording.`);
+    recordings[layer ? layerKey(layer[1]) : takeKey(take[1])] = data;
   }
   return { name, savedAt, project, recordings };
 }
