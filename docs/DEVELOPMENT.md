@@ -123,7 +123,7 @@ The provider key never belongs in browser JavaScript. Vercel production refuses 
 - **429: “Too many audio requests”**: the per-IP audio limit was hit; wait for `Retry-After` seconds or raise `TANDEM_AUDIO_RATE_LIMIT`.
 - **413**: the upload is over the app's 18 MB cap or Vercel's 4.5 MB request-body limit; record a shorter clip.
 - **48,000 vs 22,050 sample-rate error**: Verify the deployed `transcription.js` includes `resampleForBasicPitch` and refresh cached frontend assets.
-- **Basic Pitch import/model unavailable**: Check that `/vendor/basic-pitch-1.0.1/basic-pitch.mjs` and `/model/model.json` load (a 404 means the route or the deployed files are missing), then supported browser and memory; select server fallback for basic melody/rhythm detection.
+- **Basic Pitch import/model unavailable**: Check that `/vendor/basic-pitch-1.0.1/basic-pitch.mjs` and `/model/model.json` load (a 404 means the route or the deployed files are missing), then supported browser and memory; select server fallback for basic melody/rhythm detection. A status that says Basic Pitch is slow because the browser has no WebGL graphics acceleration means TensorFlow.js fell back to its CPU backend: turn on hardware acceleration in the browser, or use the server listener.
 - **WORLD dependency build failure**: Check PyWorld wheel Python ABI and Vercel build output; use the pinned prebuilt distribution instead of the unsupported original package.
 - **Unchanged or unnatural vocal**: Separate polish (EQ) from tune (WORLD). Ensure solo voiced singing, review detected targets and strength; no quality guarantee.
 - **Chat returns 503/401**: Inspect provider and token config on server; confirm browser connection token but never expose provider credentials.

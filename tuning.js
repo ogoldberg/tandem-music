@@ -2,12 +2,21 @@
 // (25 s cap, Vercel's 4.5 MB body limit), so long recordings are split into overlapping chunks,
 // each tuned by the server, and stitched back with linear crossfades. Pure functions: the network
 // call is injected, so tests run without a server. The Mac app's own server (DESK.2) takes up to
-// 10 minutes per request; the page passes its limits from /api/config as chunkSeconds/maxNotes.
+// 10 minutes per request; the page tunes there in sections of LOCAL_SECTION_SECONDS (sectionLimits).
 
 export const CHUNK_SECONDS = 16;
 export const OVERLAP_SECONDS = 1;
 export const MAX_NOTES_PER_REQUEST = 128;
 export const MIN_NOTE_SECONDS = 0.05;
+// FIX.1 (#59): the Mac app's server takes up to 10 minutes per request, but WORLD's memory grows with the
+// length it analyses: a 10-minute take at 48 kHz peaked at 3.7 GB in one request and 1.3 GB in sections of
+// 2 minutes, no slower (docs/AUDIO.md). So a long take goes to it in sections of at most this long.
+export const LOCAL_SECTION_SECONDS = 120;
+
+// The section length and notes per section for a server whose /api/config limits are `limits`.
+export function sectionLimits(limits) {
+  return { chunkSeconds: Math.min(LOCAL_SECTION_SECONDS, limits.tune_seconds), maxNotes: limits.tune_notes };
+}
 
 // Split `total` samples into chunks of `chunk` samples that overlap by `overlap` samples.
 // Every chunk is at most `chunk` long and the last one is always longer than `overlap`.

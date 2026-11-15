@@ -1269,6 +1269,38 @@ def test_basic_pitch_transcribes_a_hummed_melody_as_sustained_notes(studio, tmp_
     assert count(page, "notecount") == len(HUM)
 
 
+def test_basic_pitch_without_webgl_says_it_runs_slowly_and_still_transcribes(studio, tmp_path):
+    """FIX.1 (#18): in a browser without WebGL, TensorFlow.js runs Basic Pitch on its pure-JavaScript cpu
+    backend, many times slower. The status says so while it runs, offers the server listener, and the
+    transcription still completes with the same notes."""
+    page = studio
+    page.add_init_script("""(() => {
+      const get = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (kind, ...rest) {
+        return /webgl/i.test(kind) ? null : get.call(this, kind, ...rest);
+      };
+      if (self.OffscreenCanvas) {
+        const off = OffscreenCanvas.prototype.getContext;
+        OffscreenCanvas.prototype.getContext = function (kind, ...rest) {
+          return /webgl/i.test(kind) ? null : off.call(this, kind, ...rest);
+        };
+      }
+    })()""")
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    page.evaluate("""() => { window.__statuses = [];
+      new MutationObserver(() => window.__statuses.push(document.getElementById('status').textContent))
+        .observe(document.getElementById('status'), {childList: true, characterData: true, subtree: true}); }""")
+    page.select_option("#mode", "melody")
+    import_recording(page, hum_wav(tmp_path / "hum.wav"))
+    page.click("#analyze")
+    expect(page.locator("#status")).to_have_text("Transcription complete", timeout=180000)
+    slow = [t for t in page.evaluate("window.__statuses") if "no WebGL graphics acceleration" in t]
+    assert slow, page.evaluate("window.__statuses")
+    assert slow[-1].startswith("Transcribing on device: ") and "server listener is quicker" in slow[-1]
+    assert note_pitches(page) == HUM
+
+
 def test_basic_pitch_follows_a_low_hum_with_slides_and_sustains_its_notes(studio, tmp_path):
     """TRANS.2: the melody is built from the sung pitch line: a low legato hum whose notes are joined
     by 250 ms slides comes out as its seven notes, each lasting about as long as it is sung, with each
