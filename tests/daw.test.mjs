@@ -250,6 +250,14 @@ test("the harmony voice is a part stem in the mix, after the harmony (HARM.1)", 
   assert.deepEqual([0, 1].map(i => s.getInt16(i * 2, true)), [Math.round(0.75 * 32767), Math.round(0.25 * 32767)]);
 });
 
+test("the voice in the mix is a part stem, first, summed into mix.wav beside the raw takes (MIX.1)", async () => {
+  const files = await unzipFiles(stemsZip({ parts: { voice: Float32Array.of(0.25, 0.25), melody: Float32Array.of(0.25) },
+    vocals: { tuned: Float32Array.of(0.1) }, rate: 8000, midi: midiFile(song()) }));
+  assert.deepEqual([...files.keys()], ["mix.wav", "voice.wav", "melody.wav", "vocal-tuned.wav", "tandem.mid"]);
+  const mix = files.get("mix.wav"), s = new DataView(mix.buffer, mix.byteOffset + 44);
+  assert.deepEqual([0, 1].map(i => s.getInt16(i * 2, true)), [Math.round(0.5 * 32767), Math.round(0.25 * 32767)]);
+});
+
 test("vocals alone make no mix; nothing at all is refused", async () => {
   const files = await unzipFiles(stemsZip({ parts: {}, vocals: { tuned: Float32Array.of(0.1, 0.2) }, rate: 8000, midi: midiFile(song()) }));
   assert.deepEqual([...files.keys()], [STEM_FILES.tuned, STEM_FILES.midi]);
@@ -260,7 +268,7 @@ test("the file names", () => {
   assert.equal(STEM_RATE, 44100);
   assert.deepEqual(STEM_FILES, {
     mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", voice2: "harmony-voice.wav", drums: "drums.wav", band: "band.wav", timbre: "timbre.wav",
-    voice2_sung: "harmony-voice-sung.wav",
+    voice2_sung: "harmony-voice-sung.wav", voice: "voice.wav",
     original: "vocal-original.wav", polished: "vocal-polished.wav", tuned: "vocal-tuned.wav",
     vocal: "vocal-separated.wav", accompaniment: "accompaniment.wav", midi: "tandem.mid",
   });

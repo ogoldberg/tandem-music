@@ -311,6 +311,18 @@ def test_chat_project_accepts_an_optional_sung_harmony():
         with pytest.raises(Exception):
             server.ChatProject(voice2_sung=bad)
 
+def test_chat_project_accepts_an_optional_mix():
+    # MIX.1: the mixer as mixer.js cleanMix writes it; the band, instrument and sung harmony mute through their own field.
+    assert server.ChatProject().mix is None
+    mix={"voice":{"mute":False},"melody":{"level":-6.5,"solo":True},"drums":{"level":6},"band":{"level":-30}}
+    got=server.ChatProject(mix=mix).mix.model_dump(exclude_unset=True)
+    assert got==mix
+    assert server.ChatProject(mix={}).mix.model_dump(exclude_unset=True)=={}
+    for bad in ({"piano":{"level":0}},{"melody":{"level":7}},{"melody":{"level":-31}},{"melody":{"level":float("nan")}},
+                {"melody":{"pan":0}},{"band":{"mute":True}},{"timbre":{"mute":False}},{"voice2_sung":{"mute":True}},{"melody":[]}):
+        with pytest.raises(Exception):
+            server.ChatProject(mix=bad)
+
 def test_new_instruments_are_accepted_everywhere():
     # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.
     for name in ("organ","guitar","flute"):
@@ -783,6 +795,14 @@ def test_latency_module_is_served_and_precached(client):
     assert "from './latency.js'" in run(client("GET","/")).text
     assert "from './latency.js'" in run(client("GET","/capture")).text
     assert "'./latency.js'" in run(client("GET","/sw.js")).text
+
+def test_mixer_module_is_served_and_precached(client):
+    # MIX.1: the studio imports mixer.js (levels, mutes and solos) at start-up, so it is precached for offline use.
+    js=run(client("GET","/mixer.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function mixGains" in js.text
+    assert "from './mixer.js'" in run(client("GET","/")).text
+    assert "'./mixer.js'" in run(client("GET","/sw.js")).text
 
 def test_playhead_module_is_served_and_precached(client):
     # PLAY.1: the studio imports playhead.js (play from here and loops) at start-up, so it is precached for offline use.

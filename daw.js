@@ -24,14 +24,15 @@ const PARTS = [
 ];
 const DRUM_CHANNEL = 9;
 export const STEM_FILES = Object.freeze({
-  mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", voice2: "harmony-voice.wav", drums: "drums.wav", band: "band.wav", timbre: "timbre.wav", voice2_sung: "harmony-voice-sung.wav",
+  mix: "mix.wav", melody: "melody.wav", harmony: "harmony.wav", voice2: "harmony-voice.wav", drums: "drums.wav", band: "band.wav", timbre: "timbre.wav", voice2_sung: "harmony-voice-sung.wav", voice: "voice.wav",
   original: "vocal-original.wav", polished: "vocal-polished.wav", tuned: "vocal-tuned.wav",
   vocal: "vocal-separated.wav", accompaniment: "accompaniment.wav", midi: "tandem.mid",
 });
 // GEN.2 and TIMBRE.1: the generated band and the voice played as an instrument are parts: they are in
 // mix.wav and Export WAV.
 // HARM.3: the take sung on the harmony voice is a part too.
-const PART_STEMS = ["melody", "harmony", "voice2", "drums", "band", "timbre", "voice2_sung"];
+// MIX.1: the voice (the most finished take at its level) is a part when it is unmuted in the mixer.
+const PART_STEMS = ["voice", "melody", "harmony", "voice2", "drums", "band", "timbre", "voice2_sung"];
 const VOCAL_STEMS = ["original", "polished", "tuned", "vocal", "accompaniment"];
 
 const encoder = new TextEncoder();

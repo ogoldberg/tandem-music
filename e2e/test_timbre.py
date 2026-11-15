@@ -137,6 +137,15 @@ def played(page):
     return voices, min(others) - first
 
 
+
+def live_gain(page, part):
+    """Press Play and return the gain of the part's mixer bus while it plays (MIX.1: a muted part is scheduled at gain 0)."""
+    page.click("#play")
+    page.wait_for_function("(document.getElementById('timeline').dataset.mix || '').length > 0")
+    gain = json.loads(page.get_attribute("#timeline", "data-mix"))[part]
+    page.click("#stop")
+    return gain
+
 def test_the_instrument_voice_is_offered_only_in_the_mac_app(studio):
     show_part(studio, "timbre")
     expect(studio.locator("#timbrenote")).to_be_visible()
@@ -185,7 +194,7 @@ def test_the_voice_is_played_as_an_instrument_kept_played_undone_and_exported(pa
     assert np.max(np.abs(mix - melody - drums - y)) < 4 / 32768
     page.check("#timbremute")
     assert draft(page)["timbre"]["muted"] is True
-    assert played(page)[0] == []
+    assert live_gain(page, "timbre") == 0, "a muted instrument is silent"
     assert "timbre.wav" not in stems(page)
     page.click("#undo")
     expect(page.locator("#timbremute")).not_to_be_checked()

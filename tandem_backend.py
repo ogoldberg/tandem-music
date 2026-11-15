@@ -194,6 +194,9 @@ def beats_js():
     return FileResponse(Path(__file__).resolve().parent / "beats.js", media_type="text/javascript")
 
 
+@app.get("/mixer.js", include_in_schema=False)
+def mixer_js():
+    return FileResponse(Path(__file__).resolve().parent / "mixer.js", media_type="text/javascript")
 @app.get("/latency.js", include_in_schema=False)
 def latency_js():
     return FileResponse(Path(__file__).resolve().parent / "latency.js", media_type="text/javascript")
@@ -308,6 +311,28 @@ class ProjectSungHarmony(BaseModel):
     seconds: float = Field(gt=0,le=600,allow_inf_nan=False)
     muted: bool = False
     line: str = Field(pattern=r"^[0-9a-f]{8}$")
+class MixChannel(BaseModel):
+    """MIX.1: one part's level in dB, mute and solo (mixer.js cleanMix)."""
+    model_config=ConfigDict(extra="forbid")
+    level: float = Field(default=0,ge=-30,le=6,allow_inf_nan=False)
+    mute: bool | None = None
+    solo: bool = False
+class OwnMuteChannel(BaseModel):
+    """MIX.1: the band, the voice as instrument and the sung harmony keep their mute in their own muted field."""
+    model_config=ConfigDict(extra="forbid")
+    level: float = Field(default=0,ge=-30,le=6,allow_inf_nan=False)
+    solo: bool = False
+class ProjectMix(BaseModel):
+    """MIX.1: the mixer, only the parts that differ from the defaults. No AI action edits it."""
+    model_config=ConfigDict(extra="forbid")
+    voice: MixChannel | None = None
+    melody: MixChannel | None = None
+    harmony: MixChannel | None = None
+    voice2: MixChannel | None = None
+    drums: MixChannel | None = None
+    band: OwnMuteChannel | None = None
+    timbre: OwnMuteChannel | None = None
+    voice2_sung: OwnMuteChannel | None = None
 class ChatProject(BaseModel):
     """The project fields the browser sends to /api/chat; mirrors the tandem-project schema."""
     model_config=ConfigDict(extra="forbid")
@@ -322,6 +347,8 @@ class ChatProject(BaseModel):
     timbre: ProjectTimbre | None = None
     # HARM.3: the take sung on the harmony voice, when there is one.
     voice2_sung: ProjectSungHarmony | None = None
+    # MIX.1: levels, mutes and solos, when anything was changed in the mixer.
+    mix: ProjectMix | None = None
     # HARM.1: the harmony voice, a copy of the melody shifted (ADR-014). Before the harmony, since it
     # follows the melody note for note. No AI action edits it.
     voice2: list[ProjectNote] = Field(default_factory=list,max_length=1024)
