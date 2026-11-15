@@ -203,7 +203,7 @@ def test_without_device_storage_capture_says_so_and_does_not_record(phone):
     page = phone
     page.add_init_script("StorageManager.prototype.getDirectory = () => Promise.reject(new DOMException('no', 'UnknownError'));")
     page.goto("/capture")
-    expect(page.locator("#status")).to_contain_text("Ideas cannot be kept in this browser: no A private window cannot keep them")
+    expect(page.locator("#status")).to_contain_text("Ideas cannot be kept in this browser: no. A private window cannot keep them")
     expect(page.locator("#record")).to_be_disabled()
 
 
@@ -399,3 +399,57 @@ def test_a_capture_take_without_a_beat_or_count_in_is_not_moved(phone):
     stored = ideas(page)
     assert "beat" not in stored[0]
     expect(page.locator(".idea small")).not_to_contain_text("over")
+
+
+def test_record_taps_while_the_microphone_prompt_is_open_start_one_take(phone):
+    """#52: while the browser asks for the microphone, more Record taps are ignored: one microphone is opened and one
+    take is kept, and the microphone is off once it is."""
+    page = phone
+    page.add_init_script("""(() => { const md = navigator.mediaDevices, real = md.getUserMedia.bind(md);
+      window.__mics = []; window.__asks = 0;
+      md.getUserMedia = c => { window.__asks++; return new Promise(r => { window.__grant = r; }).then(() => real(c))
+        .then(s => { window.__mics.push(s); return s; }); }; })()""")
+    open_capture(page)
+    for _ in range(3):
+        page.click("#record")
+    page.wait_for_function("window.__asks >= 1")
+    page.wait_for_timeout(300)
+    assert page.evaluate("window.__asks") == 1
+    page.evaluate("window.__grant()")
+    expect(page.locator("#record")).to_have_attribute("aria-pressed", "true")
+    page.wait_for_timeout(1200)
+    page.click("#record")
+    expect(page.locator("#status")).to_contain_text("Kept a 0:0")
+    assert len(ideas(page)) == 1
+    assert page.evaluate("window.__asks") == 1
+    assert page.evaluate("window.__mics.every(s => s.getTracks().every(t => t.readyState === 'ended'))")
+
+
+def test_opening_an_idea_again_from_a_draft_already_kept_as_a_version_saves_no_new_one(phone):
+    """#52: the automatic "Before <idea>" version is not saved when the draft is unchanged since it was saved as a
+    version, so opening ideas does not push the oldest named versions out."""
+    page = phone
+    open_capture(page)
+    record(page)
+    page.click(".idea >> text=Open in studio")
+    expect(page.locator("#status")).to_contain_text("Transcribe it to turn it into notes.")
+    page.fill("#versionname", "My take")
+    page.click("#saveversion")
+    expect(page.locator("#versionlist .version")).to_have_count(1)
+    page.goto("/capture")
+    expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
+    page.click(".idea >> text=Open in studio")
+    expect(page.locator("#status")).to_contain_text('Your previous draft is kept as the version "My take".')
+    expect(page.locator("#versionlist .version")).to_have_count(1)
+    # A change to the draft makes it a new version again.
+    page.goto("/")
+    page.wait_for_function("!document.body.inert")
+    page.click("#demo")
+    expect(page.locator("#notecount")).to_have_text("8 notes")
+    page.wait_for_function("""() => new Promise(r => { const o = indexedDB.open('tandem'); o.onsuccess = () => {
+      const q = o.result.transaction('kv').objectStore('kv').get('draft'); q.onsuccess = () => { o.result.close(); r((q.result?.notes || []).length === 8); }; }; })""")
+    page.goto("/capture")
+    expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
+    page.click(".idea >> text=Open in studio")
+    expect(page.locator("#status")).to_contain_text("Your previous draft was saved as the version \"Before ")
+    expect(page.locator("#versionlist .version")).to_have_count(2)

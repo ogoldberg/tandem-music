@@ -29,6 +29,10 @@ export function storageError(err) {
 // A small key-value store over one IndexedDB object store. Every call opens its own transaction
 // synchronously, so writes land in the order they were made, and a transaction opened later
 // (in this page or another) sees them.
+// The name of openKV's error when another tab holds the database open at an older version (#58: the capture page
+// then gives that advice only, not the private-window one).
+export const BLOCKED_ERROR = "TandemStorageBlocked";
+
 export async function openKV(indexedDB, { name = DB_NAME } = {}) {
   if (!indexedDB?.open) throw Error("This browser has no IndexedDB, so work cannot be saved on this device.");
   const req = indexedDB.open(name, DB_VERSION);
@@ -44,7 +48,7 @@ export async function openKV(indexedDB, { name = DB_NAME } = {}) {
     req.onerror = () => reject(req.error);
     req.onblocked = () => {
       gaveUp = true;
-      reject(Error("Another Tandem tab is still using an older version of the saved work. Close other Tandem tabs, then reload this one."));
+      reject(Object.assign(Error("Another Tandem tab is still using an older version of the saved work. Close other Tandem tabs, then reload this one."), { name: BLOCKED_ERROR }));
     };
   });
   // Let a newer version of the app (or a test deleting the database) take over.

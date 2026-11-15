@@ -252,6 +252,6 @@ test("Play and the exports wait for the samples for a limited time only", () => 
   assert.match(html, /await loadWithin\(samples,parts,3000\)/);
   // Export WAV, Export stems and Export how it grew all render through renderParts (EXP.1, EVO.1).
   assert.match(html, /async function renderParts\(p,minFrames=0,\{voice=true\}=\{\}\)\{status\('Loading instruments'\);await loadWithin\(samples,sampleParts\(\),EXPORT_WAIT_MS\)/);
-  assert.match(html, /async function renderAudio\(\)\{const \{parts,frames\}=await renderParts\(structuredClone\(state\)\)/);
+  assert.match(html, /async function renderAudio\(\)\{const \{parts,frames,note\}=await renderParts\(structuredClone\(state\)\)/);
   assert.doesNotMatch(html, /await samples\.load\(/);
 });
