@@ -159,6 +159,15 @@ export function wholeTake(takes) {
 // What the comp is, as a key: two states of the project with the same key use the same recording.
 export const compSig = takes => (takes ? JSON.stringify(takes.comp) : "");
 
+// For history.rewrite: drops the vocal targets from the snapshots (snap() JSON) of the comp with key `sig` and leaves
+// the other comps' snapshots as they are, since their targets were set on recordings that did not change.
+export const dropCompVocal = sig => s => {
+  const x = JSON.parse(s);
+  if (compSig(x.project?.takes ?? null) !== sig || x.vocal == null) return s;
+  x.vocal = null;
+  return JSON.stringify(x);
+};
+
 // The comp's length in seconds.
 export const compSeconds = takes => (takes?.comp?.length ? takes.comp.at(-1).to : 0);
 

@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   cleanTakes, addTake, pickTake, compSection, removeTake, newTakeId, nextTakeName, takeKey, takeFile, takeIdOf,
-  isTakeKey, isExtraKey, usedTakes, wholeTake, compSig, compSeconds, compText, renderComp, MAX_TAKES, MAX_SECTIONS,
+  isTakeKey, isExtraKey, usedTakes, wholeTake, compSig, compSeconds, compText, renderComp, dropCompVocal, MAX_TAKES, MAX_SECTIONS,
 } from "../takes.js";
 import { cleanLinks, linkedIds } from "../recordings.js";
 import { projectFromState } from "../versions.js";
@@ -180,4 +180,20 @@ test("versions and Tandem files keep the takes and their recordings; older ones 
   const old = await readBundle(writeBundle({ project: projectFromState({ ...ideaProject(), notes: [], drums: [] }), recordings: { original: wav() } }));
   assert.equal(cleanTakes(old.project.takes), null);
   assert.deepEqual(Object.keys(old.recordings), ["original"]);
+});
+
+test("Separate drops the vocal targets only from the snapshots of the comp in use", () => {
+  const t = addTake(null, { id: "second", seconds: 4, first: { id: "first", seconds: 3 } });
+  const other = pickTake(t, "first");
+  const vocal = { notes: [{ m: 60, t: 0, d: 1 }], original: [{ m: 60, t: 0, d: 1 }] };
+  const snapOf = (takes, v) => JSON.stringify({ project: { bpm: 120, takes }, vocal: v, key: null });
+  const drop = dropCompVocal(compSig(t));
+  assert.equal(JSON.parse(drop(snapOf(t, vocal))).vocal, null);
+  const kept = snapOf(other, vocal);
+  assert.equal(drop(kept), kept);
+  // A snapshot from before the takes list (one recording, no takes) is a different comp too.
+  const before = snapOf(null, vocal);
+  assert.equal(drop(before), before);
+  // With no takes, the one recording is the comp: its snapshots lose their targets.
+  assert.equal(JSON.parse(dropCompVocal(compSig(null))(before)).vocal, null);
 });

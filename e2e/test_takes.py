@@ -11,7 +11,7 @@ import zipfile
 import numpy as np
 from playwright.sync_api import expect
 
-from test_studio import wait_until
+from test_studio import tone_wav, wait_until
 
 RATE = 44100
 
@@ -21,6 +21,12 @@ def record(page, seconds):
     expect(page.locator("#status")).to_have_text("Recording…", timeout=10000)
     page.wait_for_timeout(int(seconds * 1000))
     page.click("#finish")
+
+
+def captured(page):
+    """The length in seconds of the take just recorded, from its frames (the clicks around the wait add their own delay)."""
+    t = json.loads(page.locator("#finish").get_attribute("data-take"))
+    return t["frames"] / t["rate"]
 
 
 def takes(page):
@@ -57,7 +63,7 @@ def test_two_takes_kept_one_picked_a_section_comped_undone_and_kept(studio):
     # One take is just the recording, as before: no takes list.
     expect(page.locator("#takes")).to_be_hidden()
     first_seconds = shown(page)[1]
-    assert 1.2 < first_seconds < 2.0
+    assert abs(first_seconds - captured(page)) < 0.01 and 1.2 < first_seconds < 2.8
 
     # A second recording keeps the first: Take 1 and Take 2, the new one in use.
     record(page, 3.0)
@@ -69,7 +75,8 @@ def test_two_takes_kept_one_picked_a_section_comped_undone_and_kept(studio):
     assert [t["used"] for t in got] == [False, True]
     assert "in use" in got[1]["text"]
     comp, seconds = shown(page)
-    assert [s["take"] for s in comp] == [two] and 2.7 < seconds < 3.5
+    assert [s["take"] for s in comp] == [two] and abs(seconds - captured(page)) < 0.01 and 2.7 < seconds < 4.3
+    assert seconds - first_seconds > 0.5
     second_seconds = seconds
     expect(page.locator("#undo")).to_have_attribute("title", "Undo: Record Take 2")
     expect(page.locator(f"#removetake-{two}")).to_be_disabled()
@@ -140,3 +147,22 @@ def test_two_takes_kept_one_picked_a_section_comped_undone_and_kept(studio):
     assert [t["id"] for t in takes(page)] == [two]
     page.click("#undo")
     assert [t["id"] for t in takes(page)] == [one, two]
+
+
+def test_a_ninth_take_is_refused_with_why(studio, tmp_path):
+    """A song keeps at most eight takes: importing a ninth says so (the file is fine) and changes nothing."""
+    page = studio
+    wav = str(tone_wav(tmp_path / "take.wav", seconds=0.4))
+    page.set_input_files("#audiofile", wav)
+    expect(page.locator("#status")).to_contain_text("Recorded", timeout=10000)
+    for n in range(2, 9):
+        page.set_input_files("#audiofile", [])
+        page.set_input_files("#audiofile", wav)
+        expect(page.locator("#status")).to_contain_text(f"Recorded Take {n}.", timeout=10000)
+    assert len(takes(page)) == 8
+    undo = page.locator("#undo").get_attribute("title")
+    page.set_input_files("#audiofile", [])
+    page.set_input_files("#audiofile", wav)
+    expect(page.locator("#status")).to_have_text("A song keeps at most 8 takes: remove one under Takes before importing another.")
+    assert len(takes(page)) == 8
+    assert page.locator("#undo").get_attribute("title") == undo

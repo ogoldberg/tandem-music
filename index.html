@@ -54,7 +54,7 @@ import {STEPS,HELPERS,PITCH_AMOUNTS,BEAT_STYLES,normalizeSettings,readSettings,w
 import {midiSupported,listPorts,partChannels,readMessage,createKeyRecorder,addTake,songEvents,silence,createSender,COUNT_IN_BEATS} from './midi.js';
 import {estimateTempo,quantizeProject} from './groove.js';
 import {MIX_PARTS,OWN_MUTE,LEVEL_MIN,LEVEL_MAX,LEVEL_STEP,cleanMix,channel,dbToGain,mixGains,mixParts,setChannel,levelText,scaled} from './mixer.js';
-import {cleanLayers,addLayer,removeLayer,setInto,newLayerId,layerKey,isLayerKey,layerIdOf,layerStemFile,LAYER_TARGETS,MAX_LAYERS} from './layers.js';import {cleanTakes,addTake as addVoiceTake,pickTake,compSection,removeTake,newTakeId,takeKey,isTakeKey,takeIdOf,isExtraKey,usedTakes,wholeTake,compSig,compText,renderComp,MAX_TAKES} from './takes.js';
+import {cleanLayers,addLayer,removeLayer,setInto,newLayerId,layerKey,isLayerKey,layerIdOf,layerStemFile,LAYER_TARGETS,MAX_LAYERS} from './layers.js';import {cleanTakes,addTake as addVoiceTake,pickTake,compSection,removeTake,newTakeId,takeKey,isTakeKey,takeIdOf,isExtraKey,usedTakes,wholeTake,compSig,compText,renderComp,dropCompVocal,MAX_TAKES} from './takes.js';
 import {INSTRUMENTS,VOICES,playNote,synthDrum} from './voices.js';
 import {createSampleBank,playSample,playDrumSample,loadWithin} from './samples.js';
 import {MODES,generateHarmony,detectKey,keyLabel as harmonyKeyName,harmonyLines} from './harmony.js';
@@ -533,10 +533,12 @@ async function decoded(blob){const ac=context(),buf=await ac.decodeAudioData(awa
 function monoWav(buf){const x=new Float32Array(buf.length);for(let ch=0;ch<buf.numberOfChannels;ch++){const a=buf.getChannelData(ch);for(let i=0;i<x.length;i++)x[i]+=a[i]/buf.numberOfChannels}return wavBlob(x,buf.sampleRate)}
 // Drop what was made from the previous take: the polished and tuned takes and the vocal targets (also from Undo history).
 // With keep (TAKE.1, switching to another comp of the takes) the vocal targets are the edit's, so history is left as it is.
-function clearDerived(keep=false){polished=null;tuned=null;vocalContour=null;selectedTarget=null;if(!keep){vocalNotes=null;originalVocalNotes=null;edits.rewrite(s=>{const x=JSON.parse(s);x.vocal=null;return JSON.stringify(x)},snap())}renderVocalNotes();refreshHistory();$('playtuned').disabled=$('downloadtuned').disabled=true;$('tuneinfo').textContent='Ready to correct singing pitch. Best for one voice without background music'+(canSeparate?'; separate it from the music first.':'.');$('polishinfo').textContent='Vocal polish changes tone and dynamics, not singing pitch.';$('polished').disabled=$('downloadvocal').disabled=true}
+// thisComp: only the recording of the comp in use changed (Separate, Use the full recording), so only the snapshots of
+// that comp lose their vocal targets; the other takes' targets stay for Undo.
+function clearDerived(keep=false,{thisComp=false}={}){polished=null;tuned=null;vocalContour=null;selectedTarget=null;if(!keep){vocalNotes=null;originalVocalNotes=null;const sig=compSig(state.takes);edits.rewrite(thisComp?dropCompVocal(sig):s=>{const x=JSON.parse(s);x.vocal=null;return JSON.stringify(x)},snap())}renderVocalNotes();refreshHistory();$('playtuned').disabled=$('downloadtuned').disabled=true;$('tuneinfo').textContent='Ready to correct singing pitch. Best for one voice without background music'+(canSeparate?'; separate it from the music first.':'.');$('polishinfo').textContent='Vocal polish changes tone and dynamics, not singing pitch.';$('polished').disabled=$('downloadvocal').disabled=true}
 async function loadAudio(blob,{keep=false,comp=compSig(state.takes)}={}){audio=blob;if(!keep){compCache.clear();shownComp=comp}showSeparation(null,null);renderBand();renderLayers();clearDerived(keep);audioDuration=0;$('detectvocal').disabled=false;$('tune').disabled=false;for(const id of ['original','polish','analyze'])$(id).disabled=false;const buf=await decoded(blob),data=buf.getChannelData(0);audioDuration=buf.duration;renderVocalNotes();const c=$('wave'),g=c.getContext('2d');g.clearRect(0,0,c.width,c.height);g.fillStyle='#8fe3ce';const step=Math.max(1,Math.floor(data.length/c.width));for(let i=0;i<c.width;i++){let mx=0;for(let j=i*step;j<Math.min(data.length,(i+1)*step);j+=4)mx=Math.max(mx,Math.abs(data[j]));g.fillRect(i,c.height/2-mx*35,1,mx*70)}status('Recorded '+buf.duration.toFixed(1)+'s. Select Transcribe or Polish.');$('takes').dataset.comp=shownComp;$('takes').dataset.seconds=String(audioDuration)}
 $('import').onclick=()=>{guidedTake=false;$('audiofile').click()};
-$('audiofile').onchange=async e=>{try{if(audio)await addTakeRecording(e.target.files[0]);else{await loadAudio(e.target.files[0]);saveDraftAudio()}guideTakeReady()}catch(err){guidedTake=false;status('Could not decode audio: '+err.message)}};
+$('audiofile').onchange=async e=>{if(audio&&state.takes?.list.length>=MAX_TAKES){e.target.value='';status('A song keeps at most '+MAX_TAKES+' takes: remove one under Takes before importing another.');return}try{if(audio)await addTakeRecording(e.target.files[0]);else{await loadAudio(e.target.files[0]);saveDraftAudio()}guideTakeReady()}catch(err){guidedTake=false;status('Could not decode audio: '+err.message)}};
 // REC.2: a take is recorded in an AudioContext of its own (Stop closes Play's) through the capture worklet (take.js), so every
 // frame has a context time. With Count in on, one bar of the click at the project tempo plays first and the take's zero is the
 // end of the count-in; with Click while recording on, the click goes on at the tempo. The click plays to the speakers only and
@@ -948,14 +950,14 @@ $('separate').onclick=async()=>{
     const stem=async s=>new Blob([await(await folderRequest('/api/desktop/separate/'+job.id+'/'+s+'.wav')).arrayBuffer()],{type:'audio/wav'});
     const v=await stem('vocal'),a=await stem('accompaniment');
     if(audio!==from){info('The recording changed while it was being separated; separate the new one again.');return}
-    clearDerived();separating=null;showSeparation(v,a);saveDraftAudio();
+    clearDerived(false,{thisComp:true});separating=null;showSeparation(v,a);saveDraftAudio();
     info('Separated the voice from the music. Transcribe, Polish and Tune now work on the voice; ▶ Original plays the full recording.');
   }catch(e){info(e.cancelled?'Separation cancelled.':'Could not separate the voice: '+e.message)}
   finally{separating=null;cancelSeparation=false;$('separate').textContent='Separate voice from music';showSeparation(vocal,accompaniment)}
 };
 $('playvocal').onclick=()=>playBlob(vocal).catch(e=>status(e.message));$('playband').onclick=()=>playBlob(accompaniment).catch(e=>status(e.message));
 $('downloadband').onclick=()=>download(accompaniment,'tandem-music.wav');
-$('usefull').onclick=()=>{clearDerived();showSeparation(null,null);saveDraftAudio();$('separateinfo').textContent='Using the full recording again: Transcribe, Polish and Tune work on all of it.';status($('separateinfo').textContent)};
+$('usefull').onclick=()=>{clearDerived(false,{thisComp:true});showSeparation(null,null);saveDraftAudio();$('separateinfo').textContent='Using the full recording again: Transcribe, Polish and Tune work on all of it.';status($('separateinfo').textContent)};
 if(launch){canSeparate=true;showSeparation(vocal,accompaniment)}
 // GEN.2: in the Mac app's own window, Generate band sends the melody (the melody notes rendered with their instrument, or
 // the tuned or separated vocal) to MusicGen-Melody on this Mac (tandem_desktop/band.py), which plays up to 30 s of a band
