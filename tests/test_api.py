@@ -323,6 +323,41 @@ def test_chat_project_accepts_an_optional_mix():
         with pytest.raises(Exception):
             server.ChatProject(mix=bad)
 
+def test_chat_project_accepts_recorded_layers_and_their_mixer_channels():
+    # TRACK.1: the layer list as layers.js cleanLayers writes it, and a channel per layer under layer-<id>; never any audio.
+    assert server.ChatProject().layers==[]
+    layers=[{"id":"harm1","name":"Layer 2","seconds":3.5,"into":"harmony"},{"id":"beat1","name":"Layer 3","seconds":2.0}]
+    got=server.ChatProject(layers=layers)
+    assert [l.model_dump(exclude_none=True) for l in got.layers]==layers
+    mix={"melody":{"level":-3},"layer-harm1":{"mute":True},"layer-beat1":{"level":-6,"solo":True}}
+    assert server.ChatProject(mix=mix,layers=layers).mix.model_dump(exclude_unset=True)==mix
+    for bad in ([{"id":"A","name":"x","seconds":1}],[{"id":"x","name":"","seconds":1}],[{"id":"x","name":"x","seconds":0}],
+                [{"id":"x","name":"x","seconds":1,"into":"band"}],[{"id":"x","name":"x","seconds":1,"audio":"UklGRg=="}],
+                [{"id":f"l{i}","name":"x","seconds":1} for i in range(9)]):
+        with pytest.raises(Exception):
+            server.ChatProject(layers=bad)
+    for bad in ({"layer-":{"mute":True}},{"layer-x":{"muted":True}},{"layer-x":{"level":7}},{"layers-x":{"mute":True}},{"layer-x":[]}):
+        with pytest.raises(Exception):
+            server.ChatProject(mix=bad)
+
+def test_chat_accepts_a_project_with_layers(client, monkeypatch):
+    # TRACK.1: the studio sends its whole state to /api/chat, layers and their channels included.
+    monkeypatch.setenv("TANDEM_PROVIDER","openai-compatible")
+    async def fake(messages, config=None):
+        return '{"reply":"ok","actions":[]}'
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    project={"bpm":100,"notes":[],"drums":[],"layers":[{"id":"harm1","name":"Layer 2","seconds":3.5}],"mix":{"layer-harm1":{"mute":True}}}
+    r=run(client("POST","/api/chat",json={"message":"hi","project":project}))
+    assert r.status_code==200, r.text
+
+def test_layers_module_is_served_and_precached(client):
+    # TRACK.1: mixer.js and recordings.js import layers.js, so the studio and the capture page need it offline.
+    js=run(client("GET","/layers.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function cleanLayers" in js.text
+    assert "from './layers.js'" in run(client("GET","/")).text
+    assert "'./layers.js'" in run(client("GET","/sw.js")).text
+
 def test_new_instruments_are_accepted_everywhere():
     # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.
     for name in ("organ","guitar","flute"):

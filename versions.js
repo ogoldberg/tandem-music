@@ -31,6 +31,8 @@ export function projectFromState(state) {
     ...(state.timbre ? { timbre: state.timbre } : {}),
     // HARM.3: the take sung on the harmony voice, when there is one (its audio is the "voice2_sung" recording).
     ...(state.voice2_sung ? { voice2_sung: state.voice2_sung } : {}),
+    // TRACK.1: the recorded layers, when there are any (their audio is the layer recordings, never in the project).
+    ...(Array.isArray(state.layers) && state.layers.length ? { layers: state.layers } : {}),
     // MIX.1: the mixer, when anything in it differs from the defaults (mixer.js cleanMix).
     ...(state.mix && typeof state.mix === "object" && Object.keys(state.mix).length ? { mix: state.mix } : {}),
   };

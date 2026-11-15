@@ -8,6 +8,8 @@
 //   until it is unmuted, Play and Export WAV are the arrangement alone, as before the mixer.
 // - A solo on any part that is present silences every part that is not soloed; a muted part stays
 //   silent even when soloed.
+// - TRACK.1: every recorded layer has a channel of its own, under its key (layers.js layerKey, "layer-<id>"),
+//   with a level, a mute and a solo like a part; a layer is heard by default.
 // DOM-free so Node tests import it directly; tandem_backend.py's ProjectMix mirrors cleanMix.
 
 export const MIX_PARTS = Object.freeze(["voice", "melody", "harmony", "voice2", "voice2_sung", "drums", "band", "timbre"]);
@@ -16,6 +18,14 @@ export const OWN_MUTE = Object.freeze(["band", "timbre", "voice2_sung"]);
 export const LEVEL_MIN = -30;
 export const LEVEL_MAX = 6;
 export const LEVEL_STEP = 0.5;
+import { isLayerKey, layerKey } from "./layers.js";
+
+const isPart = part => MIX_PARTS.includes(part) || isLayerKey(part);
+// Every channel of a project: the parts, then one per layer it has.
+export function mixParts(project) {
+  const layers = Array.isArray(project?.layers) ? project.layers : [];
+  return [...MIX_PARTS, ...layers.filter(l => l && typeof l.id === "string").map(l => layerKey(l.id))];
+}
 
 const DEFAULT_MUTE = part => part === "voice";
 const isObject = x => !!x && typeof x === "object" && !Array.isArray(x);
@@ -27,7 +37,7 @@ export function cleanMix(mix) {
   if (!isObject(mix)) throw Error("Invalid mix");
   const out = {};
   for (const [part, ch] of Object.entries(mix)) {
-    if (!MIX_PARTS.includes(part) || !isObject(ch)) throw Error("Invalid mix");
+    if (!isPart(part) || !isObject(ch)) throw Error("Invalid mix");
     const entry = {};
     for (const [key, value] of Object.entries(ch)) {
       if (key === "level") {
@@ -49,7 +59,7 @@ export function cleanMix(mix) {
 
 // One part's channel as heard: {level, mute, solo}. project is the studio state or a saved project.
 export function channel(project, part) {
-  if (!MIX_PARTS.includes(part)) throw Error("Unknown mix part: " + part);
+  if (!isPart(part)) throw Error("Unknown mix part: " + part);
   const ch = (isObject(project?.mix) && isObject(project.mix[part])) ? project.mix[part] : {};
   const mute = OWN_MUTE.includes(part) ? !!project?.[part]?.muted : typeof ch.mute === "boolean" ? ch.mute : DEFAULT_MUTE(part);
   return { level: Number.isFinite(ch.level) ? ch.level : 0, mute, solo: ch.solo === true };
@@ -60,10 +70,11 @@ export const dbToGain = db => Math.pow(10, db / 20);
 // The gain of every part: 0 when muted or when another present part is soloed, else the level as a
 // factor. present lists the parts there is something to hear in, so a solo left on a part that was
 // removed does not silence the song.
-export function mixGains(project, present = MIX_PARTS) {
-  const channels = Object.fromEntries(MIX_PARTS.map(p => [p, channel(project, p)]));
-  const soloing = present.some(p => MIX_PARTS.includes(p) && channels[p].solo && !channels[p].mute);
-  return Object.fromEntries(MIX_PARTS.map(p => {
+export function mixGains(project, present = mixParts(project)) {
+  const parts = mixParts(project);
+  const channels = Object.fromEntries(parts.map(p => [p, channel(project, p)]));
+  const soloing = present.some(p => parts.includes(p) && channels[p].solo && !channels[p].mute);
+  return Object.fromEntries(parts.map(p => {
     const c = channels[p];
     return [p, c.mute || (soloing && !c.solo) ? 0 : dbToGain(c.level)];
   }));
@@ -72,7 +83,7 @@ export function mixGains(project, present = MIX_PARTS) {
 // The project's mix with one part's level or solo (or, for a part without its own mute, mute)
 // changed, cleaned. The band's, instrument's and sung harmony's mute are their own `muted` field.
 export function setChannel(mix, part, change) {
-  if (!MIX_PARTS.includes(part)) throw Error("Unknown mix part: " + part);
+  if (!isPart(part)) throw Error("Unknown mix part: " + part);
   if ("mute" in change && OWN_MUTE.includes(part)) throw Error("The " + part + " part keeps its own mute");
   const current = cleanMix(mix);
   return cleanMix({ ...current, [part]: { ...current[part], ...change } });

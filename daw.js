@@ -7,6 +7,7 @@
 import { encodeWav, zipFiles } from "./bundle.js";
 import { detectKey, MODES } from "./harmony.js";
 import { monoSamples } from "./recordings.js";
+import { isLayerKey, layerSeconds } from "./layers.js";
 
 // 960 ticks per quarter note, the same resolution the single-track export used for its timing.
 export const TICKS_PER_BEAT = 960;
@@ -127,7 +128,8 @@ export function midiFile(project, { key = null } = {}) {
 export function arrangementSeconds(project) {
   const ends = [...(project.notes || []), ...(project.harmony || []), ...(Array.isArray(project.voice2) ? project.voice2 : [])].map(n => n.t + n.d + 1)
     .concat((project.drums || []).map(h => h.t + 1))
-    .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []));
+    .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []))
+    .concat(layerSeconds(project, { heard: true }));
   return Math.max(4, ...ends) + 1;
 }
 
@@ -153,15 +155,19 @@ const padded = (samples, frames) => {
 // The stems as one zip: mix.wav (the parts summed; only when there are parts), a WAV per part and
 // per recorded vocal, all mono at `rate`, starting at zero and as long as the longest of them, and
 // the MIDI file. `parts` and `vocals` map stem names to Float32Array samples; absent ones are left out.
-export function stemsZip({ parts = {}, vocals = {}, rate, midi, date }) {
+// TRACK.1: `layers` lists every recorded layer as {file (layers.js layerStemFile), samples at its level};
+// each is a stem of its own, and the layers the mixer lets through are in `parts` under their key, so
+// mix.wav (and Export WAV) has them.
+export function stemsZip({ parts = {}, vocals = {}, layers = [], rate, midi, date }) {
   const present = names => names.filter(n => parts[n] || vocals[n]);
-  const partNames = present(PART_STEMS), vocalNames = present(VOCAL_STEMS);
-  if (!partNames.length && !vocalNames.length) throw Error("Nothing to export yet: add notes or drums, or record a take.");
-  const frames = Math.max(...partNames.map(n => parts[n].length), ...vocalNames.map(n => vocals[n].length));
+  const partNames = [...present(PART_STEMS), ...Object.keys(parts).filter(isLayerKey)], vocalNames = present(VOCAL_STEMS);
+  if (!partNames.length && !vocalNames.length && !layers.length) throw Error("Nothing to export yet: add notes or drums, or record a take.");
+  const frames = Math.max(...partNames.map(n => parts[n].length), ...vocalNames.map(n => vocals[n].length), ...layers.map(l => l.samples.length));
   const files = [];
   if (partNames.length) files.push({ name: STEM_FILES.mix, data: encodeWav(sumStems(partNames.map(n => parts[n]), frames), rate) });
-  for (const n of partNames) files.push({ name: STEM_FILES[n], data: encodeWav(padded(parts[n], frames), rate) });
+  for (const n of partNames) if (!isLayerKey(n)) files.push({ name: STEM_FILES[n], data: encodeWav(padded(parts[n], frames), rate) });
   for (const n of vocalNames) files.push({ name: STEM_FILES[n], data: encodeWav(padded(vocals[n], frames), rate) });
+  for (const l of layers) files.push({ name: l.file, data: encodeWav(padded(l.samples, frames), rate) });
   files.push({ name: STEM_FILES.midi, data: midi });
   return zipFiles(files, date ? { date } : undefined);
 }

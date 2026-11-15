@@ -6,6 +6,7 @@
 // then crossfades into it: the two gains sum to one across the crossfade. A part stage (the melody on
 // its instrument, the harmony, the drums, the band...) fades in at its section and stays to the end, so
 // the last section is the finished song: the mix Export WAV writes.
+import { layerSeconds } from "./layers.js";
 
 export const STAGES = [
   { key: "original", kind: "take", label: "Your take, as recorded" },
@@ -35,7 +36,8 @@ export function contentSeconds(project, takeSeconds = 0, available = null) {
   const notes = [...(project.notes || []), ...(project.harmony || []), ...(Array.isArray(project.voice2) ? project.voice2 : [])];
   const ends = notes.map(n => n.t + n.d)
     .concat((project.drums || []).map(h => h.t + DRUM_SECONDS))
-    .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && (!available || available.includes(k)) && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []));
+    .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && (!available || available.includes(k)) && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []))
+    .concat(available ? [] : layerSeconds(project, { heard: true }));
   return Math.max(0, takeSeconds || 0, ...ends);
 }
 

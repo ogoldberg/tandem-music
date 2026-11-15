@@ -91,6 +91,34 @@ def test_a_sung_harmony_is_a_recording_of_the_folder_too(tmp_path):
     assert {k: v for k, v in back.items() if k.endswith(".wav")} == recs
 
 
+def test_each_recorded_layer_is_a_recording_of_the_folder_and_a_removed_one_goes(tmp_path):
+    """TRACK.1: each layer the project lists is kept as layer-<id>.wav; saving again without one removes its file
+    and leaves files that only look alike alone."""
+    layered = {**PROJECT, "layers": [{"id": "harm1", "name": "Layer 2", "seconds": 0.3, "into": "harmony"}, {"id": "beat1", "name": "Layer 3", "seconds": 0.4}]}
+    recs = {"original.wav": wav_bytes(0.2), "layer-harm1.wav": wav_bytes(0.3), "layer-beat1.wav": wav_bytes(0.4)}
+    folder = tmp_path / "Layers"
+    folder.mkdir()
+    pj.write_folder(folder, pj.files_from_bundle(bundle(recs, project=layered)))
+    assert sorted(p.name for p in folder.iterdir()) == ["layer-beat1.wav", "layer-harm1.wav", "original.wav", "project.json", "tandem.json"]
+    back = zip_names(pj.bundle_from_files(pj.read_folder(folder)))
+    assert {k: v for k, v in back.items() if k.endswith(".wav")} == recs
+    assert json.loads(back["project.json"])["layers"] == layered["layers"]
+    (folder / "layer-notes.txt").write_text("mine")
+    one = {**PROJECT, "layers": layered["layers"][:1]}
+    pj.write_folder(folder, pj.files_from_bundle(bundle({"original.wav": recs["original.wav"], "layer-harm1.wav": recs["layer-harm1.wav"]}, project=one)))
+    assert sorted(p.name for p in folder.iterdir()) == ["layer-harm1.wav", "layer-notes.txt", "original.wav", "project.json", "tandem.json"]
+
+
+def test_layer_files_are_checked_like_the_other_recordings():
+    for name in ("layer-ABC.wav", "layer-.wav", "layer-x.mp3", "layers/layer-x.wav"):
+        with pytest.raises(pj.ProjectError):
+            pj.files_from_bundle(bundle({"original.wav": wav_bytes(), name: wav_bytes()}))
+    with pytest.raises(pj.ProjectError, match="not a WAV"):
+        pj.files_from_bundle(bundle({"original.wav": wav_bytes(), "layer-x.wav": b"not audio"}))
+    with pytest.raises(pj.ProjectError, match="at most 8"):
+        pj.files_from_bundle(bundle({"original.wav": wav_bytes(), **{f"layer-l{i}.wav": wav_bytes() for i in range(9)}}))
+
+
 def test_the_folder_is_plain_files_a_person_can_read(tmp_path):
     folder = tmp_path / "Plain"
     folder.mkdir()
