@@ -67,6 +67,28 @@ def test_words_are_typed_onto_the_melody_shown_in_the_roll_undone_and_flow_after
     assert roll_words(page) == ["Twin-", "kle", "twin-", "kle", "lit-", "tle", "", "star"]
 
 
+def test_a_version_restores_its_words_and_one_without_words_clears_them(studio):
+    page = studio
+    page.click("#demo")
+    page.fill("#versionname", "No words")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: No words")
+    type_words(page, WORDS)
+    page.fill("#versionname", "With words")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: With words")
+
+    page.click("#versionlist .version:has-text('No words') >> text=Restore")
+    expect(page.locator("#status")).to_contain_text("Restored version: No words")
+    expect(page.locator("#lyrics")).to_have_value("")
+    assert roll_words(page) == [None] * 8
+
+    page.click("#versionlist .version:has-text('With words') >> text=Restore")
+    expect(page.locator("#status")).to_contain_text("Restored version: With words")
+    expect(page.locator("#lyrics")).to_have_value(WORDS)
+    assert roll_words(page)[-1] == "star"
+
+
 def test_export_musicxml_writes_the_words_under_the_melody(studio, tmp_path):
     import music21
     page = studio
