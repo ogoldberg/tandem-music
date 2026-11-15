@@ -42,7 +42,7 @@ RECORD = "verified.json"
 CHUNK = 1 << 20
 KEEP_FINISHED = 32
 FREE_SPACE_MARGIN = 256 << 20
-ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -81,7 +81,7 @@ class ModelSpec:
 
     def __post_init__(self):
         if not ID_RE.match(self.id):
-            raise ValueError(f"model id {self.id!r} must be lowercase letters, digits and hyphens")
+            raise ValueError(f"model id {self.id!r} must be lowercase letters, digits, hyphens and underscores")
         if not self.files:
             raise ValueError(f"model {self.id} names no files")
         names = [f.name for f in self.files]
@@ -158,9 +158,30 @@ RAVE_ORGAN = ModelSpec(
     packages=("torch", "julius"), licence=_RAVE_LICENCE)
 RAVE_MODELS = (RAVE_SAX, RAVE_GUITAR, RAVE_ORGAN)
 
+# MRT.1: Google's Magenta RealTime 2, the small model (230M) exported for MLX, pinned to one commit of
+# google/magenta-realtime-2: the exported graph (.mlxfn, an MLX graph with its weights, loaded with
+# mx.import_function), its initial state (safetensors), and the MusicCoCa files a style in words needs
+# (the SentencePiece vocabulary, the text encoder, the text-to-music mapper and the quantizer, TFLite).
+# The id is the model's own name, because magenta_rt finds the graph at models/<name>/<name>.mlxfn; the
+# MusicCoCa files are read from the same folder. Nothing is a pickle. Run by tandem_desktop/band.py.
+# The weights are CC-BY 4.0 (commercial use allowed with attribution; LIC.1), the code Apache 2.0.
+_MRT = "https://huggingface.co/google/magenta-realtime-2/resolve/010aa0dcb0dfd27b24f0ad07b4dad63e8f9521cc/"
+MRT2_SMALL = ModelSpec(
+    "mrt2_small", "Band from the notes (Magenta RealTime 2)",
+    tuple(ModelFile(path.rsplit("/", 1)[1], _MRT + path, sha, size) for path, sha, size in (
+        ("models/mrt2_small/mrt2_small.mlxfn", "1a70b0de30b3e6ad054fe6a61a7765408f01127628e6362c1abc328809a3c422", 455654550),
+        ("models/mrt2_small/mrt2_small_state.safetensors", "23f1e05a6beea306fe39970bd61193f2d3e5fbd8f08af93570bda4ca9ec33255", 8676998),
+        ("resources/musiccoca/spm.model", "ff325a99b61ba5726cf6437cde6eefbb633dbaa363a684f7a97ed99b55202cca", 517448),
+        ("resources/musiccoca/text_encoder.tflite", "e1222e3418cbe8cc2623939571bae8e9ab6f0d511404b0d83da69f4e6e11b272", 418674324),
+        ("resources/musiccoca/mapper.tflite", "2f9743cc8f121a588b69c7f4d79a2a4111ce81864cbde8830054cd5e97f3d717", 86166664),
+        ("resources/musiccoca/pretrained_vector_quantizer.tflite", "7a8a19e2119ad405818eae84a331a970f1a582b3389d4bfd27814f75b455a444", 72422108),
+    )),
+    packages=("magenta_rt", "mlx"),
+    licence="Magenta RealTime 2 weights CC-BY 4.0 (commercial use allowed with attribution; LIC.1); code Apache 2.0")
+
 # The models Tandem can download. Each model that uses this runtime (SEP.1 Demucs, GEN.2
-# MusicGen-Melody, TIMBRE.1 RAVE) adds its entry here with its pinned files.
-CATALOG = (HTDEMUCS, MUSICGEN_MELODY) + RAVE_MODELS
+# MusicGen-Melody, TIMBRE.1 RAVE, MRT.1 Magenta RealTime 2) adds its entry here with its pinned files.
+CATALOG = (HTDEMUCS, MUSICGEN_MELODY, MRT2_SMALL) + RAVE_MODELS
 
 
 @dataclass
