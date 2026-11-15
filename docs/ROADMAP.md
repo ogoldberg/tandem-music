@@ -380,9 +380,11 @@ Asked for by the operator on 2026-11-13, in this order: fixing how notes are edi
   - Mark ranges of the song as named sections and repeat, move or delete a section across all parts at once.
   - **Acceptance:** Node tests of section moves across parts; a Chromium test repeats a chorus and undoes it.
   - Done: drag across the Timeline, choose a name (Intro, Verse, Pre-chorus, Chorus, Bridge, Solo, Outro) and Mark section; the stretch, snapped to the beat, is kept in the optional project field `sections` (`sections.js`). The Sections band under the Timeline shows them; choosing one loops it and offers Repeat, Move earlier, Move later, Delete and Unmark, each one edit over the melody, chords, harmony voice and drums at once (docs/ARCHITECTURE.md, Song sections). Recordings are not cut or spliced: they stay where they are (operator decision, 2026-11-15). `tests/sections.test.mjs`, `e2e/test_sections.py`. Open: recordings do not follow a section edit; no section markers in the MIDI file, MusicXML or DAWproject; no renaming a section or typing a custom name; not yet tried by a person on a real song.
-- [ ] **LYR.1** Lyrics on melody notes
+- [x] **LYR.1** Lyrics on melody notes
   - Type lyrics that attach syllable by syllable to the melody notes, shown in the roll and written into the MusicXML export.
   - **Acceptance:** Node tests of syllable assignment; the MusicXML fixture with lyrics validates against the schema and reads back with music21.
+  - Done: the melody's Words box (also in the guided Notes step) keeps the words in the optional project field `lyrics` (`lyrics.js`); hyphens split syllables and `_` holds one over the next note. They are laid one syllable a note in time order (a chord takes one), shown under each note in the roll as you type, kept as one edit, and written into Export MusicXML as `<lyric>` elements with extend lines (docs/ARCHITECTURE.md, Lyrics). `tests/lyrics.test.mjs`, `tests/test_notation.py` (the fixture with lyrics, schema and music21), `e2e/test_lyrics.py`.
+  - Open: the words are not tied to notes, so a note edit makes them flow again in order (by design; a per-note word could follow later); no lyric events in the MIDI file or DAWproject yet; one verse only (MusicXML `number="1"`).
 - [ ] **CHORD.1** Chord symbols you can see and edit
   - Show the harmony's chords as symbols above the roll; change a chord and the harmony part follows.
   - **Acceptance:** Node tests of chord naming and regeneration from an edited chord; a Chromium test edits one chord and undoes.

@@ -97,3 +97,34 @@ def test_key_time_and_tempo_read_back(score):
     for part in written.parts:
         for measure in part.getElementsByClass(music21.stream.Measure):
             assert measure.duration.quarterLength == 4
+
+
+# LYR.1: the words the fixture's lyrics put on each melody note, as music21 reads them: (syllable,
+# syllabic) per note, None for the note "it" is held over.
+WORDS = [
+    ("Sing", "single"), ("it", "single"), ("slow", "begin"), ("ly,", "end"), ("sing", "single"),
+    ("it", "single"), None, ("low,", "single"), ("and", "single"), ("let", "single"), ("the", "single"),
+    ("morn", "begin"), ("ing", "end"), ("come", "single"),
+]
+
+
+def test_the_lyrics_read_back_syllable_by_syllable_on_the_melody(score):
+    melody, harmony = score.parts
+    read = []
+    for n in melody.flatten().notes:
+        lyric = n.lyrics[0] if n.lyrics else None
+        read.append((lyric.text, lyric.syllabic) if lyric and lyric.text else None)
+    assert read == WORDS
+    # music21 joins the syllables into the words as sung (the held note's empty lyric adds a space).
+    assert " ".join(music21.text.assembleLyrics(melody).split()) == "Sing it slowly, sing it low, and let the morning come"
+    assert not any(n.lyrics for n in harmony.flatten().notes)
+
+
+def test_the_held_syllable_draws_its_extend_line_to_the_note_it_is_held_over():
+    doc = etree.parse(str(SCORE))
+    melody = doc.find("part[@id='P1']")
+    # As written: the tied second piece of a note carries no lyric, so look at the written lyrics.
+    lyrics = [n.find("lyric") for n in melody.iter("note") if n.find("lyric") is not None]
+    held_from, held_to = lyrics[5], lyrics[6]
+    assert held_from.findtext("text") == "it" and held_from.find("extend").get("type") == "start"
+    assert held_to.find("text") is None and held_to.find("extend").get("type") == "stop"

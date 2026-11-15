@@ -1,6 +1,7 @@
 // Writes tests/fixtures/notation-project.json and notation.musicxml (EXP.2): a sung-style melody in
 // F major at 96 bpm with timing jitter, a rest and a note held across the barline, and the chords
-// generateHarmony makes for it. tests/test_notation.py validates the score against the MusicXML 4.0
+// generateHarmony makes for it, with lyrics (LYR.1): words split into syllables and one held over
+// two notes. tests/test_notation.py validates the score against the MusicXML 4.0
 // schema and reads it back with music21; tests/notation.test.mjs checks musicXml still writes it.
 // Run from the repository root: node tests/fixtures/make_notation_fixture.mjs
 import { writeFile } from "node:fs/promises";
@@ -15,7 +16,8 @@ const sung = [
   [65, 9.0, 0.5], [64, 9.52, 0.5], [62, 10.0, 1], [60, 11.02, 0.5], [61, 11.5, 0.5], [65, 12.0, 4],
 ];
 const notes = sung.map(([m, t, d]) => ({ m, t: Math.round(t * beat * 1000) / 1000, d: Math.round(d * beat * 0.95 * 1000) / 1000 }));
-const project = { format: "tandem-project", version: 1, bpm: 96, instrument: "flute", melody_locked: true, notes, drums: [], harmony_instrument: "piano" };
+const lyrics = "Sing it slow-ly, sing it _ low, and let the morn-ing come";
+const project = { format: "tandem-project", version: 1, bpm: 96, instrument: "flute", melody_locked: true, notes, drums: [], harmony_instrument: "piano", lyrics };
 const key = detectKey(notes);
 project.harmony = generateHarmony(project, { style: "chords", key }).notes;
 const fixture = { title: "Notation fixture", key: { tonic: key.tonic, mode: key.mode }, project };
