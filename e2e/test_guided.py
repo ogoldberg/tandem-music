@@ -17,6 +17,8 @@ MAC_APP = ["aibaseurl", "aiforget", "aikey", "aimodel", "aiprovider", "aisave", 
 MIDI_PORTS = ["midichannel", "midiinput", "midioutput", "midirecord"]
 # HARM.2: shown only while harmony lines are being tried (after Create harmony).
 LINE_TRIAL = ["voice2cancel", "voice2keep", "voice2next"]
+# TAKE.1: the comp controls, shown once there are two takes.
+TAKES = ["compfrom", "compin", "comploop", "comptake", "compto"]
 CONTROL = re.compile(r'<(button|input|select|textarea)\b[^>]*\bid="([^"]+)"')
 
 
@@ -220,8 +222,8 @@ def test_every_control_of_the_studio_is_in_the_all_controls_view(browser, server
         wrong = [r for r in report if r[1] not in ("shown", "feature")]
         assert not wrong, wrong
         # Hidden here only because the feature is not available or not in use: the Mac app's controls, the MIDI ports
-        # (shown after Connect MIDI), the harmony line trial (shown after Create harmony) and the file pickers behind their buttons.
-        assert sorted(r[0] for r in report if r[1] == "feature") == sorted(MAC_APP + MIDI_PORTS + LINE_TRIAL + ["audiofile", "projectfile"])
+        # (shown after Connect MIDI), the harmony line trial (shown after Create harmony), the comp controls (shown with two takes) and the file pickers behind their buttons.
+        assert sorted(r[0] for r in report if r[1] == "feature") == sorted(MAC_APP + MIDI_PORTS + LINE_TRIAL + TAKES + ["audiofile", "projectfile"])
         # The guided view's own controls are not in the studio's layout, and the roll is back in its place.
         assert page.evaluate("document.getElementById('melodyroll').closest('.lane').dataset.lane === 'melody'")
         assert page.evaluate("document.getElementById('melodytools').closest('[data-panel-part]').dataset.panelPart === 'melody'")
@@ -241,7 +243,7 @@ def test_recording_a_beat_after_singing_keeps_the_sung_song_as_a_version_first(b
         record_take(page)
         assert page.evaluate("document.getElementById('playtuned').disabled") is False
 
-        # A beat take replaces the recording, so Record a beat asks first, and Cancel leaves everything as it was.
+        # A beat take becomes the recording the song uses, so Record a beat asks first, and Cancel leaves everything as it was.
         page.click('#steps [data-step="song"]')
         page.click("#gbeat")
         expect(page.locator("#gbeatwarn")).to_be_visible()
@@ -258,6 +260,8 @@ def test_recording_a_beat_after_singing_keeps_the_sung_song_as_a_version_first(b
         expect(page.locator("#gstatus")).to_have_text('Your song is kept as the version "Before the beat". Record your beat.')
         record_take(page)
         assert page.evaluate("document.getElementById('playtuned').disabled") is True
+        # TAKE.1: the singing is kept as Take 1 beside the beat take.
+        assert page.evaluate("[...document.querySelectorAll('#takelist .takerow')].map(r => r.dataset.used)") == ["false", "true"]
 
         # The sung take, cleaned up and pitch-fixed, comes back with the version.
         page.click("#gsettings")
@@ -281,8 +285,8 @@ def test_without_recording_storage_record_a_beat_says_the_take_is_lost_and_saves
         page.click('#steps [data-step="song"]')
         page.click("#gbeat")
         expect(page.locator("#gbeatmsg")).to_have_text(
-            "A beat take replaces the recording you have now, with your voice, and this browser cannot keep recordings "
-            "in a version. Download your voice first if you want to keep it.")
+            "A beat take becomes the recording the song uses; your singing stays as Take 1 only until this page is closed, "
+            "as this browser cannot keep recordings. Download your voice first if you want to keep it.")
         expect(page.locator("#gbeatyes")).to_have_text("Record a beat anyway")
         page.click("#gbeatyes")
         expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")

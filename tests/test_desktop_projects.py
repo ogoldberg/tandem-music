@@ -119,6 +119,37 @@ def test_layer_files_are_checked_like_the_other_recordings():
         pj.files_from_bundle(bundle({"original.wav": wav_bytes(), **{f"layer-l{i}.wav": wav_bytes() for i in range(9)}}))
 
 
+def test_each_kept_take_is_a_recording_of_the_folder_and_a_removed_one_goes(tmp_path):
+    """TAKE.1: each take the project keeps is take-<id>.wav beside original.wav (the comp); saving again without
+    one removes its file, and only that."""
+    takes = {"list": [{"id": "first", "name": "Take 1", "seconds": 0.2}, {"id": "second", "name": "Take 2", "seconds": 0.3}],
+             "comp": [{"take": "second", "from": 0, "to": 0.3}]}
+    kept = {**PROJECT, "takes": takes}
+    recs = {"original.wav": wav_bytes(0.3), "take-first.wav": wav_bytes(0.2), "take-second.wav": wav_bytes(0.3)}
+    folder = tmp_path / "Comped"
+    folder.mkdir()
+    pj.write_folder(folder, pj.files_from_bundle(bundle(recs, project=kept)))
+    assert sorted(p.name for p in folder.iterdir()) == ["original.wav", "project.json", "take-first.wav", "take-second.wav", "tandem.json"]
+    back = pj.read_folder(folder)
+    assert back["take-first.wav"] == recs["take-first.wav"]
+    assert json.loads(back["project.json"])["takes"] == takes
+    assert "take-second.wav" in zipfile.ZipFile(io.BytesIO(pj.bundle_from_files(back))).namelist()
+    (folder / "take-notes.txt").write_text("mine")
+    one = {**PROJECT, "takes": {"list": takes["list"][1:], "comp": takes["comp"]}}
+    pj.write_folder(folder, pj.files_from_bundle(bundle({"original.wav": recs["original.wav"], "take-second.wav": recs["take-second.wav"]}, project=one)))
+    assert sorted(p.name for p in folder.iterdir()) == ["original.wav", "project.json", "take-notes.txt", "take-second.wav", "tandem.json"]
+
+
+def test_take_files_are_checked_like_the_other_recordings():
+    for name in ("take-ABC.wav", "take-.wav", "take-x.mp3", "takes/take-x.wav"):
+        with pytest.raises(pj.ProjectError):
+            pj.files_from_bundle(bundle({"original.wav": wav_bytes(), name: wav_bytes()}))
+    with pytest.raises(pj.ProjectError, match="not a WAV"):
+        pj.files_from_bundle(bundle({"original.wav": wav_bytes(), "take-x.wav": b"not audio"}))
+    with pytest.raises(pj.ProjectError, match="at most 8 take"):
+        pj.files_from_bundle(bundle({"original.wav": wav_bytes(), **{f"take-t{i}.wav": wav_bytes() for i in range(9)}}))
+
+
 def test_the_folder_is_plain_files_a_person_can_read(tmp_path):
     folder = tmp_path / "Plain"
     folder.mkdir()

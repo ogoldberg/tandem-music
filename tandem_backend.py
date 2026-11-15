@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response, FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from request_guards import RequestGuardMiddleware, AUDIO_BODY_MAX_BYTES, LOCAL_AUDIO_BODY_MAX_BYTES, is_local
 
 app = FastAPI(title="Tandem API", version="0.2.0")
@@ -197,6 +197,9 @@ def beats_js():
 @app.get("/mixer.js", include_in_schema=False)
 def mixer_js():
     return FileResponse(Path(__file__).resolve().parent / "mixer.js", media_type="text/javascript")
+@app.get("/takes.js", include_in_schema=False)
+def takes_js():
+    return FileResponse(Path(__file__).resolve().parent / "takes.js", media_type="text/javascript")
 @app.get("/layers.js", include_in_schema=False)
 def layers_js():
     return FileResponse(Path(__file__).resolve().parent / "layers.js", media_type="text/javascript")
@@ -326,6 +329,13 @@ class OwnMuteChannel(BaseModel):
     level: float = Field(default=0,ge=-30,le=6,allow_inf_nan=False)
     solo: bool = False
 LAYER_KEY=re.compile(r"^layer-[a-z0-9]{1,24}$")
+# What JavaScript's String.prototype.trim removes: WhiteSpace and LineTerminator. A name must not start or end
+# with one and must not be blank, as layers.js and takes.js keep it; anything inside a name is kept, as there.
+JS_TRIM="\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+def _trimmed_name(value):
+    if not value.strip(JS_TRIM) or value.strip(JS_TRIM)!=value:
+        raise ValueError("A name must not be blank or start or end with a space")
+    return value
 class ProjectLayer(BaseModel):
     """TRACK.1: a layer recorded over the song, a track of its own (layers.js cleanLayers). Its audio is a
     recording kept beside the project, never in it; into names the part it was last transcribed into.
@@ -333,9 +343,53 @@ class ProjectLayer(BaseModel):
     model_config=ConfigDict(extra="forbid")
     id: str = Field(pattern=r"^[a-z0-9]{1,24}$")
     # Trimmed and not blank, as cleanLayers keeps it.
-    name: str = Field(min_length=1,max_length=40,pattern=r"^\S(.*\S)?$")
+    name: str = Field(min_length=1,max_length=40)
     seconds: float = Field(gt=0,le=600,allow_inf_nan=False)
     into: Literal["melody","harmony","drums"] | None = None
+    @field_validator("name")
+    @classmethod
+    def _name(cls,value):
+        return _trimmed_name(value)
+class ProjectTake(BaseModel):
+    """TAKE.1: one kept take of your voice (takes.js cleanTakes). Its audio is a recording kept beside the
+    project, never in it."""
+    model_config=ConfigDict(extra="forbid")
+    id: str = Field(pattern=r"^[a-z0-9]{1,24}$")
+    name: str = Field(min_length=1,max_length=40)
+    seconds: float = Field(gt=0,le=600,allow_inf_nan=False)
+    @field_validator("name")
+    @classmethod
+    def _name(cls,value):
+        return _trimmed_name(value)
+class CompSection(BaseModel):
+    """TAKE.1: a stretch of the song, in seconds, taken from one take."""
+    model_config=ConfigDict(extra="forbid")
+    take: str = Field(pattern=r"^[a-z0-9]{1,24}$")
+    from_: float = Field(alias="from",ge=0,le=600,allow_inf_nan=False)
+    to: float = Field(gt=0,le=600,allow_inf_nan=False)
+class ProjectTakes(BaseModel):
+    """TAKE.1: the kept takes and the comp the song uses, sections in order that do not overlap, each inside
+    its take (takes.js cleanTakes). No AI action edits it."""
+    model_config=ConfigDict(extra="forbid")
+    takes: list[ProjectTake] = Field(alias="list",min_length=1,max_length=8)
+    comp: list[CompSection] = Field(min_length=1,max_length=64)
+    @model_validator(mode="after")
+    def _comp(self):
+        seconds={}
+        for t in self.takes:
+            if t.id in seconds:
+                raise ValueError("Two takes have the same id")
+            seconds[t.id]=t.seconds
+        end=0.0
+        for s in self.comp:
+            if s.take not in seconds:
+                raise ValueError("The comp names a take the project does not have")
+            if s.to<=s.from_ or s.to>seconds[s.take]+0.001:
+                raise ValueError("A comp section must be inside its take")
+            if s.from_<end-0.0005:
+                raise ValueError("Comp sections must be in order and not overlap")
+            end=s.to
+        return self
 class ProjectMix(BaseModel):
     """MIX.1: the mixer, only the parts that differ from the defaults. No AI action edits it. TRACK.1: each
     recorded layer's channel is under its key, layer-<id>, with a level, a mute and a solo."""
@@ -373,6 +427,8 @@ class ChatProject(BaseModel):
     mix: ProjectMix | None = None
     # TRACK.1: the layers recorded over the song, when there are any.
     layers: list[ProjectLayer] = Field(default_factory=list,max_length=8)
+    # TAKE.1: the kept takes and the comp of them the song uses, once there is a second take.
+    takes: ProjectTakes | None = None
     # HARM.1: the harmony voice, a copy of the melody shifted (ADR-014). Before the harmony, since it
     # follows the melody note for note. No AI action edits it.
     voice2: list[ProjectNote] = Field(default_factory=list,max_length=1024)
