@@ -83,7 +83,7 @@ In the Mac app, Separate voice from music splits a recording into the vocal and 
 
 Through the studio window (`e2e/test_separation.py`) the browser hands the server its own 48 kHz decoding of the take; recall there was 0.69 on Metal (required: at least 0.5, and at most 0.2 before separating). The stems also sum back to the recording (residual under 10% RMS) and correlate with the voice (above 0.8) and the band (above 0.9) they were made from.
 
-**Speed:** a 3-minute song (the fixture repeated) separated in 24 s on Metal on the operator's Mac (Apple M5, while the machine was otherwise busy) and in 263 s on its CPU; loading the model takes under half a second. The first Separate also downloads the model (84 MB). Still to check by ear on the operator's Mac: real songs (a phone recording of a song playing in the room, an existing track), and how much of the band leaks into the vocal.
+**Speed:** a 3-minute song (the fixture repeated) separated in 24 s on Metal on the operator's Mac (Apple M5, while the machine was otherwise busy) and in 263 s on its CPU; loading the model takes under half a second. The first Separate also downloads the model (84 MB). Still to check by ear on the operator's Mac: real songs (a phone recording of a song playing in the room, an existing track), and how much of the band leaks into the vocal. On the fixture the separated vocal still carries the band at about -24 dB against the voice, and RoFormer models leave 10-21 dB less but are 12-41 times slower (ROFORMER.0, below). The recall above is one draw: Separate shifts the input at random each time, and eight runs gave 0.62-0.75 on Metal.
 
 ## Backing band (GEN.2)
 In the Mac app, Generate band (in the Band track under Harmony) plays up to 30 s of a full band that follows the person's own melody, with Meta's MusicGen-Melody (1.5B parameters, `tandem_desktop/band.py`). The window sends the melody as audio from time zero: the melody notes rendered with their instrument, or the recording (the tuned take when there is one, else the separated vocal or the original). The model is conditioned on the melody's chroma (the strongest of the 12 pitch classes every 128 ms, computed the way transformers' `MusicgenMelodyFeatureExtractor` does) and on a text prompt: the style in the person's words, then the project tempo and key (`lo-fi band with brushed drums, 100 bpm, in C major`). The band starts at the project's zero, so it lines up with the notes and the recording; it plays a little under the parts (gain 0.8), is a part stem in Export stems and is in Export WAV and `mix.wav` unless muted. It runs on Metal (MPS) when the Mac has it.
@@ -229,6 +229,38 @@ Time per second of audio on the 44.1 kHz clips:
 - **Benchmark scorer: keep YIN.** It is the most precise of the six on VOX.1's clean synthetic phrases (0.2-1.7 cents median, under 4 cents at the 90th percentile), which the benchmark's 3-cent thresholds need; RMVPE's 20-cent bins and PESTO's 1-11 cents are too coarse to score them.
 
 What it does not show: these are synthetic voices with known pitch and one synthetic mix; no real singing, room, breath or consonant noise beyond what the fixtures make, and no listening. Nothing is played aloud.
+
+## Vocal separation models (ROFORMER.0 spike)
+Three RoFormer vocal models with a checked licence were run beside HTDemucs on SEP.1's fixture: Kim Vocal 2, a mel-band RoFormer (`KimberleyJSN/melbandroformer`, 228 M parameters, MIT since its author relicensed it from GPL-3.0 on 2026-04-22); a small mel-band RoFormer (`Aname-Tommy/Mel_Band_Roformer_small`, 51 M, MIT by its model card's tag); and anvuew's band-split RoFormer (`anvuew/BS-RoFormer`, 51 M, GPL-3.0). The BS-RoFormer most tools use (viperx's `ep_317`) states no licence anywhere upstream and was left out. Scripts, pins and commands are in `tools/roformer-spike/`; `tests/test_roformer_spike.py` checks the clips, the measures and the overlap-add. Measured on 2026-11-15 on the operator's Mac (Apple M5, 32 GB), torch 2.15.0, one model at a time.
+
+**Weights.** All three are `.ckpt` pickles holding a plain float32 state dict. `torch.load(weights_only=True)` (the restricted unpickler) takes each, and the tensors write once to safetensors and read back equal, so a model could ship as safetensors that MODEL.1 loads without pickle; the converted files are the checkpoint's size (913, 202 and 204 MB). The rotary frequencies every layer shares have to be written as separate copies.
+
+**Each model is run eight times.** HTDemucs as the app calls it (`shifts=1`) shifts its input at random on every Separate, so the same mix gives a different vocal each time (samples differ by up to 0.016) and the melody recall moved from 0.62 to 0.81 between two runs. Every model separated the mix eight times, run *k* behind *k* times 37 ms of silence; the table gives the mean and the range. The RoFormers are deterministic, but they moved as much with the offset.
+
+| Model | Recall, Metal (8 runs) | Recall, CPU (2) | SDR, dB | Band in the vocal, dB re. the voice | Vocal from the band alone, dB re. the band |
+| --- | --- | --- | --- | --- | --- |
+| HTDemucs | 0.71 (0.62-0.75) | 0.78 (0.75-0.81) | 6.2 (6.0-6.3) | -24.5 (-24.6 to -24.2) | -43 |
+| Kim Vocal 2 (mel-band) | 0.65 (0.56-0.75) | 0.69 (0.62-0.75) | 7.2 (5.9-8.6) | -34.2 (-35.4 to -33.2) | below -180 (silent) |
+| Mel-band small | 0.17 (0.12-0.19) | 0.16 (0.12-0.19) | 2.0 (1.9-2.1) | -32.5 | -80 |
+| anvuew BS-RoFormer | 0.53 (0.50-0.56) | 0.56 | 14.8 (9.4-18.3) | -45.8 (-51.8 to -42.6) | -112 |
+
+Recall is SEP.1's measure: the server's transcriber on the separated vocal (0.00 on the mixture, 0.62 on the voice alone). SDR compares the separated vocal with the voice the mix was made from. "Band in the vocal" is the band's share once the vocal is fitted as voice plus band by least squares. The last column separates the band with nobody singing, so everything that comes out as the vocal is band.
+
+| Model | 3-minute song, Metal | Peak memory, Metal (process / GPU) | 3-minute song, CPU | Peak memory, CPU |
+| --- | --- | --- | --- | --- |
+| HTDemucs | 10 s | 2.0 / 1.3 GB | 70 s | 2.5 GB |
+| Kim Vocal 2 | 125 s | 2.1 / 8.6 GB | 193 s | 7.5 GB |
+| Mel-band small | 261 s | 1.2 / 5.3 GB | 510 s | 5.2 GB |
+| anvuew BS-RoFormer | 411 s | 1.2 / 7.5 GB | 1208 s | 7.7 GB |
+
+Each run separates 2 s first, untimed, because the first pass on Metal compiles its kernels. Each model loads in under 2 s. The RoFormers run at their own configurations' chunk and overlap through MSST's overlap-add, in float32.
+
+**Verdict: keep HTDemucs.**
+- **The vocal is cleaner, as their authors say.** The band-split RoFormer leaves about 21 dB less band in the vocal than HTDemucs and doubles its SDR in dB. Kim's mel-band RoFormer leaves about 10 dB less band, with about 1 dB more SDR. With nobody singing, both RoFormers give near silence where HTDemucs lets the band through at -43 dB. The small mel-band model loses half the voice (correlation 0.63) and is no use.
+- **Transcription is not better.** The server's transcriber found fewer notes in the RoFormers' vocals than in HTDemucs' (0.53 and 0.65 against 0.71). A cleaner vocal does not mean more notes for this heuristic transcriber, which is the measure SEP.1 set.
+- **It costs too much for the Mac app's Separate.** Kim takes 12 times as long as HTDemucs for 3 minutes (125 s against 10 s on Metal) with 8.6 GB on the GPU, and is an 11-times-larger download. The band-split model takes 41 times as long and is GPL-3.0, which needs LIC.1's answer before it could ship.
+- **If real songs show the band leaking into the vocal** (SEP.1's open check by ear), the shape to try is Kim Vocal 2, converted to safetensors, as an optional "cleaner, slower" Separate beside HTDemucs. No ADR, since nothing is adopted.
+- **Found on the way:** Separate is not repeatable, because of HTDemucs' random shift. Two Separates of one take can give the melody a note or two apart. This is left as it is: the shift is Demucs' own default, and SEP.1's recorded 0.81 was one draw.
 
 ## Models to watch
 Checked on 2026-11-15 and not filed as tasks; each line says why. The spikes that are filed are AMT.0, PITCH.0, WORDS.0 and ROFORMER.0 in `docs/ROADMAP.md`.
