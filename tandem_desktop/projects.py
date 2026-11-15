@@ -35,6 +35,15 @@ FILES = {"meta": "tandem.json", "project": "project.json", "original": "original
 RECORDINGS = ("original.wav", "polished.wav", "tuned.wav", "vocal.wav", "accompaniment.wav", "band.wav", "timbre.wav",
               "harmony-voice-sung.wav")
 NAMES = frozenset(FILES.values())
+# TRACK.1: each recorded layer's recording, layer-<id>.wav (layers.js layerFile), at most MAX_LAYERS of them.
+LAYER_FILE = re.compile(r"^layer-[a-z0-9]{1,24}\.wav$")
+MAX_LAYERS = 8
+
+
+def _recordings(names):
+    """The recordings among file names, the fixed ones first, then the layers in name order."""
+    names = set(names)
+    return [n for n in RECORDINGS if n in names] + sorted(n for n in names if LAYER_FILE.match(n))
 # The same cap as bundle.js MAX_BUNDLE_BYTES: more than any recording the studio handles.
 MAX_BYTES = 512 * 1024 * 1024
 MAX_NAME = 60
@@ -69,9 +78,11 @@ def _check(files):
         raise ProjectError("project.json is not a Tandem project.")
     if FILES["meta"] in files and not isinstance(_json(files[FILES["meta"]], "tandem.json"), dict):
         raise ProjectError("tandem.json is not a Tandem file description.")
-    for name in RECORDINGS:
-        if name in files and not _is_wav(files[name]):
+    for name in _recordings(files):
+        if not _is_wav(files[name]):
             raise ProjectError(f"{name} is not a WAV recording.")
+    if sum(1 for n in files if LAYER_FILE.match(n)) > MAX_LAYERS:
+        raise ProjectError(f"A project holds at most {MAX_LAYERS} layer recordings.")
     return files
 
 
@@ -84,8 +95,8 @@ def files_from_bundle(data):
     with archive:
         infos = archive.infolist()
         for info in infos:
-            if info.filename not in NAMES:
-                raise ProjectError(f"A Tandem file holds only {', '.join(sorted(NAMES))}, not {info.filename}.")
+            if info.filename not in NAMES and not LAYER_FILE.match(info.filename):
+                raise ProjectError(f"A Tandem file holds only {', '.join(sorted(NAMES))} and layer recordings, not {info.filename}.")
         if len({i.filename for i in infos}) != len(infos):
             raise ProjectError("The Tandem file names a file twice.")
         if sum(i.file_size for i in infos) > MAX_BYTES:
@@ -154,7 +165,7 @@ def write_folder(folder, files):
     folder = Path(folder)
     files = dict(files)
     files[FILES["meta"]] = _meta(files, folder.name)
-    order = [n for n in RECORDINGS if n in files] + [FILES["project"], FILES["meta"]]
+    order = _recordings(files) + [FILES["project"], FILES["meta"]]
     for name in order:
         tmp = folder / f".{name}.{secrets.token_hex(4)}.tmp"
         try:
@@ -168,6 +179,10 @@ def write_folder(folder, files):
     for name in RECORDINGS:
         if name not in files:
             (folder / name).unlink(missing_ok=True)
+    # A layer the project no longer has: its recording goes too. Only plain files named like a layer's.
+    for path in folder.iterdir():
+        if LAYER_FILE.match(path.name) and path.name not in files and path.is_file() and not path.is_symlink():
+            path.unlink()
 
 
 def read_folder(folder):
@@ -177,7 +192,8 @@ def read_folder(folder):
         raise ProjectError(f"{folder.name} is not a folder.")
     files = {}
     total = 0
-    for name in sorted(NAMES):
+    layers = sorted(p.name for p in folder.iterdir() if LAYER_FILE.match(p.name))
+    for name in sorted(NAMES) + layers:
         path = folder / name
         # Only plain files in the folder are read: a link could point anywhere on the Mac (#61).
         if path.is_symlink():
@@ -204,7 +220,7 @@ def bundle_from_files(files):
     """A Tandem file (stored zip, as bundle.js writes it) of a project's files."""
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as z:
-        for name in [FILES["meta"], FILES["project"], *RECORDINGS]:
+        for name in [FILES["meta"], FILES["project"], *_recordings(files)]:
             if name in files:
                 z.writestr(name, files[name])
     return out.getvalue()

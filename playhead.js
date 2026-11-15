@@ -2,6 +2,7 @@
 // Playing is a list of segments: { at, from, to } plays the song from `from` to `to` starting `at`
 // seconds after Play. Without a loop that is one segment to the end of the song; with one it is the
 // start point to the loop's end, then the loop again and again until Stop.
+import { layerSeconds } from "./layers.js";
 
 // The shortest loop: a drag shorter than this is a click, and a shorter loop would stutter.
 export const MIN_LOOP = 0.25;
@@ -79,6 +80,7 @@ export function timelineEnd(project, extra = []) {
   const notes = [...(project.notes || []), ...(project.harmony || []), ...(project.voice2 || []), ...extra];
   const ends = notes.map(n => (n.t || 0) + (n.d || 0.3))
     .concat((project.drums || []).map(h => (h.t || 0) + 0.3))
-    .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []));
+    .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []))
+    .concat(layerSeconds(project));
   return Math.max(8, ...ends);
 }

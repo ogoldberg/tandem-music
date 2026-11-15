@@ -5,6 +5,7 @@
 // DOM-free so Node tests import it directly: the directory handle and Web Locks are passed in.
 
 import { storageError } from "./storage.js";
+import { isLayerKey } from "./layers.js";
 
 export const RECORDINGS_DIR = "recordings";
 // The draft's recordings, kept next to the draft in the IndexedDB key-value store.
@@ -41,11 +42,12 @@ export async function recordingId(blob) {
 }
 
 // The well-formed links among AUDIO_SLOTS (original, polished, tuned, SEP.1's separated vocal and
-// accompaniment, GEN.2's generated band and TIMBRE.1's voice played as an instrument); anything else is dropped.
+// accompaniment, GEN.2's generated band and TIMBRE.1's voice played as an instrument) and TRACK.1's
+// recorded layers (layers.js layerKey); anything else is dropped.
 export function cleanLinks(value) {
   const out = {};
   if (!value || typeof value !== "object") return out;
-  for (const slot of AUDIO_SLOTS) {
+  for (const slot of [...AUDIO_SLOTS, ...Object.keys(value).filter(isLayerKey)]) {
     const link = value[slot];
     if (link && typeof link === "object" && typeof link.id === "string" && ID.test(link.id)) {
       out[slot] = { id: link.id, type: typeof link.type === "string" ? link.type : "" };
