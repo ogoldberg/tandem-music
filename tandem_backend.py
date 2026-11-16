@@ -208,6 +208,10 @@ def lyrics_js():
 def tension_js():
     return FileResponse(Path(__file__).resolve().parent / "tension.js", media_type="text/javascript")
 
+@app.get("/drawline.js", include_in_schema=False)
+def drawline_js():
+    return FileResponse(Path(__file__).resolve().parent / "drawline.js", media_type="text/javascript")
+
 @app.get("/sections.js", include_in_schema=False)
 def sections_js():
     return FileResponse(Path(__file__).resolve().parent / "sections.js", media_type="text/javascript")
