@@ -290,9 +290,11 @@ def cmd_weights(a):
                 print(f"  npz: {len(z.files)} arrays, loaded with allow_pickle=False")
 
 
-def run_mlx(model_path, wav):
+def run_mlx(model_path, wav, condition=True):
+    # condition: Whisper's default, each 30 s window decoded with the text before it as its prompt.
     import mlx_whisper
-    r = mlx_whisper.transcribe(str(wav), path_or_hf_repo=str(model_path), word_timestamps=True, language="en")
+    r = mlx_whisper.transcribe(str(wav), path_or_hf_repo=str(model_path), word_timestamps=True, language="en",
+                               condition_on_previous_text=condition)
     return [{"text": w["word"], "start": w["start"], "end": w["end"]} for s in r["segments"] for w in s.get("words", [])]
 
 
@@ -341,7 +343,9 @@ def cmd_run(a):
     tmp = out / "tmp"
     tmp.mkdir(exist_ok=True)
     dtw = DTW_PRESET[a.model] if a.dtw else None
-    go = (lambda wav: run_mlx(path, wav)) if a.runtime == "mlx" else (lambda wav: run_cpp(path, wav, a.whisper_cli, tmp, dtw))
+    if a.no_condition and a.runtime != "mlx":
+        sys.exit("--no-condition is for mlx only")
+    go = (lambda wav: run_mlx(path, wav, not a.no_condition)) if a.runtime == "mlx" else (lambda wav: run_cpp(path, wav, a.whisper_cli, tmp, dtw))
     go(out / "wav16" / f"{names[0]}.wav")  # warm-up: the model loaded once, untimed
     results, total = {}, 0.0
     for name in names:
@@ -351,7 +355,7 @@ def cmd_run(a):
         total += took
         results[name] = {"raw": raw, "seconds": took}
         print(f"{name}: {took:.1f} s, {len(raw)} words", flush=True)
-    label = a.runtime + ("-dtw" if dtw else "")
+    label = a.runtime + ("-dtw" if dtw else "") + ("-nocond" if a.no_condition else "")
     dest = out / "runs" / f"{label}-{a.model}.json"
     dest.parent.mkdir(exist_ok=True)
     dest.write_text(json.dumps({"runtime": label, "model": a.model, "recordings": results, "seconds": total}))
@@ -405,6 +409,8 @@ def main(argv=None):
     x.add_argument("--out", required=True)
     x.add_argument("--whisper-cli", default=None)
     x.add_argument("--dtw", action="store_true", help="whisper.cpp only: word times by DTW")
+    x.add_argument("--no-condition", action="store_true",
+                   help="mlx only: decode each window without the text before it (condition_on_previous_text=False)")
     x.add_argument("--limit", type=int, default=0)
     s = sub.add_parser("score")
     s.add_argument("--out", required=True)
