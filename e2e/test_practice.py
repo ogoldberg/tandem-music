@@ -3,6 +3,7 @@ without a break (a WAV file looped): Practise goes round the melody with the son
 note on the melody roll: the A4 notes 40 cents sharp, the C5 note far flat. Stop keeps the marks, Keep pass makes the
 last pass a take, an edit to the melody clears the marks, and the project is unchanged by practising itself."""
 import json
+import re
 import os
 import tempfile
 from pathlib import Path
@@ -136,3 +137,62 @@ def test_play_stops_practising_and_there_is_nothing_to_practise_without_a_melody
     page.click("#play")
     expect(page.locator("#practice")).to_have_attribute("aria-pressed", "false")
     expect(page.locator("#practicestop")).to_be_hidden()
+
+
+# The microphone answers only when the test opens the gate, so Practise is held while it starts.
+GATE_MIC = """() => { const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); let open;
+  window.__micGate = new Promise(r => { open = r; }); window.__openMic = () => open();
+  navigator.mediaDevices.getUserMedia = async c => { await window.__micGate; return real(c); }; }"""
+
+
+@pytest.mark.parametrize("control", ["#play", "#stop", "#calibrate"])
+def test_play_stop_and_measure_cancel_a_practice_still_starting(practice_page, control):
+    page = practice_page
+    with_melody(page)
+    page.uncheck("#countin")
+    page.evaluate(GATE_MIC)
+    page.click("#practice")
+    # Still waiting for the microphone: nothing has started yet.
+    expect(page.locator("#practice")).to_have_attribute("aria-pressed", "false")
+    page.click(control)
+    page.evaluate("() => window.__openMic()")
+    if control == "#calibrate":
+        expect(page.locator("#status")).to_contain_text(re.compile("Measured the delay|Could not measure the delay"), timeout=20000)
+    # Practice never starts over the control: give a start that was not cancelled time to get going.
+    page.wait_for_timeout(1500)
+    expect(page.locator("#practice")).to_have_attribute("aria-pressed", "false")
+    expect(page.locator("#practicestop")).to_be_hidden()
+    expect(page.locator("#status")).not_to_contain_text("Sing the melody")
+    expect(page.locator("#status")).not_to_contain_text("Mic unavailable")
+    # The cancelled start leaves nothing behind: Practise starts again.
+    page.click("#stop")
+    page.click("#practice")
+    expect(page.locator("#practice")).to_have_attribute("aria-pressed", "true", timeout=8000)
+    page.click("#practicestop")
+
+
+def test_practise_a_marked_section_scores_only_its_notes(practice_page):
+    from test_playhead import drag_loop, loop_bounds
+    page = practice_page
+    with_melody(page)
+    page.uncheck("#countin")
+    drag_loop(page, 1.0, 2.0)
+    expect(page.locator("#loop")).to_have_attribute("aria-pressed", "true")
+    start, end = loop_bounds(page)
+    assert 0.9 <= start <= 1.1 and 1.9 <= end <= 2.1, (start, end)
+    page.click("#practice")
+    expect(page.locator("#status")).to_contain_text(f"Sing the marked section ({start:.1f} to {end:.1f} s)", timeout=8000)
+    page.wait_for_function("(document.getElementById('practiceinfo').dataset.passes | 0) >= 2", timeout=20000)
+    data = json.loads(page.locator("#practiceinfo").get_attribute("data-pass"))
+    assert abs(data["from"] - start) < 0.01 and abs(data["to"] - end) < 0.01, data
+    inside = [i for i, n in enumerate(NOTES) if data["from"] <= n["t"] < data["to"]]
+    assert inside == [1, 2], inside
+    scores = {s["i"]: s for s in data["scores"]}
+    assert sorted(scores) == inside, scores
+    assert scores[1]["pitch"] == "sharp" and abs(scores[1]["cents"] - SHARP) <= 8, scores[1]
+    assert scores[2]["pitch"] == "flat", scores[2]
+    assert data["summary"]["notes"] == 2, data["summary"]
+    # Only the section's notes are marked on the roll.
+    assert [x[0] for x in marks(page)] == [None, "sharp", "flat", None]
+    page.click("#practicestop")
+    expect(page.locator("#practice")).to_have_attribute("aria-pressed", "false")
