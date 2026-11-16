@@ -54,12 +54,15 @@ function tempoFit(onsets, bpm) {
 }
 
 // Estimate the tempo (integer bpm) from onset times in seconds, or null when there are
-// too few distinct onsets to say.
-export function estimateTempo(times) {
+// too few distinct onsets to say. range (GENRE.1: a genre's likely tempos) is searched instead of
+// TEMPO_RANGE; it must lie inside the project's 45..220.
+export function estimateTempo(times, { range = TEMPO_RANGE } = {}) {
+  const [lo, hi] = range;
+  if (!(Number.isFinite(lo) && Number.isFinite(hi) && lo >= 45 && hi <= 220 && lo < hi)) throw new Error("A tempo range lies inside 45..220 bpm.");
   const onsets = onsetTimes(times);
   if (onsets.length < MIN_ONSETS) return null;
   let bestBpm = null, bestScore = -Infinity;
-  for (let bpm = TEMPO_RANGE[0]; bpm <= TEMPO_RANGE[1] + 1e-9; bpm += TEMPO_STEP_BPM) {
+  for (let bpm = lo; bpm <= hi + 1e-9; bpm += TEMPO_STEP_BPM) {
     const score = tempoFit(onsets, bpm);
     if (score > bestScore + 1e-9) { bestScore = score; bestBpm = bpm; }
   }

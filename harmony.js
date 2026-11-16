@@ -101,7 +101,7 @@ export function chordsForKey(key) {
 // How well each chord fits the melody inside [start, end): overlap in beats counts +1 for a chord
 // tone, -0.5 for another note of the key and -1 for a note outside it. A note sounding on the
 // downbeat counts double.
-function fit(chord, notes, start, end, beat, scalePcs) {
+function fit(chord, notes, start, end, beat, scalePcs, prior = PRIOR) {
   let score = 0;
   for (const n of notes) {
     const overlap = Math.min(end, n.t + n.d) - Math.max(start, n.t);
@@ -110,7 +110,7 @@ function fit(chord, notes, start, end, beat, scalePcs) {
     const p = pc(n.m);
     score += chord.pcs.includes(p) ? w : scalePcs.includes(p) ? -0.5 * w : -w;
   }
-  return score + (PRIOR[chord.degree] || 0);
+  return score + (prior[chord.degree] || 0);
 }
 
 // Voice a triad inside CHORD_RANGE as close as possible to the previous voicing (smallest total
@@ -122,12 +122,12 @@ function voice(chord, previous) {
     if (!chord.pcs.includes(pc(bass))) continue;
     // Close position starting on this chord tone.
     const notes = [bass];
-    while (notes.length < 3) {
+    while (notes.length < chord.pcs.length) {
       let m = notes[notes.length - 1] + 1;
       while (!chord.pcs.includes(pc(m)) || notes.some(x => pc(x) === pc(m))) m++;
       notes.push(m);
     }
-    if (notes[2] > hi) continue;
+    if (notes[notes.length - 1] > hi) continue;
     const cost = previous
       ? notes.reduce((s, m, i) => s + Math.abs(m - previous[i]), 0)
       : Math.abs((notes[0] + notes[2]) / 2 - target);
@@ -136,13 +136,58 @@ function voice(chord, previous) {
   return best;
 }
 
+// GENRE.1 voicings (genre.js VOICINGS). "triad" is voice() above. "seventh" adds the key's seventh above
+// the root (a scale tone 10 or 11 semitones up: maj7, m7 or 7) in close position. "power" is the root, the
+// fifth and the octave, the root in E2..F3; "open" the root, the fifth and the third an octave up (a tenth),
+// the root in F2..E3. Each is placed nearest the previous chord (the first nearest the middle).
+const RHYTHM_STRIKES = { bar: 1, half: 2, beats: 4 };
+const POWER_ROOTS = [40, 53], OPEN_ROOTS = [41, 52];
+function seventhOf(chord, scalePcs) {
+  const s = [10, 11].map(x => (chord.root + x) % 12).find(p => scalePcs.includes(p));
+  return s === undefined ? chord : { ...chord, pcs: [...chord.pcs, s] };
+}
+function spread(chord, previous, [lo, hi], shape) {
+  const target = previous ? previous.reduce((a, b) => a + b, 0) / previous.length : null;
+  let best = null, bestCost = Infinity;
+  for (let r = lo; r <= hi; r++) {
+    if (pc(r) !== chord.root) continue;
+    const notes = shape(r), mean = notes.reduce((a, b) => a + b, 0) / notes.length;
+    const cost = target === null ? Math.abs(r - (lo + hi) / 2) : Math.abs(mean - target);
+    if (cost < bestCost - 1e-9) { best = notes; bestCost = cost; }
+  }
+  return best;
+}
+function voiceFor(chord, previous, voicing, scalePcs) {
+  if (voicing === "seventh") return voice(seventhOf(chord, scalePcs), previous);
+  if (voicing === "power") return spread(chord, previous, POWER_ROOTS, r => [r, r + 7, r + 12]);
+  if (voicing === "open") return spread(chord, previous, OPEN_ROOTS, r => [r, r + 7, r + (chord.quality === "major" ? 16 : 15)]);
+  return voice(chord, previous);
+}
+
+// GENRE.1 bass patterns (genre.js BASS_PATTERNS) for one bar from t: [offset in beats, length in beats,
+// semitones above the root]. "rootfifth" is today's (the root on 1, the fifth on 3). A walking line plays
+// the root, third and fifth, then the note a semitone below the next bar's root (the fifth again when the
+// chord stays), all inside the octave above the root.
+function bassBar(pattern, chord, next) {
+  const third = chord.quality === "major" ? 4 : 3;
+  if (pattern === "roots") return [0, 1, 2, 3].map(b => [b, 1, 0]);
+  if (pattern === "held") return [[0, 4, 0]];
+  if (pattern === "octaves") return Array.from({ length: 8 }, (_, i) => [i / 2, 0.5, i % 2 ? 12 : 0]);
+  if (pattern === "walk") {
+    const up = (((next.root - chord.root) % 12) + 12) % 12;
+    return [[0, 1, 0], [1, 1, third], [2, 1, 7], [3, 1, up === 0 ? 7 : up - 1]];
+  }
+  return [[0, 2, 0], [2, 2, 7]];
+}
+
 // Generate an accompaniment for the melody, one chord per 4/4 bar at the project tempo.
 // Bars start at the melody's first note, so a melody that starts on a downbeat lines up; a pickup
 // shifts the bar lines. Each bar takes the chord of the key that best fits the melody notes it
 // overlaps (see fit); a bar with no melody keeps the previous chord. style "chords" holds a
 // voiced triad for the bar; "bass" plays the root on beat 1 and the fifth on beat 3. key defaults to detectKey(notes).
+// feel (GENRE.1, genre.js harmonyStyle) is a genre's {prior, voicing, rhythm, bass}; null keeps all of the above.
 // Returns {key, chords:[{t,d,name,roman}], notes:[{m,t,d}]}; the input is unchanged.
-export function generateHarmony(project, { style = "chords", key = null } = {}) {
+export function generateHarmony(project, { style = "chords", key = null, feel = null } = {}) {
   if (!STYLES.includes(style)) throw new Error(`Unknown accompaniment style: ${style}`);
   const bpm = Number(project?.bpm);
   if (!Number.isFinite(bpm) || bpm <= 0) throw new Error("Set a tempo before generating harmony.");
@@ -164,7 +209,7 @@ export function generateHarmony(project, { style = "chords", key = null } = {}) 
     if (!sounding && picked.length) { picked.push(picked[picked.length - 1]); continue; }
     let best = null, bestScore = -Infinity;
     for (const c of chords) {
-      const s = fit(c, melody, start, stop, beat, scalePcs);
+      const s = fit(c, melody, start, stop, beat, scalePcs, feel ? feel.prior : PRIOR);
       if (s > bestScore + 1e-9) { best = c; bestScore = s; }
     }
     picked.push(best);
@@ -175,6 +220,18 @@ export function generateHarmony(project, { style = "chords", key = null } = {}) 
   picked.forEach((c, b) => {
     const t = round3(origin + b * bar);
     chordList.push({ t, d: round3(bar), name: c.name, roman: c.roman });
+    if (feel) {
+      const at = origin + b * bar;
+      if (style === "chords") {
+        const voiced = voiceFor(c, previous, feel.voicing, scalePcs), strikes = RHYTHM_STRIKES[feel.rhythm] || 1, each = bar / strikes;
+        previous = voiced;
+        for (let k = 0; k < strikes; k++) for (const m of voiced) notes.push({ m, t: round3(at + k * each), d: round3(each * RELEASE) });
+      } else {
+        const root = BASS_LOW + ((c.root - BASS_LOW) % 12 + 12) % 12;
+        for (const [off, len, up] of bassBar(feel.bass, c, picked[b + 1] || picked[0])) notes.push({ m: root + up, t: round3(at + off * beat), d: round3(len * beat * RELEASE) });
+      }
+      return;
+    }
     if (style === "chords") {
       const voiced = voice(c, previous);
       previous = voiced;

@@ -474,6 +474,42 @@ def test_lyrics_module_is_served_and_precached(client):
     assert "from \"./lyrics.js\"" in run(client("GET","/notation.js")).text
     assert "'./lyrics.js'" in run(client("GET","/sw.js")).text
 
+def test_genre_module_is_served_and_precached(client):
+    # GENRE.1: the studio's module script imports genre.js statically, so it cannot start offline without it.
+    js=run(client("GET","/genre.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export const GENRES" in js.text
+    assert "from './genre.js'" in run(client("GET","/")).text
+    assert "'./genre.js'" in run(client("GET","/sw.js")).text
+
+def test_chat_project_accepts_a_genre_or_none():
+    # GENRE.1: one of genre.js's ids, or none.
+    assert server.ChatProject().genre is None
+    for name in server.GENRE_IDS:
+        assert server.ChatProject(genre=name).genre==name
+    for bad in ("polka","",5,["jazz"]):
+        with pytest.raises(Exception):
+            server.ChatProject(genre=bad)
+    assert "genre" in server.SYSTEM
+
+def test_chat_is_told_the_genre_and_a_project_without_one_is_sent_as_before(client, monkeypatch):
+    monkeypatch.setenv("TANDEM_PROVIDER","openai-compatible")
+    seen=[]
+    async def fake(messages, config=None):
+        seen.append(messages[-1]["content"])
+        return '{"reply":"ok","actions":[]}'
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    project={"bpm":100,"notes":[{"m":60,"t":0,"d":0.5}],"drums":[]}
+    for genre in (None,"jazz"):
+        r=run(client("POST","/api/chat",json={"message":"hi","project":{**project,"genre":genre}}))
+        assert r.status_code==200, r.text
+    r=run(client("POST","/api/chat",json={"message":"hi","project":project}))
+    assert r.status_code==200, r.text
+    none_sent,jazz,without=seen
+    # No genre: the prompt starts with the project, as before GENRE.1, and carries no genre key.
+    assert none_sent==without and none_sent.startswith("Current project: ") and '"genre"' not in none_sent
+    assert jazz.startswith("Genre: "+server.GENRES["jazz"]+"\nCurrent project: ") and '"genre": "jazz"' in jazz
+
 def test_new_instruments_are_accepted_everywhere():
     # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.
     for name in ("organ","guitar","flute"):

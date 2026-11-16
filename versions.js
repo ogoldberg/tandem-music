@@ -40,6 +40,8 @@ export function projectFromState(state) {
     ...(Array.isArray(state.sections) && state.sections.length ? { sections: state.sections } : {}),
     // LYR.1: the words for the melody, when there are any (lyrics.js cleanLyrics).
     ...(typeof state.lyrics === "string" && state.lyrics.trim() ? { lyrics: state.lyrics } : {}),
+    // GENRE.1: the genre chosen for the song, when there is one (genre.js cleanGenre).
+    ...(typeof state.genre === "string" && state.genre ? { genre: state.genre } : {}),
     // MIX.1: the mixer, when anything in it differs from the defaults (mixer.js cleanMix).
     ...(state.mix && typeof state.mix === "object" && Object.keys(state.mix).length ? { mix: state.mix } : {}),
   };
