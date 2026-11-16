@@ -184,3 +184,22 @@ def test_the_guided_song_step_picks_a_genre(browser, server_url):
         expect(page.locator("#ginstrument")).to_have_value("chip")
         expect(page.locator("#ggroove")).to_have_value("four")
         page.screenshot(path=str(SHOTS / "guided-genre.png"))
+
+
+def test_a_version_keeps_its_genre_and_restoring_one_without_a_genre_clears_it(studio, tmp_path):
+    page = studio
+    open_tune(page, tmp_path)
+    page.fill("#versionname", "Plain")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: Plain")
+    page.select_option("#genre", "jazz")
+    page.fill("#versionname", "Jazzy")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: Jazzy")
+    page.select_option("#genre", "rock")
+    page.click('#versionlist button[title="Restore Jazzy"]')
+    expect(page.locator("#status")).to_contain_text("Restored version: Jazzy")
+    expect(page.locator("#genre")).to_have_value("jazz")
+    page.click('#versionlist button[title="Restore Plain"]')
+    expect(page.locator("#status")).to_contain_text("Restored version: Plain")
+    expect(page.locator("#genre")).to_have_value("")
