@@ -10,6 +10,8 @@ Someone with a song idea who does not know the advanced tools and has little tim
 
 A second way in (operator idea, 2026-11-15; scope confirmed 2026-11-16 on the recommendation the operator accepted): composing with the sound off, at night, on a train, or for someone who hears little or nothing. It sits beside singing, never replaces it: views that show what the notes and chords are (SILENT.1, SILENT.2) come first and are useful with the sound on too; anything aimed at Deaf and hard-of-hearing musicians beyond them waits until they have been asked (ROADMAP SILENT.5).
 
+A third way in (operator, 2026-11-16): practising your own song. Tandem measures pitch and timing against the melody (SING.1's pitch guide, VOX.1's scorer), so it can show which notes of a phrase you sang sharp, flat, early or late, and how that changes over takes (ROADMAP PRACTICE). It coaches pitch and timing only: breath, posture, strain and tone quality are not judged, because a microphone cannot measure them reliably and a wrong verdict could harm a voice. Practice on your own song comes first; generated exercises (scales, intervals) wait until practice has been tried.
+
 ## Principles
 - Human idea first. Never silently overwrite a recording or the intended melody.
 - Conversational **and** visual control: music should be approachable without DAW expertise.
