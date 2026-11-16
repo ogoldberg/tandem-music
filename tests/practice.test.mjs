@@ -156,7 +156,7 @@ test("foldCents takes the nearest octave", () => {
   assert.equal(Math.round(foldCents(72.3, 60).cents), 30);
   assert.equal(foldCents(72.3, 60).octave, 1);
   assert.deepEqual(foldCents(60.2, 60).octave, 0);
-  assert.equal(Math.round(foldCents(47.6, 60).cents), 160);
+  assert.equal(Math.round(foldCents(47.6, 60).cents), -40);
   assert.equal(foldCents(47.6, 60).octave, -1);
 });
 
