@@ -148,9 +148,17 @@ def test_the_summary_pools_every_recording():
     assert s["to_note_median"] == pytest.approx(0.0) and s["to_note_abs_median"] == pytest.approx(0.0)
     assert s["to_note_abs_p90"] == pytest.approx(0.2)
     assert s["within_100ms"] == pytest.approx(5 / 6) and s["within_250ms"] == pytest.approx(5 / 6)
+    # Less the median (0): the same words.
+    assert s["shifted_abs_median"] == pytest.approx(0.0) and s["shifted_within_100ms"] == pytest.approx(5 / 6)
     assert (s["audio_minutes"], s["seconds_per_minute"]) == (2.0, 4.5)
+    late = spike.summarize([spike.score_recording(REF, ONSETS, hyp(
+        ("twinkle", 0.2), ("twinkle", 2.2), ("little", 4.0), ("star", 6.25)))], 60.0, 1.0)
+    # 200, 200 and 250 ms late: none within 100 ms, all of them once the 200 ms median is taken away.
+    assert late["within_100ms"] == 0 and late["shifted_within_100ms"] == 1
+    assert late["shifted_abs_median"] == pytest.approx(0.0)
     empty = spike.summarize([], 0.0, 0.0)
     assert empty["wer"] is None and empty["within_100ms"] is None and empty["seconds_per_minute"] is None
+    assert empty["shifted_within_100ms"] is None
 
 
 def test_score_and_table_from_a_run(tmp_path, capsys):
@@ -166,4 +174,4 @@ def test_score_and_table_from_a_run(tmp_path, capsys):
     assert r["wer"] == 0 and r["timed_words"] == 3 and r["per_recording"] == {"en001a": 0}
     out = capsys.readouterr().out
     assert "| mlx-small.en | 4 | 0.0% | 0 / 0 / 0 | 0.0%, 0.0% | 3.0 |" in out
-    assert "| mlx-small.en | 3 | 0 | 100 | 180 | 66.7% | 100.0% | 50 |" in out
+    assert "| mlx-small.en | 3 | 0 | 100 | 180 | 66.7% | 100.0% | 50 | 100, 66.7% |" in out

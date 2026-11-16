@@ -212,6 +212,10 @@ def summarize(recordings, audio_seconds, run_seconds):
     to_note = [x for r in recordings for x in r["to_note"]]
     to_onset = [x for r in recordings for x in r["to_onset"]]
     absn = [abs(x) for x in to_note]
+    # The same after taking away the run's own median offset (fitted on these words): what a fixed correction
+    # could reach at best, against the spread no fixed correction removes.
+    shift = percentile(to_note, 0.5)
+    absd = [abs(x - shift) for x in to_note]
     per = sorted((r["sub"] + r["del"] + r["ins"]) / r["ref"] for r in recordings if r["ref"])
     return {
         "recordings": len(recordings), "words": ref, "wer": errors / ref if ref else None,
@@ -223,6 +227,8 @@ def summarize(recordings, audio_seconds, run_seconds):
         "to_note_abs_p90": percentile(absn, 0.9),
         "within_100ms": sum(x <= 0.1 for x in absn) / len(absn) if absn else None,
         "within_250ms": sum(x <= 0.25 for x in absn) / len(absn) if absn else None,
+        "shifted_abs_median": percentile(absd, 0.5),
+        "shifted_within_100ms": sum(x <= 0.1 for x in absd) / len(absd) if absd else None,
         "to_onset_abs_median": percentile([abs(x) for x in to_onset], 0.5),
         "audio_minutes": audio_seconds / 60, "run_seconds": run_seconds,
         "seconds_per_minute": run_seconds / (audio_seconds / 60) if audio_seconds else None,
@@ -387,11 +393,12 @@ def cmd_table(a):
         print(f"| {k} | {r['words']} | {pct(r['wer'])} | {r['sub']} / {r['del']} / {r['ins']} | "
               f"{pct(r['wer_median_recording'])}, {pct(r['wer_worst_recording'])} | {r['seconds_per_minute']:.1f} |")
     print()
-    print("| Run | Words timed | Start - note (median, ms) | abs median | abs 90% | within 100 ms | within 250 ms | to nearest onset (abs median) |")
-    print("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    print("| Run | Words timed | Start - note (median, ms) | abs median | abs 90% | within 100 ms | within 250 ms | to nearest onset (abs median) | less the median: abs median, within 100 ms |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for k, r in results.items():
         print(f"| {k} | {r['timed_words']} | {ms(r['to_note_median'])} | {ms(r['to_note_abs_median'])} | "
-              f"{ms(r['to_note_abs_p90'])} | {pct(r['within_100ms'])} | {pct(r['within_250ms'])} | {ms(r['to_onset_abs_median'])} |")
+              f"{ms(r['to_note_abs_p90'])} | {pct(r['within_100ms'])} | {pct(r['within_250ms'])} | {ms(r['to_onset_abs_median'])} | "
+              f"{ms(r['shifted_abs_median'])}, {pct(r['shifted_within_100ms'])} |")
 
 
 def main(argv=None):
