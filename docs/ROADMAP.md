@@ -410,6 +410,25 @@ Seeing and shaping the music with the volume off: at night, on a train, or for s
 - [ ] **SILENT.5** *(HUMAN)* Talk to Deaf and hard-of-hearing musicians before building past SILENT.2
   - What they would want from a silent way in, what vocabulary and views make sense to them, and whether SILENT.4 is worth pursuing; the related work above co-designed with Deaf participants. Record what was learned in `docs/PRODUCT.md`.
 
+### 9c. Practise singing your own song (operator idea, 2026-11-16)
+Tandem as a pitch-and-timing coach for the person's own song, built from what it already measures (SING.1's live YIN guide, VOX.1's cents scorer, REC.2/REC.3's count-in and lining up, TAKE.1's kept takes). Scope in `docs/PRODUCT.md`, Who it is for: pitch and timing only, never breath, posture, strain or tone; practice on the person's own melody first, generated exercises later. Asked by the operator on 2026-11-16 ("add that to the roadmap and build it"), after the recommendation to start with practice on the own song.
+- [ ] **PRACTICE.1** Practise a phrase: loop it, sing it, see each note scored
+  - **Depends:** SING.1, REC.2, PLAY.1
+  - A Practice mode on a stretch of the song (the Timeline's dragged section, or a melody phrase from `phrases.js`): it loops the stretch with the song, records each pass through the existing capture path without keeping it as a take unless asked, and scores every melody note in it from the pass's pitch (YIN, the SING.1 tracker run on the pass): median cents off the note over its held part, time to settle within 50 cents, steadiness (spread in cents), and onset early/late against the note's start in ms; a note not sung is marked missed. The scores are drawn on the melody roll (`data-` attributes for tests) and summed up for the pass (notes within 25 cents, the worst note). A pass can be kept as a take. Nothing in the project changes unless a pass is kept.
+  - **Acceptance:** Node tests on synthetic sung passes (in tune, a steady 40 cents sharp, late by 120 ms, a missed note, vibrato around the right pitch counted in tune) give the expected per-note scores; a Chromium test with a fake microphone playing a known line loops a phrase, scores it and shows the marks on the roll; Practice leaves the project unchanged unless a pass is kept.
+- [ ] **PRACTICE.2** Your range and your progress
+  - **Depends:** PRACTICE.1
+  - The lowest and highest notes held steadily across passes and takes, kept on the device (not in the project); per phrase, the pass scores over days, so the person sees whether a phrase is getting better. Kept in IndexedDB beside the draft.
+  - **Acceptance:** Node tests of the range and history from fixture passes; a Chromium test that the range and a phrase's history survive a reload.
+- [ ] **PRACTICE.3** Warm-ups and exercises in your range
+  - **Depends:** PRACTICE.2
+  - Scales, arpeggios, intervals and sirens generated as ordinary melody notes inside the person's range, practised with PRACTICE.1. Build only after PRACTICE.1 and PRACTICE.2 have been tried on real singing.
+  - **Acceptance:** Node tests that each exercise stays in range, in the key and at the tempo; a Chromium test practises one.
+- [ ] **PRACTICE.4** The chat explains a practice score in words
+  - **Depends:** PRACTICE.1, AI.2
+  - The prompt carries the pass's per-note scores; the reply describes patterns (flat on high notes at phrase ends) and is labelled as the model's reading of the measurements. No actions beyond today's allowlist.
+  - **Acceptance:** tests with a mocked provider that the prompt carries the scores and the reply's actions are filtered as today.
+
 ### 10. Later
 - [x] **ARR.1** Better arrangement: richer instruments, harmony, swing and phrase-aware editing
   - **Depends:** CI.2
