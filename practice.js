@@ -10,7 +10,8 @@ import { noteName } from "./contour.js";
 export const IN_TUNE = 25;        // cents: a settled note within this reads as in tune
 export const SETTLED = 50;        // cents: the voice has settled on the note once it stays this close...
 export const SETTLE_RUN = 3;      // ...for this many readings in a row (about 50 ms)
-export const ONSET_CENTS = 100;   // cents: the note has come in at the first reading this close to it
+export const ONSET_CENTS = 50;    // cents: the note has come in at the first reading this close to it (nearer it than
+                                  // any other semitone, so the note a step below or above is never taken for its onset)
 export const ONSET_EARLY = 0.25;  // seconds before a note's start a reading can still be its onset
 export const ON_TIME = 0.1;       // seconds: an onset within this of the note's start is on time
 export const MIN_SUNG = 0.25;     // a note is sung when voiced readings cover at least this share of it...
