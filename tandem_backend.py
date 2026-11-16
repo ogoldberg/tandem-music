@@ -215,6 +215,10 @@ def tension_js():
 def drawline_js():
     return FileResponse(Path(__file__).resolve().parent / "drawline.js", media_type="text/javascript")
 
+@app.get("/practice.js", include_in_schema=False)
+def practice_js():
+    return FileResponse(Path(__file__).resolve().parent / "practice.js", media_type="text/javascript")
+
 @app.get("/sections.js", include_in_schema=False)
 def sections_js():
     return FileResponse(Path(__file__).resolve().parent / "sections.js", media_type="text/javascript")

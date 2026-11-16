@@ -444,6 +444,14 @@ def test_drawline_module_is_served_and_precached(client):
     assert "from './drawline.js'" in run(client("GET","/")).text
     assert "'./drawline.js'" in run(client("GET","/sw.js")).text
 
+def test_practice_module_is_served_and_precached(client):
+    # PRACTICE.1: the studio's module script imports practice.js statically, so it cannot start offline without it.
+    js=run(client("GET","/practice.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function scorePass" in js.text
+    assert "from './practice.js'" in run(client("GET","/")).text
+    assert "'./practice.js'" in run(client("GET","/sw.js")).text
+
 def test_chat_project_accepts_lyrics_as_lyrics_js_keeps_them():
     # LYR.1: the words typed for the melody, as text, at most lyrics.js MAX_LYRICS characters.
     assert server.ChatProject().lyrics==""
