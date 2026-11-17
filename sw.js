@@ -3,7 +3,7 @@
 const CACHE='tandem-v60';
 // Self-hosted vendor files (Basic Pitch, instrument samples) never change at a given path, so they are
 // cached the first time they are used, served from the cache first, and kept when CACHE is bumped.
-const VENDOR='tandem-vendor-1';
+const VENDOR='tandem-vendor-2';
 const ASSETS=['./','./history.js','./versions.js','./groove.js','./voices.js','./contour.js','./harmony.js','./phrases.js','./storage.js','./recordings.js','./samples.js','./manifest.webmanifest','./capture','./ideas.js','./bundle.js','./daw.js','./notation.js','./dawproject.js','./midi.js','./noteedit.js','./guide.js','./playhead.js','./evolution.js','./take.js','./pitch.js','./beats.js','./latency.js','./mixer.js','./layers.js','./takes.js','./sections.js','./tension.js','./drawline.js','./practice.js','./exercises.js','./lyrics.js','./genre.js','./beatbox.js','./tuning.js','./worldtune.js','./tuneworker.js','./capture.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-maskable-512.png','./icons/apple-touch-icon.png'];
 // VOX.4: the WORLD WebAssembly build is small (about 100 KB) and tuning on the device is what works
 // with no network, so it goes into the vendor cache at install instead of on first use.

@@ -288,7 +288,7 @@ def test_persistent_storage_is_requested_when_the_first_idea_is_kept(phone, gran
 
 VENDOR_CACHED = """async files => {
   for (let i = 0; i < 50; i++) {
-    const c = await caches.open('tandem-vendor-1');
+    const c = await caches.open('tandem-vendor-2');
     if ((await Promise.all(files.map(f => c.match(f)))).every(Boolean)) return true;
     await new Promise(r => setTimeout(r, 100));
   }
@@ -304,7 +304,7 @@ def test_vendor_files_are_cached_on_first_use_and_served_offline(phone_on_own_se
     wait_for_service_worker(page)
     page.reload()  # now the worker controls the page
     page.wait_for_function("!!navigator.serviceWorker.controller")
-    files = ["/vendor/basic-pitch-1.0.1/model/model.json", "/vendor/gm-samples-1/bass/24.mp3"]
+    files = ["/vendor/basic-pitch-1.0.1-2/model/model.json", "/vendor/gm-samples-1/bass/24.mp3"]
     sizes = page.evaluate(FETCH_SIZES, files)
     assert all(size > 0 for size in sizes)
     assert page.evaluate(VENDOR_CACHED, files)

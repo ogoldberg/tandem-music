@@ -131,14 +131,14 @@ def transcription_script():
 # tools/basic-pitch/build.sh and their SHA-256 hashes are in SHA256SUMS. Only
 # these exact files are served; the versioned path never changes content, so
 # browsers may cache it forever.
-BASIC_PITCH_DIR = Path(__file__).resolve().parent / "vendor" / "basic-pitch-1.0.1"
+BASIC_PITCH_DIR = Path(__file__).resolve().parent / "vendor" / "basic-pitch-1.0.1-2"
 BASIC_PITCH_FILES = {
     "basic-pitch.mjs": "text/javascript",
     "model/model.json": "application/json",
     "model/group1-shard1of1.bin": "application/octet-stream",
 }
 
-@app.get("/vendor/basic-pitch-1.0.1/{name:path}", include_in_schema=False)
+@app.get("/vendor/basic-pitch-1.0.1-2/{name:path}", include_in_schema=False)
 def basic_pitch_asset(name: str):
     media_type = BASIC_PITCH_FILES.get(name)
     if media_type is None:

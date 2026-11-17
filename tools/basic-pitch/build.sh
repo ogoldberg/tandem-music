@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rebuild the self-hosted Basic Pitch bundle and model from the npm registry.
 #
-#   bash tools/basic-pitch/build.sh          # rebuild vendor/basic-pitch-1.0.1
+#   bash tools/basic-pitch/build.sh          # rebuild vendor/basic-pitch-1.0.1-2
 #   bash tools/basic-pitch/build.sh --check  # rebuild in a temp dir and fail if
 #                                            # the committed files differ
 #
@@ -12,7 +12,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
-dest="$repo/vendor/basic-pitch-1.0.1"
+dest="$repo/vendor/basic-pitch-1.0.1-2"
 check=0
 [ "${1:-}" = "--check" ] && check=1
 
@@ -99,7 +99,7 @@ cp "$work/node_modules/@spotify/basic-pitch/model/model.json" \
 (cd "$out" && shasum -a 256 basic-pitch.mjs model/model.json model/group1-shard1of1.bin > SHA256SUMS)
 
 if [ "$check" = 1 ]; then
-  diff -r "$out" "$dest" && echo "vendor/basic-pitch-1.0.1 matches a fresh build"
+  diff -r "$out" "$dest" && echo "vendor/basic-pitch-1.0.1-2 matches a fresh build"
 else
   rm -rf "$dest"
   mkdir -p "$(dirname "$dest")"
