@@ -140,6 +140,27 @@ def test_a_long_take_is_tuned_in_one_request_in_the_mac_app(page, desktop, tmp_p
     assert not problems, "Browser reported errors:\n" + "\n".join(problems)
 
 
+def test_tune_in_the_mac_app_uses_its_own_server_even_with_another_api_base(page, desktop, tmp_path):
+    """SEC.9: a custom API base saved earlier in the Mac app does not take Tune's server engine (and the
+    recording) to another server: Tune posts to the app's own origin with the launch secret."""
+    problems = open_app(page, desktop)
+    elsewhere = []
+    page.route("https://elsewhere.example/**", lambda route: (elsewhere.append(route.request.url), route.abort()))
+    api = []
+    page.on("request", lambda r: api.append(r) if "/api/tune" in r.url else None)
+    page.fill("#api", "https://elsewhere.example")
+    page.select_option("#mode", "vocal")
+    page.select_option("#tuneengine", "server")
+    page.set_input_files("#audiofile", str(held_tones_wav(tmp_path / "take.wav", 3)))
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Recorded 3\.0s\."))
+    page.click("#tune")
+    expect(page.locator("#status")).to_have_text("Pitch correction complete", timeout=60_000)
+    assert [r.url.split("?")[0] for r in api] == [desktop["url"] + "/api/tune"]
+    assert api[0].headers.get(desk.LAUNCH_HEADER) == desktop["secret"]
+    assert not [u for u in elsewhere if "/api/tune" in u], elsewhere
+    assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+
+
 def test_a_project_saved_to_a_folder_opens_with_its_audio_after_a_relaunch(page, desktop, browser, tmp_path):
     """DESK.3: Save to folder writes project.json and the recording as WAV into the folder the save
     dialog answers; after a relaunch (a new server and secret) in a browser profile with none of the
