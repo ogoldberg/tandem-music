@@ -1,17 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { EXERCISES, exerciseNotes, exerciseStart, BEATS_PER_BAR } from "../exercises.js";
+import { EXERCISES, exerciseNotes, exerciseStart, BEATS_PER_BAR, MAX_SECONDS } from "../exercises.js";
 import { SCALES } from "../contour.js";
 import { practiceSpan, scorePass } from "../practice.js";
 
 const KEYS = [{ tonic: 0, mode: "major" }, { tonic: 9, mode: "minor" }, { tonic: 6, mode: "major" }, { tonic: 3, mode: "minor" }];
-// At least 23 semitones, so an octave above any tonic fits.
-const RANGES = [{ low: 48, high: 71 }, { low: 55, high: 79 }, { low: 41, high: 66 }];
+// The wide ones fit an octave above any tonic; the narrow one only fits some exercises in some keys, so the start
+// note is pushed against the top of the range (the others are refused, checked below).
+const RANGES = [{ low: 48, high: 71 }, { low: 55, high: 79 }, { low: 41, high: 66 }, { low: 60, high: 72 }];
 const pcs = key => SCALES[key.mode].steps.map(s => (key.tonic + s) % 12);
 
 test("every exercise stays in the range, in the key and on the tempo's beats", () => {
   for (const ex of EXERCISES) for (const key of KEYS) for (const range of RANGES) for (const bpm of [60, 92, 140]) {
-    const r = exerciseNotes(ex.id, { key, range, bpm });
+    let r;
+    try { r = exerciseNotes(ex.id, { key, range, bpm }); } catch (e) {
+      assert.ok(range.high - range.low < 23, `${ex.id} refused in a wide range: ${e.message}`);
+      assert.match(e.message, /needs \d+ semitones/);
+      continue;
+    }
     const beat = 60 / bpm, half = beat / 2;
     assert.ok(r.notes.length >= 5, ex.id);
     for (const n of r.notes) {
@@ -74,6 +80,14 @@ test("an exercise starts a bar after the end of the song, on a bar line, and is 
     const span = practiceSpan(r.notes, { loop: { start: r.from, end: r.to } });
     assert.deepEqual([span.from, span.to], [r.from, r.to], ex.id + " at " + bpm);
   }
+});
+
+test("an exercise that would end after 600 s is refused, one that ends by then is not", () => {
+  const key = { tonic: 0, mode: "major" }, range = { low: 50, high: 74 }, bpm = 120;
+  assert.equal(MAX_SECONDS, 600);
+  const len = exerciseNotes("scale", { key, range, bpm }).to; // 16 beats at 120: 8 s
+  assert.doesNotThrow(() => exerciseNotes("scale", { key, range, bpm, start: MAX_SECONDS - len }));
+  assert.throws(() => exerciseNotes("scale", { key, range, bpm, start: exerciseStart(595, bpm) }), /would end at 606\.0 s, after the 600 s/);
 });
 
 test("an exercise sung exactly scores every note in tune", () => {

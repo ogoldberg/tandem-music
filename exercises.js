@@ -4,6 +4,8 @@
 import { SCALES, noteName } from "./contour.js";
 
 export const BEATS_PER_BAR = 4;
+// A project's notes end by 600 s (tandem_backend.py's note fields, sections.js MAX_TIME).
+export const MAX_SECONDS = 600;
 export const EXERCISES = Object.freeze([
   { id: "five", label: "Five-note scale", what: "up five notes of the scale and back, a beat each" },
   { id: "scale", label: "Scale", what: "up an octave of the scale and back, a beat each" },
@@ -67,7 +69,7 @@ export function exerciseStart(after, bpm) {
 
 // The exercise `id` as melody notes from `start` seconds: {notes, from, to, label, low, high}, `from`/`to` being the
 // stretch to practise. Throws with a message for the person when the key or range is missing or the exercise does not
-// fit in the range.
+// fit in the range, or would end after MAX_SECONDS.
 export function exerciseNotes(id, { key, range, bpm, start = 0 }) {
   const ex = EXERCISES.find(e => e.id === id);
   if (!ex) throw Error("Unknown exercise: " + id);
@@ -107,6 +109,10 @@ export function exerciseNotes(id, { key, range, bpm, start = 0 }) {
     at += s.beats * beat;
   }
   const ms = notes.map(n => n.m), last = notes.at(-1);
+  if (last.t + last.d > MAX_SECONDS) {
+    throw Error(ex.label + " would end at " + (last.t + last.d).toFixed(1) + " s, after the " + MAX_SECONDS
+      + " s a song can last: there is no room for it after this song.");
+  }
   return { notes, from: round3(start), to: round3(last.t + last.d), label: ex.label, low: Math.min(...ms), high: Math.max(...ms) };
 }
 
