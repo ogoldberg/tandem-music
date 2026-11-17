@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from playwright.sync_api import expect
 
+from tandem_backend import LOCKED_REPLY
 import tandem_desktop as desk
 from tandem_desktop.ai_keys import AISettings
 from tandem_desktop.projects import ProjectFolders
@@ -295,7 +296,8 @@ def test_your_own_ai_key_is_kept_out_of_the_page_and_an_edit_uses_it(page, stand
         page.click("#demo")
         page.fill("#prompt", "Make it faster")
         page.click("#chatform button[type=submit]")
-        expect(page.locator("#chat .bubble").last).to_have_text("Faster, and the melody is left alone.")
+        # Melody lock dropped the transpose, so the reply says so (AI.5) instead of only the model's words.
+        expect(page.locator("#chat .bubble").last).to_have_text("Faster, and the melody is left alone. " + LOCKED_REPLY)
         expect(page.locator("#bpm")).to_have_value("132")
         sent = stand_in_provider["seen"]
         assert len(sent) == 1 and sent[0]["path"] == "/v1/chat/completions"
