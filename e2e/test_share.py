@@ -199,7 +199,9 @@ def test_a_project_json_opens_over_the_recording_loaded_now(studio, tmp_path):
     page.wait_for_function("!document.body.inert")
     page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
     expect(page.locator("#status")).to_contain_text("Recorded")
-    held = page.evaluate(IDB_GET, "draft-audio")["original"]["id"]
+    linked = wait_for_draft_audio(page, ["original"])
+    assert linked, "the take was never linked from the draft"
+    held = linked["original"]["id"]
     project = {"format": "tandem-project", "version": 1, "bpm": 120, "notes": [{"m": 62, "t": 0, "d": 1}], "drums": []}
     page.set_input_files("#projectfile", {"name": "plain.json", "mimeType": "application/json", "buffer": json.dumps(project).encode()})
     expect(page.locator("#status")).to_have_text("Project opened")
@@ -218,7 +220,9 @@ def test_opening_a_tandem_file_without_a_recording_keeps_the_draft_as_a_version_
     page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
     expect(page.locator("#status")).to_contain_text("Recorded")
     expect(page.locator("#original")).to_be_enabled()
-    held = page.evaluate(IDB_GET, "draft-audio")["original"]["id"]
+    linked = wait_for_draft_audio(page, ["original"])
+    assert linked, "the take was never linked from the draft"
+    held = linked["original"]["id"]
     project = {"format": "tandem-project", "version": 1, "bpm": 120, "notes": [{"m": 62, "t": 0, "d": 1}], "drums": []}
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w") as z:
