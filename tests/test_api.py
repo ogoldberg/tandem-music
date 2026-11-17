@@ -1369,3 +1369,38 @@ def test_the_memory_store_is_never_used_on_vercel(client,monkeypatch):
     monkeypatch.setenv("TANDEM_RATE_LIMIT_STORE","memory")
     r=run(client("POST","/api/analyze?mode=melody",files={"file":("a.wav",short_tone(),"audio/wav")}))
     assert r.status_code==503 and "UPSTASH_REDIS_REST_URL" in r.json()["detail"]
+
+def test_portless_over_ipv4_forwards_a_mapped_loopback_address_and_is_this_computer(client,monkeypatch):
+    # PR #130 review P2: portless listening on both stacks sends an IPv4 browser as ::ffff:127.0.0.1.
+    monkeypatch.setenv("TANDEM_MODEL","m")
+    async def fake(messages,config=None,usage=None): return '{"reply":"ok","actions":[]}'
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    for value in ("::ffff:127.0.0.1",'for="[::ffff:127.0.0.1]:51000"'):
+        name="forwarded" if value.startswith("for=") else "x-forwarded-for"
+        assert run(client("POST","/api/chat",headers={name:value},json=CHAT_BODY)).status_code==200, value
+        r=run(client("POST","/api/analyze?mode=melody",headers={name:value},files={"file":("a.wav",short_tone(),"audio/wav")}))
+        assert r.status_code==200, value
+    # A mapped address of another machine is still another machine.
+    r=run(client("POST","/api/chat",headers={"x-forwarded-for":"::ffff:203.0.113.5"},json=CHAT_BODY))
+    assert r.status_code==503
+
+@pytest.mark.parametrize("value",["1"," 1 ","true","TRUE"])
+def test_allow_open_chat_reads_like_the_store_switch(client,monkeypatch,value):
+    monkeypatch.setenv("TANDEM_RATE_LIMIT_STORE","memory")
+    monkeypatch.setenv("TANDEM_ALLOW_OPEN_CHAT",value)
+    monkeypatch.setenv("TANDEM_MODEL","m")
+    async def fake(messages,config=None,usage=None): return '{"reply":"ok","actions":[]}'
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    assert run(remote_client("203.0.113.5")("POST","/api/chat",json=CHAT_BODY)).status_code==200
+
+def test_config_tells_another_machine_that_chat_is_closed(client,monkeypatch):
+    # PR #130 review P3: /api/config must not say chat is ready to a client that chat would refuse.
+    monkeypatch.setenv("TANDEM_MODEL","m")
+    here=run(client("GET","/api/config")).json()
+    assert here["ai_ready"] is True and here["ai_problem"]==""
+    there=run(remote_client("203.0.113.5")("GET","/api/config")).json()
+    assert there["ai_ready"] is False and "TANDEM_ACCESS_TOKEN" in there["ai_problem"]
+    assert there["capabilities"]["conversation"]["enabled"] is False
+    monkeypatch.setenv("TANDEM_ACCESS_TOKEN","secret")
+    there=run(remote_client("203.0.113.5")("GET","/api/config")).json()
+    assert there["ai_ready"] is True and there["requires_token"] is True

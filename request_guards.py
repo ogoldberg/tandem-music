@@ -44,9 +44,12 @@ def _loopback(address: str) -> bool:
     elif address.count(":") == 1:  # an IPv4 address with a port
         address = address.split(":")[0]
     try:
-        return ipaddress.ip_address(address).is_loopback
+        ip = ipaddress.ip_address(address)
     except ValueError:
         return False
+    # A proxy listening on both stacks (portless) names an IPv4 client as ::ffff:127.0.0.1.
+    mapped = getattr(ip, "ipv4_mapped", None)
+    return (mapped or ip).is_loopback
 
 
 def from_this_computer(scope) -> bool:
