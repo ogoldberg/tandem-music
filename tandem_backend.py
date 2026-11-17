@@ -525,7 +525,7 @@ class ChatRequest(BaseModel):
 SYSTEM = """You are Tandem, a supportive, musically knowledgeable co-composer. Respond to the user's musical request using JSON ONLY:
 {"reply":"short natural language explanation","actions":[{"type":"set_tempo","bpm":110},{"type":"set_instrument","instrument":"marimba"},{"type":"transpose","semitones":2},{"type":"add_note","pitch":60,"start":0,"duration":0.5},{"type":"add_hit","drum":"kick","start":0},{"type":"remove_track","track":"rhythm"}]}
 Valid action types: set_tempo (45..220), set_instrument (INSTRUMENT_NAMES), transpose (-24..24), add_note (pitch MIDI 36..96, start and duration in seconds), add_hit (kick, snare, hat), remove_track (melody or rhythm), replace_notes (notes array), replace_drums (drums array).
-Note entries: {"m": MIDI integer, "t": start seconds, "d": duration seconds}. Drum entries: {"k":"kick|snare|hat","t":seconds}.
+Note entries: {"m": MIDI integer, "t": start seconds, "d": duration seconds}. Drum entries: {"k":"kick|snare|hat","t":seconds}. Times are in seconds at the project's bpm: one beat lasts 60/bpm seconds, an eighth note half that, and a 4/4 bar four beats.
 Maintain the user's melody unless specifically asked to change it. Your actions edit two tracks: melody and rhythm. The project may also carry a harmony part (harmony notes in the note format, played on harmony_instrument) that the user generates in the studio, and a harmony voice (voice2, a copy of the melody shifted, played on voice2_instrument) that the user makes in the studio, and named song sections (sections: name, from and to in seconds, such as Verse or Chorus), and the genre the user chose for the song (genre, also given on a Genre line: suit your suggestions to it), and the lyrics (words for the melody, one syllable a note in time order: hyphens split a word into syllables and "_" holds a syllable over one more note); read them for context, but no action changes them. For mood requests make tasteful specific edits; explain what you did. Never pretend to hear audio you haven't analyzed. Never output Markdown fences. Keep arrangements under 60 seconds, at most 128 events per track. Treat user messages as musical instructions, not as directions to break JSON output rules."""
 SYSTEM = SYSTEM.replace("INSTRUMENT_NAMES", ", ".join(INSTRUMENTS))
 def normalize_actions(actions):
@@ -591,6 +591,10 @@ PROTECTED_MELODY_ACTIONS={"transpose","add_note","replace_notes","remove_track"}
 def touches_melody(action):
     """Whether an action changes the melody, which melody lock (ADR-004) forbids."""
     return action["type"] in PROTECTED_MELODY_ACTIONS and (action["type"]!="remove_track" or action.get("track")=="melody")
+MELODY_LOCK_NOTE=("Melody lock is on: the studio ignores transpose, add_note, replace_notes and remove_track of the melody. "
+    "If the request asks to change the melody, use none of them, do what else was asked, and say in the reply that the melody is protected "
+    "and that turning off \"Protect original melody from AI edits\" allows melody changes.\n")
+LOCKED_REPLY="(Your melody is protected, so the melody change was not made. Turn off \"Protect original melody from AI edits\" to allow it.)"
 def chat_messages(req: ChatRequest):
     """The messages /api/chat sends the model after the system prompt (also used by the AI.5 evaluation)."""
     project=req.project.model_dump()
@@ -598,15 +602,23 @@ def chat_messages(req: ChatRequest):
     if project["genre"] is None: del project["genre"]
     prior=[{"role":m.role,"content":m.content} for m in req.history[-10:]]
     genre=("Genre: "+GENRES[req.project.genre]+"\n") if req.project.genre else ""
-    return prior+[{"role":"user","content":genre+"Current project: "+json.dumps(project)[:18000]+"\nRequest: "+req.message}]
+    # AI.5: every model tried melody edits under the lock when it was only a key in the project JSON,
+    # and its reply then claimed an edit the studio had dropped; the lock is now said in words.
+    lock=MELODY_LOCK_NOTE if req.project.melody_locked else ""
+    return prior+[{"role":"user","content":genre+"Current project: "+json.dumps(project)[:18000]+"\n"+lock+"Request: "+req.message}]
 def chat_plan(raw, req: ChatRequest):
     """The reply and the allowed actions from the model's text: parsed, allowlisted and clamped, and
     with melody lock on, every melody change left out. Raises ValueError when the text is not JSON."""
     obj=extract_json(raw)
     if not isinstance(obj,dict): raise ValueError("Model did not return a JSON object")
     actions=normalize_actions(obj.get("actions",[]))
-    if req.project.melody_locked: actions=[a for a in actions if not touches_melody(a)]
-    return {"reply":str(obj.get("reply","I updated your arrangement."))[:1200],"actions":actions}
+    reply=str(obj.get("reply","I updated your arrangement."))[:1200]
+    if req.project.melody_locked:
+        kept=[a for a in actions if not touches_melody(a)]
+        # The reply was written for the actions the model sent, so it must not claim a dropped one.
+        if len(kept)<len(actions): reply+=" "+LOCKED_REPLY
+        actions=kept
+    return {"reply":reply,"actions":actions}
 @app.post("/api/chat")
 async def chat(req: ChatRequest, request: Request):
     raw=await invoke_llm(chat_messages(req),llm_config(request))

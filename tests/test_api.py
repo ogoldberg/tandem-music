@@ -135,6 +135,22 @@ def test_melody_lock_blocks_transcription_rewrites(client,monkeypatch):
     }}))
     assert response.status_code==200
     assert response.json()["actions"]==[{"type":"add_hit","drum":"kick","start":0.0}]
+    # AI.5: the reply was written for the dropped melody edits too, so it says they were not made.
+    assert response.json()["reply"]=="Added a rhythm "+server.LOCKED_REPLY
+
+def test_the_model_is_told_in_words_when_melody_lock_is_on(client,monkeypatch):
+    # AI.5: with the lock only a key in the project JSON, every model tried melody edits under it.
+    seen=[]
+    async def fake(messages, config=None):
+        seen.append(messages[-1]["content"])
+        return json.dumps({"reply":"Faster","actions":[{"type":"set_tempo","bpm":120}]})
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    for locked in (True,False):
+        r=run(client("POST","/api/chat",json={"message":"Faster","project":{"notes":[],"drums":[],"melody_locked":locked}}))
+        assert r.status_code==200 and r.json()["reply"]=="Faster"
+    assert server.MELODY_LOCK_NOTE+"Request: Faster" in seen[0]
+    assert "Melody lock" not in seen[1] and seen[1].endswith("\nRequest: Faster")
+    assert "one beat lasts 60/bpm seconds" in server.SYSTEM
 
 def test_chat_bad_model_reply(client,monkeypatch):
     async def fake(messages, config=None): return "Not JSON"
