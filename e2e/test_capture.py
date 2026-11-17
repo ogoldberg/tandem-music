@@ -446,8 +446,9 @@ def test_opening_an_idea_again_from_a_draft_already_kept_as_a_version_saves_no_n
     page.wait_for_function("!document.body.inert")
     page.click("#demo")
     expect(page.locator("#notecount")).to_have_text("8 notes")
-    page.wait_for_function("""() => new Promise(r => { const o = indexedDB.open('tandem'); o.onsuccess = () => {
-      const q = o.result.transaction('kv').objectStore('kv').get('draft'); q.onsuccess = () => { o.result.close(); r((q.result?.notes || []).length === 8); }; }; })""")
+    wait_until(page, """() => new Promise(r => { const o = indexedDB.open('tandem'); o.onsuccess = () => {
+      const q = o.result.transaction('kv').objectStore('kv').get('draft'); q.onsuccess = () => { o.result.close(); r((q.result?.notes || []).length === 8); }; }; })""",
+               "the draft with the demo's 8 notes is stored")
     page.goto("/capture")
     expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
     page.click(".idea >> text=Open in studio")
