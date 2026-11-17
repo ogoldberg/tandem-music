@@ -204,6 +204,20 @@ def test_the_model_is_told_in_words_when_melody_lock_is_on(client,monkeypatch):
     assert "Melody lock" not in seen[1] and seen[1].endswith("\nRequest: Faster")
     assert "one beat lasts 60/bpm seconds" in server.SYSTEM
 
+def test_the_chat_disclosure_matches_what_chat_sends():
+    # SEC.5 follow-up: the panel and SECURITY.md say chat sends the whole project and the recent chat;
+    # the band's description, layer and take names and earlier turns really go to the model, audio never.
+    req=server.ChatRequest(message="brighter",history=[{"role":"user","content":"earlier turn"}],project={
+        "band":{"id":"b-1","style":"lo-fi brushes","follows":"melody","seconds":12.5,"muted":False,"model":"musicgen-melody"},
+        "layers":[{"id":"l1","name":"Backing oohs","seconds":4}],"lyrics":"la la"})
+    sent=json.dumps(server.chat_messages(req))
+    for text in ("lo-fi brushes","Backing oohs","la la","earlier turn"): assert text in sent
+    panel=open("index.html",encoding="utf-8").read()
+    assert "sends your whole project" in panel and "and the recent chat to the configured AI model" in panel
+    assert "but no recordings" in panel
+    security=open("docs/SECURITY.md",encoding="utf-8").read()
+    assert "sends the whole project" in security and "the last 10 chat turns" in security
+
 def test_chat_bad_model_reply(client,monkeypatch):
     async def fake(messages, config=None): return "Not JSON"
     monkeypatch.setattr(server,"invoke_llm",fake)
