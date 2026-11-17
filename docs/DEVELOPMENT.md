@@ -90,6 +90,8 @@ Vercel project settings: https://vercel.com/oren-goldbergs-projects-c0a37bd5/tan
 | `TANDEM_ACCESS_TOKEN` | Shared personal access password for `/api/chat` | **Required on Vercel to use paid AI**; not per-user authentication |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Shared rate-limit store for the audio routes and chat | **Required on Vercel** or `/api/analyze` and `/api/tune` return 503. Add the Upstash Redis integration from the Vercel Marketplace (free tier); it sets these, or the equivalent `KV_REST_API_URL`/`KV_REST_API_TOKEN`, which are also accepted. Secret token; never commit |
 | `TANDEM_AUDIO_RATE_LIMIT`, `TANDEM_AUDIO_RATE_WINDOW_SECONDS` | Audio-route rate limit per client IP | Defaults 20 requests per 60 s; limits are listed in [SECURITY.md](SECURITY.md#request-limits-sec1) |
+| `TANDEM_ALLOW_OPEN_CHAT` | `1` (or `true`, `yes`) lets `/api/chat` answer without `TANDEM_ACCESS_TOKEN` for anyone, off Vercel only (SEC.8) | Unset: without a token, chat answers only requests from this computer (local development, the Mac app) and refuses others with 503. Ignored on Vercel |
+| `TANDEM_RATE_LIMIT_STORE` | `memory` uses the in-process rate-limit counter for every client when no Upstash store is set, off Vercel only (SEC.8) | Unset: without a store, only requests from this computer are served; others get 503 on the audio routes and chat. Set it for a single server that sees each client's own address, e.g. a phone on the LAN using a dev server's audio routes; not behind a proxy |
 | `TANDEM_CHAT_RATE_LIMIT`, `TANDEM_CHAT_RATE_WINDOW_SECONDS` | `/api/chat` rate limit per client IP, after the token check (SEC.5) | Defaults 10 requests per 60 s; uses the same store, so chat also returns 503 on Vercel without it |
 | `TANDEM_ALLOWED_ORIGINS` | Cross-origin requests | Usually unnecessary with single-origin deployment |
 | `TANDEM_MUSIC_PROVIDER`, `TANDEM_MUSIC_MODEL` | Reserved music-generation metadata | Setting these **does not enable** music generation; no adapter exists yet |
@@ -119,7 +121,8 @@ The provider key never belongs in browser JavaScript. Vercel production refuses 
 
 ## Troubleshooting
 
-- **503: “Set TANDEM_ACCESS_TOKEN...”**: Set the token in Vercel and reload/redeploy for paid chat; other audio endpoints should work without it.
+- **503: “Set TANDEM_ACCESS_TOKEN...”**: Set the token in Vercel and reload/redeploy for paid chat; other audio endpoints should work without it. Off Vercel the same 503 means chat was asked from another machine with no token: set a token, or `TANDEM_ALLOW_OPEN_CHAT=1` (SEC.8).
+- **503 naming `TANDEM_RATE_LIMIT_STORE`**: a server off Vercel with no Upstash store was asked from another machine (for example a phone on the LAN). Set `TANDEM_RATE_LIMIT_STORE=memory` for a single server, or configure Upstash (SEC.8).
 - **503: “Rate limiting unavailable...”** on an audio route: the Upstash Redis variables are missing on Vercel or the store is unreachable. Add the Upstash integration (or fix its variables) and redeploy.
 - **429: “Too many audio requests”**: the per-IP audio limit was hit; wait for `Retry-After` seconds or raise `TANDEM_AUDIO_RATE_LIMIT`.
 - **413**: the upload is over the app's 18 MB cap or Vercel's 4.5 MB request-body limit; record a shorter clip.

@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response, FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from request_guards import RequestGuardMiddleware, AUDIO_BODY_MAX_BYTES, LOCAL_AUDIO_BODY_MAX_BYTES, is_local
+from request_guards import RequestGuardMiddleware, AUDIO_BODY_MAX_BYTES, LOCAL_AUDIO_BODY_MAX_BYTES, is_local, from_this_computer
 
 app = FastAPI(title="Tandem API", version="0.2.0")
 
@@ -307,12 +307,21 @@ origins = [x.strip() for x in os.getenv("TANDEM_ALLOWED_ORIGINS", "http://localh
 # Added before CORS so CORS stays outermost and 413/429/503 guard responses carry CORS headers.
 app.add_middleware(RequestGuardMiddleware)
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET","POST","PUT","DELETE"], allow_headers=["*"])
+CHAT_CLOSED="Set TANDEM_ACCESS_TOKEN to protect AI spending (or TANDEM_ALLOW_OPEN_CHAT=1 off Vercel)"
+def chat_closed(scope) -> bool:
+    """SEC.8: with no access token, chat answers only this computer (off Vercel), or everyone off Vercel
+    when the operator sets TANDEM_ALLOW_OPEN_CHAT. On Vercel a token is always required."""
+    if os.getenv("TANDEM_ACCESS_TOKEN", ""): return False
+    if os.getenv("VERCEL"): return True
+    if os.getenv("TANDEM_ALLOW_OPEN_CHAT","").strip().lower() in ("1","true","yes"): return False
+    return not from_this_computer(scope)
+
 @app.middleware("http")
 async def authenticate(req: Request, call_next):
     if req.url.path == "/api/chat":
         secret=os.getenv("TANDEM_ACCESS_TOKEN", "")
-        if os.getenv("VERCEL") and not secret:
-            return Response('{"detail":"Set TANDEM_ACCESS_TOKEN in Vercel to protect AI spending"}',status_code=503,media_type="application/json")
+        if chat_closed(req.scope):
+            return Response(json.dumps({"detail":CHAT_CLOSED}),status_code=503,media_type="application/json")
         if secret and not hmac.compare_digest((req.headers.get("x-tandem-token") or "").encode(), secret.encode()):
             return Response('{"detail":"Invalid Tandem access token"}',status_code=401,media_type="application/json")
     return await call_next(req)
@@ -348,6 +357,7 @@ def config(request: Request):
     try: llm=llm_config(request); ai_problem=""
     except HTTPException as exc: llm={**env_llm_config(),"model":"","source":"your-settings"}; ai_problem=exc.detail
     provider,model,ready=llm["provider"],llm["model"],bool(llm["model"])
+    if ready and chat_closed(request.scope): ready=False; ai_problem=CHAT_CLOSED
     # MODEL.1: the Mac app's window is told which large models are installed; the hosted app has none.
     models=request.scope.get("tandem_models") if is_local(request.scope) else None
     return {"runtime":"desktop" if os.getenv("TANDEM_RUNTIME")=="desktop" else "web","models_installed":models.installed_ids() if models is not None else [],"limits":{k:v for k,v in limits_for(request).items() if k!="audio_bytes"},"provider":provider,"model":model,"ai_ready":ready,"ai_source":llm["source"],"ai_problem":ai_problem,"requires_token":bool(os.getenv("TANDEM_ACCESS_TOKEN")),"capabilities":{"conversation":{"provider":provider,"model":model,"enabled":ready},"melody_transcription":{"provider":"browser-basic-pitch","model":"spotify/basic-pitch-1.0.1","enabled":True},"rhythm_transcription":{"provider":"local-dsp","model":"onset-detector-v1","enabled":True},"vocal_polish":{"provider":"browser-dsp","model":"filter-gate-compressor-v1","enabled":True},"vocal_pitch_correction":{"provider":"open-source-world","model":"pyworld-prebuilt-0.3.6","enabled":True},"music_generation":{"provider":os.getenv("TANDEM_MUSIC_PROVIDER","none"),"model":os.getenv("TANDEM_MUSIC_MODEL",""),"enabled":False}}}

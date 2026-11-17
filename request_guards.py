@@ -5,10 +5,10 @@ serverless instances, whose in-process memory is not shared or persistent:
 
 - Upstash Redis (REST API) when ``UPSTASH_REDIS_REST_URL``/``UPSTASH_REDIS_REST_TOKEN``
   (or the Vercel KV names ``KV_REST_API_URL``/``KV_REST_API_TOKEN``) are set.
-- In-process memory only when NOT running on Vercel (local development), where a
-  single process serves every request.
-- On Vercel without a configured store, limited routes fail closed with 503 rather
-  than run unlimited. A store error also fails closed.
+- In-process memory only when NOT running on Vercel and either the request comes from
+  this computer (local development, the Mac app) or ``TANDEM_RATE_LIMIT_STORE=memory``
+  says one process serves every client by its own address (SEC.8).
+- Otherwise, limited routes fail closed with 503 rather than run unlimited. A store error also fails closed.
 """
 from __future__ import annotations
 
@@ -35,6 +35,45 @@ def is_local(scope) -> bool:
     """Whether tandem_desktop.guarded_app checked this request's launch secret. Nothing else
     sets this scope key, so the hosted app never lifts its limits."""
     return scope.get("tandem_local") is True
+
+
+def _loopback(address: str) -> bool:
+    address = address.strip().strip('"')
+    if address.startswith("["):  # Forwarded: for="[2001:db8::1]:443"
+        address = address[1:].split("]")[0]
+    elif address.count(":") == 1:  # an IPv4 address with a port
+        address = address.split(":")[0]
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    # A proxy listening on both stacks (portless) names an IPv4 client as ::ffff:127.0.0.1.
+    mapped = getattr(ip, "ipv4_mapped", None)
+    return (mapped or ip).is_loopback
+
+
+def from_this_computer(scope) -> bool:
+    """SEC.8: a request from this computer: the Mac app's own window (is_local), or a loopback socket
+    whose forwarding headers, if any, name only loopback addresses (a local dev proxy such as portless
+    forwarding a browser on this computer). A proxy on this computer forwarding another machine names
+    that machine, so it is not this computer. A proxy that sends no forwarding header at all makes
+    every request look local: such a deployment must set TANDEM_ACCESS_TOKEN and a store."""
+    if is_local(scope):
+        return True
+    client = scope.get("client")
+    if not client or not _loopback(client[0]):
+        return False
+    for name, value in scope.get("headers") or []:
+        if name in (b"x-forwarded-for", b"x-real-ip"):
+            addresses = value.decode("latin-1").split(",")
+        elif name == b"forwarded":
+            addresses = [part.split("=", 1)[1] for element in value.decode("latin-1").split(",")
+                         for part in element.split(";") if part.strip().lower().startswith("for=")]
+        else:
+            continue
+        if not all(_loopback(a) for a in addresses):
+            return False
+    return True
 
 
 class RateLimitUnavailable(Exception):
@@ -108,14 +147,19 @@ _memory_store = MemoryStore()
 upstash_transport: httpx.AsyncBaseTransport | None = None
 
 
-def resolve_store():
+def resolve_store(scope=None):
     url = os.getenv("UPSTASH_REDIS_REST_URL") or os.getenv("KV_REST_API_URL") or ""
     token = os.getenv("UPSTASH_REDIS_REST_TOKEN") or os.getenv("KV_REST_API_TOKEN") or ""
     if url and token:
         return UpstashStore(url, token, upstash_transport)
     if os.getenv("VERCEL"):
         raise RateLimitUnavailable("rate limiting needs UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN on Vercel")
-    return _memory_store
+    # SEC.8: one process's memory, keyed by socket address, is right for this computer and for a
+    # single server the operator chose it for; anything else fails closed.
+    if os.getenv("TANDEM_RATE_LIMIT_STORE", "").strip().lower() == "memory" or (scope is not None and from_this_computer(scope)):
+        return _memory_store
+    raise RateLimitUnavailable("rate limiting needs UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN, "
+                               "or TANDEM_RATE_LIMIT_STORE=memory for a single server that sees each client's own address")
 
 
 def reset_memory_store() -> None:
@@ -233,7 +277,7 @@ class RequestGuardMiddleware:
     async def _rate_limit(self, scope, kind):
         try:
             limit, window = audio_limit() if kind == "audio" else chat_limit()
-            store = resolve_store()
+            store = resolve_store(scope)
             window_index = math.floor(time.time() / window)
             key = f"tandem:rl:{kind}:{client_id(scope)}:{window_index}"
             count = await store.hit(key, window)
