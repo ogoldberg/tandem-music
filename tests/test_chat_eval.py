@@ -143,3 +143,37 @@ def test_cost_is_priced_from_the_tokens(tmp_path):
            "output_tokens": 100, "error": "", "json": True, "valid": True, "lock": True, "did": True, "price_in": 1.0, "price_out": 5.0}
     path = tmp_path / "r.jsonl"; path.write_text(json.dumps(row) + "\n")
     assert "| $0.00250 |" in ev.report([str(path)])
+
+
+def test_a_malformed_melody_edit_under_the_lock_still_fails_lock():
+    # Dropped by the allowlist (no semitones), but the model still tried to change the melody.
+    got = scored("locked-transpose", answer([{"type": "transpose"}]))
+    assert got["json"] and not got["valid"] and got["lock"] is False and not got["did"]
+
+
+def test_a_run_with_no_answer_is_not_scored_on_the_lock(tmp_path, monkeypatch):
+    async def slow(messages, config=None, usage=None):
+        raise server.HTTPException(504, "took longer than 75 seconds")
+    monkeypatch.setattr(server, "invoke_llm", slow)
+    out = tmp_path / "runs.jsonl"
+    ev.main(["run", "--provider", "ollama", "--model", "slow:1b", "--repeats", "1", "--case", "faster", "--out", str(out)])
+    row = json.loads(out.read_text())
+    assert row["error"] and row["lock"] is None and not row["did"]
+    # Rows written before this rule carry lock false with an error; the report leaves them out too.
+    ok = {**row, "error": "", "lock": True, "did": True}
+    out.write_text(json.dumps({**row, "lock": False}) + "\n" + json.dumps(ok) + "\n")
+    assert "| ollama slow:1b | 2 | 0% | 0% | 100% | 50% |" in ev.report([str(out)])
+
+
+@pytest.mark.parametrize("provider,base,free", [
+    ("ollama", "", True),
+    ("ollama", "https://ollama.example.com/v1", False),
+    ("openai-compatible", "http://localhost:1234/v1", True),
+    ("openai-compatible", "http://127.0.0.1:8080/v1", True),
+    ("openai-compatible", "http://[::1]:8080/v1", True),
+    ("openai-compatible", "https://localhost.example.com/v1", False),
+    ("openai-compatible", "https://api.example.com/localhost", False),
+    ("anthropic", "", False),
+])
+def test_only_this_machine_counts_as_free(provider, base, free):
+    assert ev.local(provider, base) is free

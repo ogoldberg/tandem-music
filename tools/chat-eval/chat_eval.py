@@ -16,7 +16,7 @@ plus the time to answer and the tokens in and out (cost from --price-in/--price-
     python tools/chat-eval/chat_eval.py run --provider ollama --model qwen3:8b --out runs.jsonl
     python tools/chat-eval/chat_eval.py report runs.jsonl [more.jsonl ...]
 
-A paid provider spends money: run asks for --spend unless the provider is ollama or the base URL is
+A paid provider spends money: run asks for --spend unless the provider is Ollama at its default address or the base URL is
 this machine. The key is read from the environment variable named by --key-env (TANDEM_API_KEY by
 default), never from the command line.
 """
@@ -28,6 +28,7 @@ import pathlib
 import statistics
 import sys
 import time
+import urllib.parse
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
@@ -165,13 +166,17 @@ def score(raw, req, check, proj):
     written = [a for a in obj.get("actions", [])] if isinstance(obj.get("actions"), list) else None
     allowed = server.normalize_actions(written or [])
     out["valid"] = written is not None and len(allowed) == len(written)
-    if req.project.melody_locked: out["lock"] = leaves_melody(allowed)
+    # Scored on what the model wrote, before the allowlist: a malformed melody edit still tried one.
+    if req.project.melody_locked:
+        out["lock"] = not any(server.touches_melody({"type": a.get("type"), "track": a.get("track")}) for a in written or [] if isinstance(a, dict))
     out["did"] = bool(check(plan["actions"], proj)) and out["lock"] is not False
     return out
 
 
 def local(provider, base_url):
-    return provider == "ollama" or any(h in (base_url or "") for h in ("localhost", "127.0.0.1", "[::1]"))
+    """Free to run: Ollama at its default address, or any provider at an address on this machine."""
+    if not base_url: return provider == "ollama"
+    return urllib.parse.urlsplit(base_url).hostname in ("localhost", "127.0.0.1", "::1")
 
 
 async def run_case(case, config, repeat):
@@ -185,8 +190,8 @@ async def run_case(case, config, repeat):
     except server.HTTPException as exc:
         raw, error = "", str(exc.detail)[:300]
     seconds = time.perf_counter() - started
-    scores = score(raw, req, check, req.project.model_dump()) if not error else {"json": False, "valid": False, "lock": False if req.project.melody_locked else None, "did": False}
-    return {"case": cid, "repeat": repeat, "provider": config["provider"], "model": config["model"], "seconds": round(seconds, 3),
+    scores = score(raw, req, check, req.project.model_dump()) if not error else {"json": False, "valid": False, "lock": None, "did": False}  # no answer: the lock is not scored
+    return {"case": cid, "repeat": repeat, "provider": config["provider"], "model": config["model"], "base_url": config["base_url"], "seconds": round(seconds, 3),
             "input_tokens": usage.get("input"), "output_tokens": usage.get("output"), "error": error, **scores, "raw": raw[:4000]}
 
 
@@ -205,7 +210,8 @@ async def run(args):
 
 
 def pct(rows, key):
-    scored = [r[key] for r in rows if r[key] is not None]
+    # A run with no answer (an error) has no lock score; rows written before that rule said False.
+    scored = [r[key] for r in rows if r[key] is not None and not (key == "lock" and r["error"])]
     return f"{100 * sum(scored) / len(scored):.0f}%" if scored else "-"
 
 
@@ -222,7 +228,7 @@ def report(paths):
         tout = [r["output_tokens"] for r in mine if r["output_tokens"] is not None]
         tokens = f"{statistics.mean(tin):.0f}/{statistics.mean(tout):.0f}" if tin and tout else "-"
         prices = {(r["price_in"], r["price_out"]) for r in mine}
-        if local(provider, ""): cost = "free (this Mac)"
+        if local(provider, mine[0].get("base_url", "")): cost = "free (this Mac)"
         elif tin and tout and len(prices) == 1 and None not in next(iter(prices)):
             pin, pout = next(iter(prices))
             cost = f"${(statistics.mean(tin) * pin + statistics.mean(tout) * pout) / 1e6:.5f}"

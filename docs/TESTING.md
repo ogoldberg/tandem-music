@@ -96,7 +96,7 @@ HARM.3 tests: `tests/tuning.test.mjs` checks `harmonyTargets` (a harmony note sp
 
 ## Chat model evaluation (AI.5)
 
-`tools/chat-eval/chat_eval.py` (see its README) asks a model 13 fixed cases through the studio's own chat path (`chat_messages`, `invoke_llm`, `chat_plan`) and scores valid JSON, valid actions, melody-lock respect and whether the edit did what was asked, with seconds and tokens. `tests/test_chat_eval.py` checks the scoring with a faked model: a right answer to every case scores full marks and each kind of wrong answer fails the score it should. The runs below (2026-11-17, 3 repeats a case) keep every answer in `tools/chat-eval/results/`.
+`tools/chat-eval/chat_eval.py` (see its README) asks a model 13 fixed cases through the studio's own chat path (`chat_messages`, `invoke_llm`, `chat_plan`) and scores valid JSON, valid actions, melody-lock respect (on what the model wrote, over the runs with an answer: a timeout is not scored) and whether the edit did what was asked, with seconds and tokens. `tests/test_chat_eval.py` checks the scoring with a faked model: a right answer to every case scores full marks and each kind of wrong answer fails the score it should. The runs below (2026-11-17, 3 repeats a case) keep every answer in `tools/chat-eval/results/`.
 
 **Local models, free leg** (Ollama 0.40.16 on an M5 with 32 GB, one model loaded at a time, the app's temperature 0.5 and 75 s timeout). First run, with melody lock only a key in the project JSON:
 
@@ -104,19 +104,19 @@ HARM.3 tests: `tests/tuning.test.mjs` checks `harmonyTargets` (a harmony note sp
 |---|---|---|---|---|---|---|---|---|---|
 | ollama gemma3:12b | 39 | 90% | 90% | 69% | 54% | 3.5 | 10.0 | 1130/84 | free (this Mac) |
 | ollama llama3.1:8b | 39 | 92% | 85% | 80% | 56% | 1.7 | 4.8 | 1109/55 | free (this Mac) |
-| ollama qwen3:14b | 39 | 62% | 62% | 55% | 56% | 52.4 | 75.0 | 1169/524 | free (this Mac) |
-| ollama qwen3:4b | 39 | 26% | 26% | 19% | 18% | 75.0 | 75.0 | 1172/2011 | free (this Mac) |
-| ollama qwen3:8b | 39 | 82% | 77% | 60% | 59% | 17.0 | 39.2 | 1138/423 | free (this Mac) |
+| ollama qwen3:14b | 39 | 62% | 62% | 89% | 56% | 52.4 | 75.0 | 1169/524 | free (this Mac) |
+| ollama qwen3:4b | 39 | 26% | 26% | 67% | 18% | 75.0 | 75.0 | 1172/2011 | free (this Mac) |
+| ollama qwen3:8b | 39 | 82% | 77% | 67% | 59% | 17.0 | 39.2 | 1138/423 | free (this Mac) |
 
-Every model obeyed "transpose the melody" and "add a high C" under the lock (0 of 15 runs each). The studio dropped those edits, but the reply still said the melody was transposed. So the prompt now says in words when the lock is on (`MELODY_LOCK_NOTE`), the system prompt says how long a beat is (most models had written eighth notes for 120 BPM at 100), and when the lock still drops an edit the reply gets `LOCKED_REPLY` instead of claiming it. qwen3:4b was dropped after the first run (most answers ran past 75 s); qwen2.5:7b was added. With the change:
+No model kept to the lock when asked to "transpose the melody" or "add a high C": every answer (12 of 15 and 11 of 15; the rest timed out) tried the melody edit. The studio dropped those edits, but the reply still said the melody was transposed. So the prompt now says in words when the lock is on (`MELODY_LOCK_NOTE`), the system prompt says how long a beat is (most models had written eighth notes for 120 BPM at 100), and when the lock still drops an edit the reply gets `LOCKED_REPLY` instead of claiming it. qwen3:4b was dropped after the first run (most answers ran past 75 s); qwen2.5:7b was added. With the change:
 
 | Model | Runs | JSON | Valid actions | Melody lock | Did what was asked | Median s | 90th pct s | Tokens in/out | Cost per request |
 |---|---|---|---|---|---|---|---|---|---|
 | ollama gemma3:12b | 39 | 79% | 79% | 80% | 51% | 5.1 | 10.5 | 1229/80 | free (this Mac) |
 | ollama llama3.1:8b | 39 | 90% | 85% | 79% | 51% | 2.6 | 6.3 | 1202/83 | free (this Mac) |
 | ollama qwen2.5:7b | 39 | 69% | 54% | 86% | 46% | 2.3 | 7.6 | 1233/86 | free (this Mac) |
-| ollama qwen3:14b | 39 | 69% | 67% | 66% | 64% | 47.3 | 75.0 | 1262/493 | free (this Mac) |
-| ollama qwen3:8b | 39 | 74% | 67% | 79% | 72% | 19.0 | 75.0 | 1239/497 | free (this Mac) |
+| ollama qwen3:14b | 39 | 69% | 67% | 91% | 64% | 47.3 | 75.0 | 1262/493 | free (this Mac) |
+| ollama qwen3:8b | 39 | 74% | 67% | 96% | 72% | 19.0 | 75.0 | 1239/497 | free (this Mac) |
 
 Did what was asked, by case (passes / runs):
 
@@ -129,7 +129,7 @@ Did what was asked, by case (passes / runs):
 | qwen3:8b | 3/3 | 3/3 | 2/3 | 2/3 | 0/3 | 3/3 | 2/3 | 2/3 | 3/3 | 2/3 | 3/3 | 3/3 | 0/3 |
 
 What the runs show:
-- Lock-respecting answers rose from 0/15 to 6/15 (transpose) and 0/15 to 5/15 (add a note). Some models now make an edit that was not asked for under the lock ("I adjusted the tempo and instrument instead"); the locked cases do not yet fail that.
+- Lock-respecting answers rose from 0 to 6 of 15 (transpose) and 0 to 5 of 15 (add a note); 4 and 3 more were not JSON, and the rest still tried the edit (the reply now says it was not made). Some models now make an edit that was not asked for under the lock ("I adjusted the tempo and instrument instead"); the locked cases do not yet fail that.
 - No model answered the plain-text injection with JSON. The studio then shows "AI returned an invalid edit plan", so nothing unsafe is applied, but it is a failed turn.
 - Eighth-note timing is still mostly wrong (2 passes in 15 runs across the five models), and gemma3, llama3.1 and qwen2.5 never managed "delete the last note and keep the rest" (the qwen3 models mostly did).
 - The qwen3 models think before answering: about six times the output tokens, a median of 19-47 s, and some answers time out at 75 s (a timeout now says so instead of an empty error).

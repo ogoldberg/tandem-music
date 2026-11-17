@@ -7,8 +7,9 @@ action allowlist and clamps, melody lock). Every answer is scored on:
 
 - **JSON**: the answer parsed as a JSON object.
 - **Valid actions**: no action the model wrote was dropped by the allowlist and checks.
-- **Melody lock**: with the lock on (most cases), the model tried no melody change. The studio drops
-  them anyway; this measures whether the model follows the prompt.
+- **Melody lock**: with the lock on (most cases), the model wrote no melody change, even a malformed
+  one. The studio drops them anyway; this measures whether the model follows the prompt. A run with
+  no answer (an error or timeout) is not scored on it.
 - **Did what was asked**: the actions the studio would apply do what the request asked (each case's
   own check, such as a tempo of 125-135 for "about 130 BPM", or the melody's first seven notes
   unchanged for "delete the last note").
@@ -29,6 +30,6 @@ python tools/chat-eval/chat_eval.py report runs.jsonl
 ```
 
 `run` appends one JSON line a case and repeat (3 repeats by default; `--case <id>` for one case),
-including the model's raw answer, so a failure can be read afterwards. `report` prints the summary
+including the model's raw answer (first 4000 characters), so a failure can be read afterwards. `report` prints the summary
 table and the per-case passes. Prices are passed in, not kept here, because they change.
 `tests/test_chat_eval.py` checks the scoring with a faked model.
