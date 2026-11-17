@@ -173,5 +173,40 @@ def test_score_and_table_from_a_run(tmp_path, capsys):
     r = json.loads((tmp_path / "results.json").read_text())["mlx-small.en"]
     assert r["wer"] == 0 and r["timed_words"] == 3 and r["per_recording"] == {"en001a": 0}
     out = capsys.readouterr().out
-    assert "| mlx-small.en | 4 | 0.0% | 0 / 0 / 0 | 0.0%, 0.0% | 3.0 |" in out
+    assert "| mlx-small.en | 1 (0) | 4 | 0.0% | 0 / 0 / 0 | 0.0%, 0.0% | 3.0 |" in out
     assert "| mlx-small.en | 3 | 0 | 100 | 180 | 66.7% | 100.0% | 50 | 100, 66.7% |" in out
+
+
+FAKE_CLI = """#!/usr/bin/env python3
+import json, pathlib, sys
+a = sys.argv
+wav, prefix = pathlib.Path(a[a.index("-f") + 1]), a[a.index("-of") + 1]
+if wav.stem == "en002a":
+    sys.exit(134)
+words = [("Twinkle", 0), ("twinkle", 2000), ("little", 4000), ("star", 6000)]
+segs = [{"text": " " + w, "offsets": {"from": t, "to": t + 300}} for w, t in words]
+pathlib.Path(prefix + ".json").write_text(json.dumps({"transcription": segs}))
+"""
+
+
+def test_a_recording_whisper_cpp_fails_on_is_kept_as_failed_and_left_out(tmp_path, capsys):
+    cli = tmp_path / "whisper-cli"
+    cli.write_text(FAKE_CLI)
+    cli.chmod(0o755)
+    names = ("en001a", "en002a", "en003a")
+    (tmp_path / "refs.json").write_text(json.dumps({n: {"words": REF, "onsets": ONSETS, "seconds": 60.0} for n in names}))
+    (tmp_path / "wav16").mkdir()
+    for n in names:
+        (tmp_path / "wav16" / f"{n}.wav").write_bytes(b"")
+    spike.main(["run", "--runtime", "cpp", "--model", "small.en", "--models", str(tmp_path / "models"),
+                "--out", str(tmp_path), "--whisper-cli", str(cli)])
+    run = json.loads((tmp_path / "runs" / "cpp-small.en.json").read_text())
+    assert run["recordings"]["en002a"]["error"] == "exit 134" and "raw" not in run["recordings"]["en002a"]
+    assert [len(run["recordings"][n]["raw"]) for n in ("en001a", "en003a")] == [4, 4]
+    assert run["seconds"] == pytest.approx(sum(run["recordings"][n]["seconds"] for n in ("en001a", "en003a")))
+    assert "2 recordings, 1 failed" in capsys.readouterr().out
+    spike.cmd_score(types.SimpleNamespace(out=str(tmp_path)))
+    r = json.loads((tmp_path / "results.json").read_text())["cpp-small.en"]
+    assert (r["recordings"], r["failed"], r["words"], r["wer"]) == (2, 1, 8, 0)
+    assert r["audio_minutes"] == 2.0 and set(r["per_recording"]) == {"en001a", "en003a"}
+    assert "| cpp-small.en | 2 (1) | 8 | 0.0% |" in capsys.readouterr().out

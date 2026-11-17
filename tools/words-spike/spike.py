@@ -206,7 +206,7 @@ def score_recording(ref_words, onsets, hyp_words):
             "to_note": to_note, "to_onset": to_onset}
 
 
-def summarize(recordings, audio_seconds, run_seconds):
+def summarize(recordings, audio_seconds, run_seconds, failed=0):
     ref = sum(r["ref"] for r in recordings)
     errors = sum(r["sub"] + r["del"] + r["ins"] for r in recordings)
     to_note = [x for r in recordings for x in r["to_note"]]
@@ -218,7 +218,7 @@ def summarize(recordings, audio_seconds, run_seconds):
     absd = [abs(x - shift) for x in to_note]
     per = sorted((r["sub"] + r["del"] + r["ins"]) / r["ref"] for r in recordings if r["ref"])
     return {
-        "recordings": len(recordings), "words": ref, "wer": errors / ref if ref else None,
+        "recordings": len(recordings), "failed": failed, "words": ref, "wer": errors / ref if ref else None,
         "sub": sum(r["sub"] for r in recordings), "del": sum(r["del"] for r in recordings),
         "ins": sum(r["ins"] for r in recordings),
         "wer_median_recording": percentile(per, 0.5), "wer_worst_recording": per[-1] if per else None,
@@ -356,7 +356,15 @@ def cmd_run(a):
     results, total = {}, 0.0
     for name in names:
         t = time.perf_counter()
-        raw = go(out / "wav16" / f"{name}.wav")
+        try:
+            raw = go(out / "wav16" / f"{name}.wav")
+        except subprocess.CalledProcessError as e:
+            # whisper.cpp can abort on a recording (v1.9.5 with --dtw large.v3.turbo: SIGABRT, no message):
+            # kept as a finding, left out of the scores and of the run's time, and the run goes on.
+            took = time.perf_counter() - t
+            results[name] = {"error": f"exit {e.returncode}", "seconds": took}
+            print(f"{name}: failed, exit {e.returncode}", flush=True)
+            continue
         took = time.perf_counter() - t
         total += took
         results[name] = {"raw": raw, "seconds": took}
@@ -365,7 +373,8 @@ def cmd_run(a):
     dest = out / "runs" / f"{label}-{a.model}.json"
     dest.parent.mkdir(exist_ok=True)
     dest.write_text(json.dumps({"runtime": label, "model": a.model, "recordings": results, "seconds": total}))
-    print(f"{label} {a.model}: {total:.0f} s for {len(names)} recordings")
+    failed = sum("error" in v for v in results.values())
+    print(f"{label} {a.model}: {total:.0f} s for {len(names) - failed} recordings" + (f", {failed} failed" if failed else ""))
 
 
 def cmd_score(a):
@@ -374,11 +383,13 @@ def cmd_score(a):
     results = {}
     for run in sorted((out / "runs").glob("*.json")):
         r = json.loads(run.read_text())
-        recs = [score_recording(refs[n]["words"], refs[n]["onsets"], hyp_words(v["raw"])) for n, v in r["recordings"].items()]
-        audio = sum(refs[n]["seconds"] for n in r["recordings"])
-        results[run.stem] = summarize(recs, audio, r["seconds"])
+        done = {n: v for n, v in r["recordings"].items() if "error" not in v}
+        recs = [score_recording(refs[n]["words"], refs[n]["onsets"], hyp_words(v["raw"])) for n, v in done.items()]
+        audio = sum(refs[n]["seconds"] for n in done)
+        results[run.stem] = summarize(recs, audio, sum(v["seconds"] for v in done.values()),
+                                      failed=len(r["recordings"]) - len(done))
         results[run.stem]["per_recording"] = {n: round((x["sub"] + x["del"] + x["ins"]) / x["ref"], 3)
-                                              for n, x in zip(r["recordings"], recs)}
+                                              for n, x in zip(done, recs)}
     (out / "results.json").write_text(json.dumps(results, indent=1))
     cmd_table(a)
 
@@ -386,12 +397,13 @@ def cmd_score(a):
 def cmd_table(a):
     results = json.loads((pathlib.Path(a.out) / "results.json").read_text())
     pct = lambda x: "-" if x is None else f"{100 * x:.1f}%"
+    num = lambda x: "-" if x is None else f"{x:.1f}"
     ms = lambda x: "-" if x is None else f"{1000 * x:+.0f}" if x < 0 else f"{1000 * x:.0f}"
-    print("| Run | Words | WER | Sub / del / ins | WER per recording (median, worst) | Seconds per minute sung |")
-    print("| --- | --- | --- | --- | --- | --- |")
+    print("| Run | Recordings (failed) | Words | WER | Sub / del / ins | WER per recording (median, worst) | Seconds per minute sung |")
+    print("| --- | --- | --- | --- | --- | --- | --- |")
     for k, r in results.items():
-        print(f"| {k} | {r['words']} | {pct(r['wer'])} | {r['sub']} / {r['del']} / {r['ins']} | "
-              f"{pct(r['wer_median_recording'])}, {pct(r['wer_worst_recording'])} | {r['seconds_per_minute']:.1f} |")
+        print(f"| {k} | {r['recordings']} ({r.get('failed', 0)}) | {r['words']} | {pct(r['wer'])} | {r['sub']} / {r['del']} / {r['ins']} | "
+              f"{pct(r['wer_median_recording'])}, {pct(r['wer_worst_recording'])} | {num(r['seconds_per_minute'])} |")
     print()
     print("| Run | Words timed | Start - note (median, ms) | abs median | abs 90% | within 100 ms | within 250 ms | to nearest onset (abs median) | less the median: abs median, within 100 ms |")
     print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
