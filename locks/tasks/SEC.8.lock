@@ -1,0 +1,7 @@
+{
+  "task_id": "SEC.8",
+  "agent_id": "agent-m5",
+  "branch": "feat/sec8-fail-closed",
+  "claimed_at": "2026-11-17T16:51:41Z",
+  "heartbeat": "2026-11-17T16:51:41Z"
+}
