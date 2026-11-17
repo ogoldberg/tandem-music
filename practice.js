@@ -22,14 +22,31 @@ export const MAX_SPAN = 60;       // seconds: the longest
 // Every reading of a mono pass `samples` at `rate`, fed to the guide's tracker in 128-frame blocks as the worklet is:
 // [{t, m}] with t in seconds from the pass's first frame plus `t0`, and m the MIDI pitch (fractional) or null.
 export function trackPass(samples, rate, t0 = 0) {
-  if (!(rate > 0)) throw Error("The pass needs a sample rate above zero");
-  const tr = createPitchTracker(rate), out = [];
-  for (let i = 0; i < samples.length; i += 128) {
-    for (const r of tr.push(samples.subarray(i, Math.min(samples.length, i + 128)), t0 + i / rate)) {
-      out.push({ t: r.t, m: r.hz ? hzToMidi(r.hz) : null });
-    }
-  }
+  const out = [];
+  for (const slice of tracking(samples, rate, t0)) out.push(...slice);
   return out;
+}
+
+// The same readings for a long recording, a slice at a time with `pause()` awaited between slices (PRACTICE.2 tracks a
+// whole take for the range without holding the page up).
+export async function trackInSlices(samples, rate, { pause = () => new Promise(r => setTimeout(r, 0)) } = {}) {
+  const out = [];
+  for (const slice of tracking(samples, rate, 0)) { out.push(...slice); await pause(); }
+  return out;
+}
+
+function* tracking(samples, rate, t0, sliceFrames = 1 << 17) {
+  if (!(rate > 0)) throw Error("The pass needs a sample rate above zero");
+  const tr = createPitchTracker(rate);
+  for (let s = 0; s < samples.length; s += sliceFrames) {
+    const out = [];
+    for (let i = s; i < Math.min(samples.length, s + sliceFrames); i += 128) {
+      for (const r of tr.push(samples.subarray(i, Math.min(samples.length, i + 128)), t0 + i / rate)) {
+        out.push({ t: r.t, m: r.hz ? hzToMidi(r.hz) : null });
+      }
+    }
+    yield out;
+  }
 }
 
 // The stretch to practise: the Timeline's marked section when there is one, else the chosen phrase, else the whole
@@ -176,5 +193,192 @@ export function createPassSplitter({ zero, length, rate }) {
       }
       return out;
     },
+  };
+}
+
+// PRACTICE.2: your range and your progress, kept on this device beside the draft (one IndexedDB key, never in the
+// project). The range is built from held notes: a run of readings that stays within HOLD_CENTS of its own average for
+// at least HOLD seconds is one held note at the nearest semitone to its median, so a passing slide or a reading an octave
+// out is never counted. Seconds held add up per semitone over every pass and recorded take; the range is the lowest and
+// highest semitones held for RANGE_MIN seconds in all. Progress is kept per stretch, named by its notes (phraseKey), as
+// one summary a day: passes, notes scored, in tune, on time, sung and the best pass's in-tune count.
+export const PRACTICE_KEY = "practice";
+export const HOLD = 0.3;          // seconds: the shortest steady run that counts as a held note
+export const HOLD_CENTS = 50;     // cents: how far a reading may be from the run's average and still be the same note
+export const HOLD_GAP = 2;        // unvoiced readings a held note may have inside it (a missed reading, not a breath)
+export const RANGE_MIN = 0.6;     // seconds: a semitone is in the range once it has been held this long in all
+export const MAX_PHRASES = 200;   // stretches kept; the one practised longest ago goes first
+export const MAX_DAYS = 366;      // days kept per stretch; the oldest goes first
+const MIDI_LOW = 21, MIDI_HIGH = 108;
+
+// The held notes in `readings` ([{t, m}], m null when unvoiced): [{m, from, seconds}] in time order.
+export function heldNotes(readings) {
+  const out = [];
+  if (!readings?.length) return out;
+  const step = readings.length > 1 ? Math.max(1e-3, (readings.at(-1).t - readings[0].t) / (readings.length - 1)) : 0.016;
+  let run = null, gap = 0;
+  const end = () => {
+    if (run && run.last - run.first + step >= HOLD) {
+      const ms = run.ms.sort((a, b) => a - b), m = Math.round(quantile(ms, 0.5));
+      if (m >= MIDI_LOW && m <= MIDI_HIGH) out.push({ m, from: round3(run.first), seconds: round3(run.last - run.first + step) });
+    }
+    run = null; gap = 0;
+  };
+  for (const r of readings) {
+    if (r.m === null || !Number.isFinite(r.m)) { if (run && ++gap > HOLD_GAP) end(); continue; }
+    if (run && Math.abs(r.m - run.sum / run.ms.length) * 100 > HOLD_CENTS) end();
+    if (!run) run = { first: r.t, last: r.t, ms: [], sum: 0 };
+    run.ms.push(r.m); run.sum += r.m; run.last = r.t; gap = 0;
+  }
+  end();
+  return out;
+}
+
+// A stretch's name for its history: its melody notes (pitch, start from the stretch's start, length, to the ms), hashed.
+// The same notes anywhere in any song are the same stretch; a stretch whose notes change starts a history of its own.
+export function phraseKey(notes, { from, to }) {
+  const inside = (notes ?? []).filter(n => n.t >= from && n.t < to)
+    .map(n => [n.m, Math.round((n.t - from) * 1000), Math.round(n.d * 1000)])
+    .sort((a, b) => a[1] - b[1] || a[0] - b[0] || a[2] - b[2]);
+  if (!inside.length) throw Error("No melody note starts in that stretch.");
+  const text = inside.map(x => x.join(":")).join(",");
+  return "p" + fnv(text, 0x811c9dc5) + fnv(text, 0x01000193 ^ 0x9e3779b9);
+}
+
+function fnv(text, seed) {
+  let h = seed >>> 0;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, "0");
+}
+
+// What a stretch is called in the history: its first notes' names ("A4 C5 E5 …") and how many notes it has.
+export function phraseLabel(notes, { from, to }) {
+  const inside = (notes ?? []).filter(n => n.t >= from && n.t < to).sort((a, b) => a.t - b.t || a.m - b.m);
+  return inside.slice(0, 4).map(n => noteName(n.m)).join(" ") + (inside.length > 4 ? " …" : "") + " (" + inside.length + " note" + (inside.length === 1 ? "" : "s") + ")";
+}
+
+// The local calendar day of a time in ms, "YYYY-MM-DD".
+export function dayOf(ms) {
+  const d = new Date(ms);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+const isDay = s => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+const count = x => Number.isInteger(x) && x >= 0;
+const EMPTY = () => ({ version: 1, range: { held: {}, passes: 0, takes: 0 }, phrases: [] });
+
+// The stored record, checked: undefined is an empty record; anything else that is not one this version can read is an
+// error, so it is never overwritten. Entries inside it that do not check out are dropped.
+export function cleanPracticeRecord(value) {
+  if (value === undefined || value === null) return EMPTY();
+  if (typeof value !== "object" || Array.isArray(value)) throw Error("Your saved range and progress are unreadable in this browser's storage.");
+  if (value.version !== 1) throw Error("Your range and progress were saved by a newer version of Tandem: reload to update.");
+  const out = EMPTY(), held = value.range?.held;
+  if (held && typeof held === "object") {
+    for (const [k, s] of Object.entries(held)) {
+      const m = Number(k);
+      if (Number.isInteger(m) && m >= MIDI_LOW && m <= MIDI_HIGH && Number.isFinite(s) && s > 0) out.range.held[m] = s;
+    }
+  }
+  if (count(value.range?.passes)) out.range.passes = value.range.passes;
+  if (count(value.range?.takes)) out.range.takes = value.range.takes;
+  for (const p of Array.isArray(value.phrases) ? value.phrases : []) {
+    if (!p || typeof p.key !== "string" || !/^p[0-9a-f]{16}$/.test(p.key) || !Number.isFinite(p.last)) continue;
+    const days = (Array.isArray(p.days) ? p.days : []).filter(d => d && isDay(d.day)
+      && ["passes", "notes", "inTune", "onTime", "sung", "best"].every(k => count(d[k])))
+      .map(({ day, passes, notes, inTune, onTime, sung, best }) => ({ day, passes, notes, inTune, onTime, sung, best }));
+    if (!days.length || out.phrases.some(q => q.key === p.key)) continue;
+    out.phrases.push({ key: p.key, label: String(p.label ?? "").slice(0, 80), song: String(p.song ?? "").slice(0, 80), last: p.last,
+      days: days.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0)).slice(-MAX_DAYS) });
+  }
+  out.phrases.sort((a, b) => b.last - a.last);
+  out.phrases = out.phrases.slice(0, MAX_PHRASES);
+  return out;
+}
+
+function addHeld(range, held) {
+  const next = { ...range.held };
+  for (const h of held ?? []) {
+    if (Number.isInteger(h.m) && h.m >= MIDI_LOW && h.m <= MIDI_HIGH && Number.isFinite(h.seconds) && h.seconds > 0) {
+      next[h.m] = round3((next[h.m] ?? 0) + h.seconds);
+    }
+  }
+  return next;
+}
+
+// The record with one more scored pass: its held notes added to the range and its summary to the stretch's day.
+export function withPass(record, { key, label = "", song = "", summary, held = [] }, now) {
+  const rec = cleanPracticeRecord(record);
+  if (typeof key !== "string" || !/^p[0-9a-f]{16}$/.test(key)) throw Error("A pass needs its stretch's key.");
+  if (!summary || !count(summary.notes) || !summary.notes) throw Error("A pass needs its scores.");
+  const day = dayOf(now), old = rec.phrases.find(p => p.key === key);
+  const days = old ? old.days.map(d => ({ ...d })) : [];
+  let today = days.find(d => d.day === day);
+  if (!today) { today = { day, passes: 0, notes: 0, inTune: 0, onTime: 0, sung: 0, best: 0 }; days.push(today); }
+  today.passes++; today.notes += summary.notes; today.inTune += summary.inTune; today.onTime += summary.onTime;
+  today.sung += summary.sung; today.best = Math.max(today.best, summary.inTune);
+  const phrase = { key, label: String(label || old?.label || "").slice(0, 80), song: String(song || old?.song || "").slice(0, 80), last: now, days: days.slice(-MAX_DAYS) };
+  return {
+    version: 1,
+    range: { held: addHeld(rec.range, held), passes: rec.range.passes + 1, takes: rec.range.takes },
+    phrases: [phrase, ...rec.phrases.filter(p => p.key !== key)].slice(0, MAX_PHRASES),
+  };
+}
+
+// The record with one more recorded take's held notes in the range.
+export function withTake(record, held) {
+  const rec = cleanPracticeRecord(record);
+  return { ...rec, range: { held: addHeld(rec.range, held), passes: rec.range.passes, takes: rec.range.takes + 1 } };
+}
+
+// The range: {low, high} MIDI notes held RANGE_MIN seconds or more in all, with the passes and takes it came from, or
+// null when no note has been held that long yet.
+export function vocalRange(record) {
+  const rec = cleanPracticeRecord(record);
+  const ms = Object.entries(rec.range.held).filter(([, s]) => s >= RANGE_MIN).map(([m]) => Number(m));
+  if (!ms.length) return null;
+  return { low: Math.min(...ms), high: Math.max(...ms), passes: rec.range.passes, takes: rec.range.takes };
+}
+
+export function rangeText(range) {
+  if (!range) return "Your range: not known yet. Hold a few notes while practising or recording.";
+  const from = [range.passes && range.passes + " pass" + (range.passes === 1 ? "" : "es"), range.takes && range.takes + " take" + (range.takes === 1 ? "" : "s")].filter(Boolean).join(" and ");
+  return "Your range: " + noteName(range.low) + (range.high > range.low ? " to " + noteName(range.high) : " only") + ", held steadily" + (from ? " over " + from : "") + ".";
+}
+
+// A stretch's history, oldest day first, or null when it has never been practised.
+export function phraseHistory(record, key) {
+  const p = cleanPracticeRecord(record).phrases.find(q => q.key === key);
+  return p ? { key: p.key, label: p.label, song: p.song, last: p.last, days: p.days } : null;
+}
+
+const shortDay = (day, today) => {
+  if (day === today) return "today";
+  const [y, m, d] = day.split("-").map(Number);
+  return d + " " + ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1] + (day.slice(0, 4) === today.slice(0, 4) ? "" : " " + y);
+};
+
+// One line on how a stretch has gone: the first day's best pass beside the latest day's, so the person sees whether it is
+// getting better. "First time practising this stretch." when there is no history.
+export function progressText(history, now) {
+  if (!history?.days.length) return "First time practising this stretch.";
+  const today = dayOf(now), days = history.days, passes = days.reduce((n, d) => n + d.passes, 0);
+  const notes = d => Math.round(d.notes / d.passes), best = d => d.best + " of " + notes(d) + " in tune";
+  const first = days[0], last = days.at(-1);
+  const total = " (" + passes + " pass" + (passes === 1 ? "" : "es") + (days.length > 1 ? " on " + days.length + " days" : "") + ")";
+  if (days.length === 1) return "Best pass " + shortDay(first.day, today) + ": " + best(first) + total + ".";
+  return "Best pass " + shortDay(first.day, today) + ": " + best(first) + "; " + shortDay(last.day, today) + ": " + best(last) + total + ".";
+}
+
+// The store over storage.js's key-value store: every change is one read-change-write transaction, so two tabs cannot
+// lose each other's passes.
+export function createPracticeStore(kv, { now = () => Date.now() } = {}) {
+  if (!kv || typeof kv.get !== "function" || typeof kv.update !== "function") throw TypeError("Expected a key-value store with get and update");
+  const change = fn => kv.update(PRACTICE_KEY, value => { const next = fn(value); return [next, next]; });
+  return {
+    async get() { return cleanPracticeRecord(await kv.get(PRACTICE_KEY)); },
+    addPass(pass) { return change(v => withPass(v, pass, now())); },
+    addTake(held) { return change(v => withTake(v, held)); },
+    forget() { return change(() => EMPTY()); },
   };
 }

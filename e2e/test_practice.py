@@ -196,3 +196,72 @@ def test_practise_a_marked_section_scores_only_its_notes(practice_page):
     assert [x[0] for x in marks(page)] == [None, "sharp", "flat", None]
     page.click("#practicestop")
     expect(page.locator("#practice")).to_have_attribute("aria-pressed", "false")
+
+
+IDB_PRACTICE = IDB_DRAFT.replace("get('draft')", "get('practice')")
+
+
+def history(page):
+    return json.loads(page.locator("#practiceprogress").get_attribute("data-history") or "[]")
+
+
+def test_your_range_and_a_stretchs_progress_are_kept_on_the_device_across_a_reload(practice_page):
+    """PRACTICE.2: each pass adds its held notes to the range and its scores to the stretch's day, kept in IndexedDB
+    beside the draft (never in the project); both are there after a reload, a recorded take adds to the range, and
+    Forget range and progress clears them."""
+    page = practice_page
+    with_melody(page)
+    page.uncheck("#countin")
+    before = page.evaluate(IDB_DRAFT)
+    expect(page.locator("#rangebox")).to_be_hidden()
+
+    page.click("#practice")
+    expect(page.locator("#practiceprogress")).to_have_text("First time practising this stretch.", timeout=8000)
+    page.wait_for_function("JSON.parse(document.getElementById('practiceprogress').dataset.history || '[]').reduce((n, d) => n + d.passes, 0) >= 2", timeout=20000)
+    page.click("#practicestop")
+    expect(page.locator("#practice")).to_have_attribute("aria-pressed", "false")
+    page.wait_for_timeout(300)
+    days = history(page)
+    assert len(days) == 1 and days[0]["passes"] >= 2, days
+    passes = days[0]["passes"]
+    # A4 40 cents sharp, held the whole time: the range is A4 alone; no pass had a note in tune.
+    assert days[0]["notes"] == 4 * passes and days[0]["inTune"] == 0 and days[0]["best"] == 0, days
+    expect(page.locator("#practiceprogress")).to_have_text(f"Best pass today: 0 of 4 in tune ({passes} passes).")
+    expect(page.locator("#rangebox")).to_be_visible()
+    rng = json.loads(page.locator("#vocalrange").get_attribute("data-range"))
+    assert rng == {"low": 69, "high": 69, "passes": passes, "takes": 0}, rng
+    expect(page.locator("#vocalrange")).to_have_text(f"Your range: A4 only, held steadily over {passes} passes.")
+    page.screenshot(path=str(SHOTS / "practice-progress.png"))
+    # Kept on the device, not in the project.
+    stored = page.evaluate(IDB_PRACTICE)
+    assert stored["version"] == 1 and stored["range"]["held"]["69"] > 2 and len(stored["phrases"]) == 1, stored
+    assert page.evaluate(IDB_DRAFT) == before
+
+    # After a reload the range is shown at once, and practising the same stretch picks up its history.
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    expect(page.locator("#vocalrange")).to_have_text(f"Your range: A4 only, held steadily over {passes} passes.")
+    page.uncheck("#countin")
+    page.click("#practice")
+    expect(page.locator("#practiceprogress")).to_have_text(f"Best pass today: 0 of 4 in tune ({passes} passes).", timeout=8000)
+    page.wait_for_function(f"JSON.parse(document.getElementById('practiceprogress').dataset.history || '[]').reduce((n, d) => n + d.passes, 0) > {passes}", timeout=20000)
+    page.click("#practicestop")
+    expect(page.locator("#practice")).to_have_attribute("aria-pressed", "false")
+
+    # A take recorded with Record adds its held notes to the range.
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording…", timeout=8000)
+    page.wait_for_timeout(1500)
+    page.click("#finish")
+    wait_until(page, "async () => !!document.getElementById('finish').dataset.take", "the take has finished")
+    page.wait_for_function("JSON.parse(document.getElementById('vocalrange').dataset.range || '{}').takes === 1", timeout=10000)
+    expect(page.locator("#vocalrange")).to_contain_text("and 1 take.")
+
+    # Forget clears the range and every stretch's history.
+    page.click("#practiceforget")
+    expect(page.locator("#status")).to_have_text("Forgot your range and progress on this device.")
+    expect(page.locator("#rangebox")).to_be_hidden()
+    assert page.evaluate(IDB_PRACTICE) == {"version": 1, "range": {"held": {}, "passes": 0, "takes": 0}, "phrases": []}
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    expect(page.locator("#rangebox")).to_be_hidden()

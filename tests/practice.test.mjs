@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import {
   trackPass, scorePass, passSummary, passText, noteScoreText, practiceSpan, foldCents, createPassSplitter,
   IN_TUNE, MIN_SPAN, MAX_SPAN,
+  heldNotes, trackInSlices, phraseKey, phraseLabel, dayOf, cleanPracticeRecord, withPass, withTake, vocalRange, rangeText,
+  phraseHistory, progressText, createPracticeStore, PRACTICE_KEY, HOLD, RANGE_MIN, MAX_PHRASES, MAX_DAYS,
 } from "../practice.js";
+import { memoryKV } from "./memory-kv.mjs";
 
 const RATE = 48000;
 const midiHz = m => 440 * 2 ** ((m - 69) / 12);
@@ -197,4 +200,138 @@ test("the splitter cuts the capture into passes of the stretch's length, whateve
   });
   // Frames past the last whole pass stay open until it fills.
   assert.deepEqual(sp.add(start + total / rate, [new Float32Array(10), new Float32Array(10)]), []);
+});
+
+
+// PRACTICE.2: the range and the progress.
+const DAY = 24 * 3600 * 1000, NOON = new Date(2026, 10, 10, 12).getTime();
+const readingsOf = (seconds, parts) => trackPass(sing(seconds, parts), RATE, 0);
+
+test("a steady note held long enough is one held note at its nearest semitone; a slide or a blip is not", () => {
+  // A2 for 0.8 s, a quick slide, E4 25 cents sharp for 0.5 s, then a 0.15 s blip at C6.
+  const parts = [{ m: 45, from: 0, to: 0.8 }, ...Array.from({ length: 8 }, (_, k) => ({ m: 46 + 2 * k, from: 0.8 + k * 0.02, to: 0.82 + k * 0.02 })),
+    { m: 64, from: 1.0, to: 1.5, cents: 25 }, { m: 84, from: 1.7, to: 1.85 }];
+  const held = heldNotes(readingsOf(2, parts));
+  assert.deepEqual(held.map(h => h.m), [45, 64]);
+  assert.ok(Math.abs(held[0].seconds - 0.8) < 0.06, `${held[0].seconds} s`);
+  assert.ok(Math.abs(held[1].seconds - 0.5) < 0.06, `${held[1].seconds} s`);
+  // Vibrato of 40 cents around a note is still one held note.
+  assert.deepEqual(heldNotes(readingsOf(1, [{ m: 57, from: 0, to: 1, vibrato: 40 }])).map(h => h.m), [57]);
+  // Shorter than HOLD: nothing.
+  assert.deepEqual(heldNotes(readingsOf(1, [{ m: 57, from: 0, to: HOLD - 0.08 }])), []);
+  assert.deepEqual(heldNotes([]), []);
+});
+
+test("one missed reading inside a held note does not cut it, but a breath does", () => {
+  const steady = (from, to) => Array.from({ length: Math.round((to - from) / 0.01) }, (_, k) => ({ t: from + k * 0.01, m: 60.1 }));
+  const gap = (from, n) => Array.from({ length: n }, (_, k) => ({ t: from + k * 0.01, m: null }));
+  assert.deepEqual(heldNotes([...steady(0, 0.2), ...gap(0.2, 2), ...steady(0.22, 0.4)]).map(h => h.m), [60]);
+  assert.deepEqual(heldNotes([...steady(0, 0.2), ...gap(0.2, 10), ...steady(0.3, 0.5)]), []);
+});
+
+test("the range is the lowest and highest notes held long enough over passes and takes", () => {
+  let rec = cleanPracticeRecord(undefined);
+  assert.equal(vocalRange(rec), null);
+  assert.match(rangeText(null), /not known yet/);
+  const key = phraseKey(MELODY, SPAN), summary = { notes: 4, sung: 4, inTune: 3, missed: 0, onTime: 4, worst: null };
+  rec = withPass(rec, { key, summary, held: heldNotes(readingsOf(2, [{ m: 48, from: 0, to: 0.7 }, { m: 67, from: 1, to: 1.4 }])) }, NOON);
+  // G4 held 0.4 s is not yet enough on its own; C3 held 0.7 s is.
+  assert.deepEqual(vocalRange(rec), { low: 48, high: 48, passes: 1, takes: 0 });
+  assert.equal(rangeText(vocalRange(rec)), "Your range: C3 only, held steadily over 1 pass.");
+  rec = withTake(rec, heldNotes(readingsOf(1, [{ m: 67, from: 0, to: 0.5 }])));
+  assert.deepEqual(vocalRange(rec), { low: 48, high: 67, passes: 1, takes: 1 });
+  assert.equal(rangeText(vocalRange(rec)), "Your range: C3 to G4, held steadily over 1 pass and 1 take.");
+  assert.ok(rec.range.held[67] >= RANGE_MIN);
+});
+
+test("a stretch is named by its notes, wherever it is in the song", () => {
+  const key = phraseKey(MELODY, SPAN);
+  assert.match(key, /^p[0-9a-f]{16}$/);
+  const later = MELODY.map(n => ({ ...n, t: n.t + 10 }));
+  assert.equal(phraseKey(later, { from: 11, to: 13 }), key);
+  assert.equal(phraseKey([...MELODY].reverse(), SPAN), key);
+  assert.notEqual(phraseKey(MELODY.map((n, k) => (k === 2 ? { ...n, m: 63 } : n)), SPAN), key);
+  assert.notEqual(phraseKey(MELODY, { from: 1, to: 2.5 }), key);
+  assert.throws(() => phraseKey(MELODY, { from: 5, to: 6 }), /No melody note/);
+  assert.equal(phraseLabel(MELODY, SPAN), "C4 D4 E4 F4 (4 notes)");
+  assert.equal(phraseLabel([...MELODY, { m: 67, t: 2.9, d: 0.1 }], SPAN), "C4 D4 E4 F4 … (5 notes)");
+});
+
+test("a stretch's history keeps one summary a day, and the text compares the first day with the latest", () => {
+  const key = phraseKey(MELODY, SPAN), pass = inTune => ({ key, label: "C4 D4 E4 F4 (4 notes)", song: "Song", summary: { notes: 4, sung: 4, inTune, missed: 0, onTime: 3, worst: null } });
+  // The day's best pass is kept, not its last.
+  let rec = withPass(undefined, pass(2), NOON);
+  rec = withPass(rec, pass(1), NOON + 60_000);
+  assert.equal(progressText(phraseHistory(rec, key), NOON), "Best pass today: 2 of 4 in tune (2 passes).");
+  rec = withPass(rec, pass(3), NOON + 2 * DAY);
+  rec = withPass(rec, pass(4), NOON + 2 * DAY + 60_000);
+  const h = phraseHistory(rec, key);
+  assert.deepEqual(h.days, [
+    { day: dayOf(NOON), passes: 2, notes: 8, inTune: 3, onTime: 6, sung: 8, best: 2 },
+    { day: dayOf(NOON + 2 * DAY), passes: 2, notes: 8, inTune: 7, onTime: 6, sung: 8, best: 4 },
+  ]);
+  assert.equal(h.song, "Song");
+  assert.equal(progressText(h, NOON + 2 * DAY), "Best pass 10 Nov: 2 of 4 in tune; today: 4 of 4 in tune (4 passes on 2 days).");
+  assert.equal(progressText(h, NOON + 400 * DAY), "Best pass 10 Nov 2026: 2 of 4 in tune; 12 Nov 2026: 4 of 4 in tune (4 passes on 2 days).");
+  assert.equal(progressText(null, NOON), "First time practising this stretch.");
+  assert.equal(phraseHistory(rec, phraseKey(MELODY, { from: 1, to: 2.5 })), null);
+});
+
+test("the history keeps the latest stretches and days only", () => {
+  const summary = { notes: 2, sung: 2, inTune: 1, missed: 0, onTime: 2, worst: null };
+  let rec;
+  for (let k = 0; k < MAX_PHRASES + 5; k++) rec = withPass(rec, { key: "p" + k.toString(16).padStart(16, "0"), summary }, NOON + k);
+  assert.equal(rec.phrases.length, MAX_PHRASES);
+  assert.equal(rec.phrases[0].key, "p" + (MAX_PHRASES + 4).toString(16).padStart(16, "0"));
+  assert.equal(phraseHistory(rec, "p" + "0".repeat(16)), null);
+  const key = "p" + "a".repeat(16);
+  for (let d = 0; d < MAX_DAYS + 3; d++) rec = withPass(rec, { key, summary }, NOON + d * DAY);
+  const days = phraseHistory(rec, key).days;
+  assert.equal(days.length, MAX_DAYS);
+  assert.equal(days[0].day, dayOf(NOON + 3 * DAY));
+});
+
+test("a stored record that cannot be read is an error, never overwritten; bad entries in it are dropped", async () => {
+  assert.throws(() => cleanPracticeRecord("junk"), /unreadable/);
+  assert.throws(() => cleanPracticeRecord({ version: 2 }), /newer version/);
+  const rec = cleanPracticeRecord({ version: 1, range: { held: { 60: 1, 5: 1, 70: -1, x: 2 }, passes: 3, takes: "2" },
+    phrases: [{ key: "p" + "1".repeat(16), last: 5, days: [{ day: "2026-11-10", passes: 1, notes: 4, inTune: 2, onTime: 1, sung: 4, best: 2, extra: 1 }, { day: "soon" }] },
+      { key: "bad", last: 1, days: [] }] });
+  assert.deepEqual(rec.range, { held: { 60: 1 }, passes: 3, takes: 0 });
+  assert.equal(rec.phrases.length, 1);
+  assert.deepEqual(rec.phrases[0].days, [{ day: "2026-11-10", passes: 1, notes: 4, inTune: 2, onTime: 1, sung: 4, best: 2 }]);
+  const kv = memoryKV(), store = createPracticeStore(kv);
+  await kv.set(PRACTICE_KEY, "junk");
+  await assert.rejects(store.addTake([{ m: 60, seconds: 1 }]), /unreadable/);
+  assert.equal(await kv.get(PRACTICE_KEY), "junk");
+  assert.throws(() => withPass(undefined, { key: "nope", summary: { notes: 1 } }, NOON), /key/);
+});
+
+test("the store keeps passes and takes under the 'practice' key, and forgets them on request", async () => {
+  assert.equal(PRACTICE_KEY, "practice");
+  assert.throws(() => createPracticeStore(null), TypeError);
+  let t = NOON;
+  const kv = memoryKV(), store = createPracticeStore(kv, { now: () => t });
+  const key = phraseKey(MELODY, SPAN), summary = { notes: 4, sung: 4, inTune: 2, missed: 0, onTime: 4, worst: null };
+  await store.addPass({ key, label: phraseLabel(MELODY, SPAN), summary, held: [{ m: 50, from: 0, seconds: 0.7 }] });
+  t += DAY;
+  await store.addPass({ key, summary: { ...summary, inTune: 4 }, held: [{ m: 62, from: 0, seconds: 0.9 }] });
+  await store.addTake([{ m: 45, from: 0, seconds: 2 }]);
+  // A second store over the same storage (another tab, or after a reload) sees all of it.
+  const again = await createPracticeStore(kv).get();
+  assert.deepEqual(vocalRange(again), { low: 45, high: 62, passes: 2, takes: 1 });
+  assert.equal(phraseHistory(again, key).days.length, 2);
+  assert.equal(phraseHistory(again, key).label, "C4 D4 E4 F4 (4 notes)");
+  await store.forget();
+  assert.equal(vocalRange(await store.get()), null);
+  assert.equal(phraseHistory(await store.get(), key), null);
+});
+
+test("a long recording is tracked in slices with the same readings as in one go", async () => {
+  const x = sing(6, [{ m: 57, from: 0.5, to: 3 }, { m: 64, from: 3.5, to: 5.5 }]);
+  let pauses = 0;
+  const slices = await trackInSlices(x, RATE, { pause: async () => { pauses++; } });
+  assert.deepEqual(slices, trackPass(x, RATE, 0));
+  assert.ok(pauses >= 2, `${pauses} pauses`);
+  assert.deepEqual(heldNotes(slices).map(h => h.m), [57, 64]);
 });
