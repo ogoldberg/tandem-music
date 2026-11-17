@@ -1,6 +1,6 @@
 #!/bin/sh
 # SEC.9: compile the hashed requirement locks from the *.in sources. Run from the repository root
-# after changing a requirements-*.in file (needs uv: https://docs.astral.sh/uv/):
+# after changing a requirements-*.in file (needs uv, https://docs.astral.sh/uv/; 0.13.8 was used):
 #   sh tools/locks/compile.sh            # keep the locked versions where the sources allow
 #   sh tools/locks/compile.sh --upgrade  # take the newest versions the sources allow
 # Each lock is compiled against the one it builds on (-c), so every environment gets the hosted app's
@@ -8,6 +8,8 @@
 # replaced file on the index fails the install. The hosted, dev and e2e locks are universal (any OS,
 # CPython 3.12); the desktop lock is universal too; the models lock is for the Mac app on Apple
 # silicon only (torch has no Intel macOS wheel and MLX is Apple silicon only), macOS 14 or later as torch's wheels need.
+# uv ignores the upper bound of a package's Requires-Python, which pip enforces: bound such a release
+# in the .in file (see backports.strenum in requirements-models.in).
 set -eu
 cd "$(dirname "$0")/../.."
 compile() { uv pip compile --quiet --python-version 3.12 --generate-hashes --no-header "$@"; }

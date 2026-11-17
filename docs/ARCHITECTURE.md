@@ -359,9 +359,9 @@ The assistant is currently **text only** and uses symbolic notes/drums, not dire
 | world_tuning.py | WORLD tuning |
 | request_guards.py | Rate limits (Upstash Redis), body-size caps |
 | tandem_desktop/ | Mac app launcher: fixed loopback port, Host check, microphone rule, native window (DESK.1); project folders (`projects.py`, DESK.3); your own AI provider, model and Keychain key (`ai_keys.py`, AI.4); local model downloads and jobs (`models.py`, MODEL.1) |
-| requirements-desktop.txt | requirements.txt plus pywebview, for the Mac app |
+| requirements-desktop.txt | requirements.txt plus pywebview, for the Mac app (hashed lock from `requirements-desktop.in`) |
 | api/index.py | Vercel FastAPI entry |
-| requirements.txt | Python dependencies including pyworld-prebuilt |
+| requirements.txt | Python dependencies including pyworld-prebuilt: the hashed lock Vercel installs, compiled from `requirements.in` by `tools/locks/compile.sh` (SEC.9); every `requirements*.txt` is a lock of its `.in` |
 | tests/ | Python and Node checks |
-| .github/workflows/tests.yml | GitHub Actions tests (backend, transcription, e2e) |
+| .github/workflows/tests.yml | GitHub Actions tests (audit, backend, transcription, e2e, separation), actions pinned to commit SHAs |
 | e2e/ | Playwright browser end-to-end tests against the real app |

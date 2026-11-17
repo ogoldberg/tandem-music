@@ -22,3 +22,6 @@ transformers==5.22.2
 magenta-rt[mlx]==2.0.3; sys_platform == "darwin" and platform_machine == "arm64"
 mlx==0.31.1; sys_platform == "darwin" and platform_machine == "arm64"
 mlx-metal==0.31.1; sys_platform == "darwin" and platform_machine == "arm64"
+# SEC.9: magenta-rt's ai-edge-litert asks for backports.strenum on every Python, and its 1.3.1 is for Python
+# below 3.11; uv ignores that upper bound when it compiles the lock, but pip refuses the pin on 3.12.
+backports.strenum<1.3; sys_platform == "darwin" and platform_machine == "arm64"
