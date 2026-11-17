@@ -16,6 +16,7 @@ import os
 import threading
 import time
 import wave
+from pathlib import Path
 
 import httpx
 import numpy as np
@@ -101,9 +102,11 @@ def stand_in(tmp_path, monkeypatch):
     runtime = installed_runtime(tmp_path, [spec for spec, _ in timbre.INSTRUMENTS.values()])
     calls = {"loads": [], "release": None}
 
-    def load(path, rate):
-        calls["loads"].append(path.name)
-        assert path.read_bytes() == b"stand-in model" and rate == 48000
+    def load(data, rate):
+        # SEC.9: the loader gets the verified bytes, never a path to open again.
+        assert isinstance(data, bytes), type(data)
+        calls["loads"].append(data)
+        assert data == b"stand-in model" and rate == 48000
         return "model"
 
     def transfer(model, x, rate, sr, job=None):
@@ -137,8 +140,7 @@ def test_the_voice_comes_back_as_the_instrument_at_its_own_rate_and_length(stand
     # Each instrument is its own model; the model is loaded for every recording.
     for name in ("guitar", "organ", "sax"):
         assert finish(runtime, t.start(wav_bytes(x, 44100), name).id).state == "done"
-    assert calls["loads"] == ["sax_soprano_franziskaschroeder_b2048_r48000_z20.ts", "guitar_iil_b2048_r48000_z16.ts",
-                              "organ_bach_b2048_r48000_z16.ts", "sax_soprano_franziskaschroeder_b2048_r48000_z20.ts"]
+    assert calls["loads"] == [b"stand-in model"] * 4
 
 
 def test_only_the_last_recordings_are_kept(stand_in):
@@ -294,18 +296,18 @@ def scripted(path, rate=48000, name="sampling_rate", methods=True):
 
 def test_a_rave_model_is_checked_for_its_methods_and_rate(tmp_path):
     _need_packages()
-    model = timbre.load_rave(scripted(tmp_path / "a.ts"), 48000)
+    model = timbre.load_rave(scripted(tmp_path / "a.ts").read_bytes(), 48000)
     assert timbre.model_rate(model) == 48000
-    assert timbre.model_rate(timbre.load_rave(scripted(tmp_path / "b.ts", 44100, "sr"), 44100)) == 44100
+    assert timbre.model_rate(timbre.load_rave(scripted(tmp_path / "b.ts", 44100, "sr").read_bytes(), 44100)) == 44100
     with pytest.raises(timbre.TimbreError, match="runs at 44100 Hz, not the 48000 Hz"):
-        timbre.load_rave(scripted(tmp_path / "c.ts", 44100), 48000)
+        timbre.load_rave(scripted(tmp_path / "c.ts", 44100).read_bytes(), 48000)
     with pytest.raises(timbre.TimbreError, match="not a RAVE encoder and decoder"):
-        timbre.load_rave(scripted(tmp_path / "d.ts", methods=False), 48000)
+        timbre.load_rave(scripted(tmp_path / "d.ts", methods=False).read_bytes(), 48000)
 
 
 def test_transfer_feeds_whole_blocks_in_order_and_keeps_rate_and_length(tmp_path):
     _need_packages()
-    model = timbre.load_rave(scripted(tmp_path / "a.ts", 48000), 48000)
+    model = timbre.load_rave(scripted(tmp_path / "a.ts", 48000).read_bytes(), 48000)
     x = sung(48000, [60, 64, 67, 72] * 3, step=0.5)[:-777]  # not a whole number of blocks
     y = timbre.transfer(model, x, 48000, 48000)
     assert y.dtype == np.float32 and len(y) == len(x)
@@ -317,7 +319,7 @@ def test_transfer_feeds_whole_blocks_in_order_and_keeps_rate_and_length(tmp_path
     assert model.calls == -(-len(x) // timbre.CHUNK)
     # At another rate the recording is resampled to the model's and back: same length, same pitch.
     x = sung(22050, [69] * 4, step=0.5)
-    y = timbre.transfer(timbre.load_rave(scripted(tmp_path / "b.ts"), 48000), x, 22050, 48000)
+    y = timbre.transfer(timbre.load_rave(scripted(tmp_path / "b.ts").read_bytes(), 48000), x, 22050, 48000)
     assert len(y) == len(x)
     spectrum = np.abs(np.fft.rfft(y[5000:-5000]))
     assert abs(np.argmax(spectrum) * 22050 / len(y[5000:-5000]) - 440) < 3
@@ -332,7 +334,7 @@ def test_transfer_keeps_the_peak_under_full_scale_and_reports_progress(tmp_path)
 
         def report(self, progress, message):
             self.seen.append((progress, message))
-    model = timbre.load_rave(scripted(tmp_path / "a.ts"), 48000)
+    model = timbre.load_rave(scripted(tmp_path / "a.ts").read_bytes(), 48000)
     x = np.full(48000 * 4, 1.0)  # forward halves it, the caches add up to 1.0 at block starts
     job = Job()
     y = timbre.transfer(model, x * 1.9, 48000, 48000, job)
@@ -421,3 +423,46 @@ def test_the_instrument_plays_the_sung_line_in_time_and_in_tune(runtime, instrum
         errors.append(12 * np.log2(f / (440 * 2 ** ((m - 69) / 12))))
     print(f"TIMBRE.1 {instrument}: semitones off per note {np.round(errors, 2).tolist()}")
     assert sum(abs(e) < 1 for e in errors) >= 8
+
+
+# --- SEC.9: the model is loaded from the bytes that were hashed --------------------------------
+
+def test_a_model_file_is_read_once_and_checked_on_the_bytes_returned(tmp_path):
+    spec = timbre.INSTRUMENTS["sax"][0]
+    runtime = installed_runtime(tmp_path, [spec])
+    pinned = runtime.spec(spec.id)
+    assert runtime.store.read_verified(pinned, pinned.files[0]) == b"stand-in model"
+    path = runtime.store.folder(pinned) / pinned.files[0].name
+    path.write_bytes(b"swapped model!")  # the same size, other bytes
+    with pytest.raises(models.ModelError, match="has changed"):
+        runtime.store.read_verified(pinned, pinned.files[0])
+    path.write_bytes(b"short")
+    with pytest.raises(models.ModelError, match="has changed"):
+        runtime.store.read_verified(pinned, pinned.files[0])
+    path.unlink()
+    with pytest.raises(models.ModelError, match="not installed"):
+        runtime.store.read_verified(pinned, pinned.files[0])
+
+
+def test_a_file_swapped_after_the_runtime_checked_it_is_not_loaded(tmp_path, monkeypatch):
+    # The runtime hashes every file before the run starts; a file replaced between that check and the
+    # load must be refused, not loaded.
+    spec = timbre.INSTRUMENTS["sax"][0]
+    runtime = installed_runtime(tmp_path, [spec])
+    verify = runtime.store.verify
+
+    def verify_then_swap(s, job=None):
+        folder = verify(s, job)
+        (folder / s.files[0].name).write_bytes(b"swapped model!")
+        return folder
+    monkeypatch.setattr(runtime.store, "verify", verify_then_swap)
+    loaded = []
+    monkeypatch.setattr(timbre, "load_rave", lambda data, rate: loaded.append(data) or "model")
+    monkeypatch.setattr(timbre, "transfer", lambda model, x, rate, sr, job=None: x)
+    job = finish(runtime, timbre.Timbre(runtime).start(wav_bytes(sung(44100, [60, 62], step=0.4), 44100), "sax").id)
+    assert job.state == "failed" and "has changed" in job.error and loaded == []
+
+
+def test_load_rave_refuses_a_path():
+    with pytest.raises(TypeError, match="verified bytes"):
+        timbre.load_rave(Path("model.ts"), 48000)
