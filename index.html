@@ -68,6 +68,7 @@ import {KEY_NAMES,SCALES,noteName,noteCentre,scalePitchClasses,snapToScale,stepI
 import {loopRegion,createPlan,songTime,clipProject,timelineEnd} from './playhead.js';
 import {assignLyrics,cleanLyrics,lyricsSummary,shown as lyricShown} from './lyrics.js';
 import {GENRES,genreById,cleanGenre,harmonyStyle,tempoRange,beatFor,genreChanges} from './genre.js';
+import {readBeats,uploadSamples} from './beatbox.js';
 import {melodyFit,fitSummary,FIT_LABELS} from './tension.js';
 import {lineNotes,withLine} from './drawline.js';
 import {trackPass,scorePass,passSummary,passText,noteScoreText,practiceSpan,createPassSplitter,heldNotes,trackInSlices,phraseKey,phraseLabel,createPracticeStore,vocalRange,rangeText,phraseHistory,progressText} from './practice.js';
@@ -968,6 +969,8 @@ let localLimitsPromise=null;
 function localLimits(){if(!launch||apiUrl('/')!==location.origin+'/')return Promise.resolve(null);return localLimitsPromise||=request('/api/config').then(r=>r.json()).then(c=>c.limits).catch(e=>{localLimitsPromise=null;throw e})}
 async function request(path,opts={}){const url=apiUrl(path),h=apiHeaders(url,opts.headers||{});const r=await fetch(url,{...opts,headers:h});if(!r.ok){let text=await r.text();throw Error('HTTP '+r.status+': '+text.slice(0,180))}return r}
 $('connect').onclick=async()=>{try{const x=await(await request('/api/config')).json();$('provider').textContent=x.ai_ready?x.provider+' / '+x.model:'Server online, AI model not configured';localStorage.setItem('tandem-api',$('api').value.trim());tabToken.set($('token').value.trim());status('Backend connection succeeded')}catch(e){status(e.message)}};
+// The drum hits in a recording, read on the device from the samples the server would have been sent.
+function beatsOnDevice(buf){const ch=[];for(let c=0;c<buf.numberOfChannels;c++)ch.push(buf.getChannelData(c));return readBeats(uploadSamples(ch),buf.sampleRate)}
 async function audioRequest(path,mode){if(!audio)throw Error('Record a sound first');const wav=monoWav(await decoded(take())),form=new FormData();form.append('file',wav,'capture.wav');return request(path+(mode?'?mode='+mode:''),{method:'POST',body:form})}
 $('analyze').onclick=async()=>{try{
  status('Transcribing…');const mode=$('mode').value==='rhythm'?'rhythm':'melody';
@@ -978,6 +981,10 @@ $('analyze').onclick=async()=>{try{
    const buffer=await decoded(take());
    const notes=await transcribeWithBasicPitch(buffer,(p,b)=>status('Transcribing on device: '+p+'%'+slowBackendNote(b,{server:true})));
    obj={notes,drums:[]};
+ }else if(mode==='rhythm' && $('transcriber').value==='basic-pitch'){
+   // SEC.6: with the device chosen a beat take never leaves it; beatbox.js reads it as the server would.
+   status('Reading the beat on this device…');
+   obj={notes:[],drums:beatsOnDevice(await decoded(take()))};
  }else{
    obj=await(await audioRequest('/api/analyze',mode)).json();
  }
@@ -1125,9 +1132,10 @@ function renderLayers(){$('reclayer').disabled=!audio;if(!audio)$('reclayer').ch
   bar.append(into,go,play,del);body.append(fill,bar);lane.append(ctl,body);root.append(lane)}}
  const end=songEnd();for(const f of root.querySelectorAll('.lanefill'))f.firstChild.style.width=(Math.min(Number(f.dataset.seconds),end)/end*97)+'%'}
 // Transcribe a layer into the melody, the chords part or the drums, in place of what that part holds, as one edit: the melody and
-// chords with the chosen listener (Basic Pitch on this device, or the server), the drums with the server's beatbox reader.
+// chords with the chosen listener (Basic Pitch on this device, or the server), the drums with the beatbox reader on the same side (SEC.6).
 async function transcribeLayer(id,into){const l=state.layers.find(x=>x.id===id),blob=layerBlob(id);if(!l||!blob)throw Error("that layer's recording is not on this device");if(!LAYER_TARGETS.includes(into))throw Error('unknown part');status('Transcribing '+l.name+'…');let notes=[],drums=[];
  if(into!=='drums'&&$('transcriber').value==='basic-pitch'){status('Loading Basic Pitch on this device…');const {transcribeWithBasicPitch,slowBackendNote}=await import('./transcription.js');notes=await transcribeWithBasicPitch(await decoded(blob),(p,b)=>status('Transcribing '+l.name+' on device: '+p+'%'+slowBackendNote(b,{server:true})))}
+ else if(into==='drums'&&$('transcriber').value==='basic-pitch'){status('Reading the beat in '+l.name+' on this device…');drums=beatsOnDevice(await decoded(blob))}
  else{const form=new FormData();form.append('file',monoWav(await decoded(blob)),'layer.wav');const obj=await(await request('/api/analyze?mode='+(into==='drums'?'rhythm':'melody'),{method:'POST',body:form})).json();notes=obj.notes||[];drums=obj.drums||[]}
  edit('Transcribe '+l.name+' into the '+INTO_NAMES[into],()=>{if(into==='drums')state.drums=drums;else if(into==='harmony')state.harmony=notes;else state.notes=notes;state.layers=setInto(state.layers,id,into)});
  const n=into==='drums'?state.drums.length:notes.length;status('Transcribed '+l.name+' into the '+INTO_NAMES[into]+': '+n+(into==='drums'?' drum hits':' notes')+'. What the part held before is kept in Undo.')}
