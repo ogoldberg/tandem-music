@@ -85,7 +85,7 @@ jobs:
           key: htdemucs-d9fa14133cfcc034a6758923bb3a8ca9f8dfd0b582134643bbf83f72c17576dd
       # The CPU build of torch (the PyPI wheel for Linux carries CUDA libraries this job does not use).
       # requirements-models.txt is locked for the Mac app on Apple silicon, so this Linux job installs
-      # from the sources it is compiled from, with the e2e lock's versions where they agree.
+      # from the .in sources it is compiled from (no versions or hashes from any lock; torch is pinned above).
       - run: python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
       - run: python -m pip install -r requirements-models.in -r requirements-e2e.in
       - run: python -m playwright install --with-deps chromium
