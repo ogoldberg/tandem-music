@@ -288,7 +288,7 @@ def test_persistent_storage_is_requested_when_the_first_idea_is_kept(phone, gran
 
 VENDOR_CACHED = """async files => {
   for (let i = 0; i < 50; i++) {
-    const c = await caches.open('tandem-vendor-1');
+    const c = await caches.open('tandem-vendor-2');
     if ((await Promise.all(files.map(f => c.match(f)))).every(Boolean)) return true;
     await new Promise(r => setTimeout(r, 100));
   }
