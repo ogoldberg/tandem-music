@@ -907,7 +907,7 @@ def test_tune_rejects_out_of_range_strength(client):
     r=run(client("POST","/api/tune?strength=2",files={"file":("silence.wav",wav_bytes(np.zeros(16000)),"audio/wav")}))
     assert r.status_code==400
 
-BASIC_PITCH_DIR = server.Path(server.__file__).resolve().parent / "vendor" / "basic-pitch-1.0.1"
+BASIC_PITCH_DIR = server.Path(server.__file__).resolve().parent / "vendor" / "basic-pitch-1.0.1-2"
 
 def recorded_basic_pitch_hashes():
     lines = (BASIC_PITCH_DIR / "SHA256SUMS").read_text().splitlines()
@@ -920,20 +920,21 @@ def test_basic_pitch_assets_are_served_from_this_app_with_recorded_hashes(client
     types = {"basic-pitch.mjs": "text/javascript", "model/model.json": "application/json",
              "model/group1-shard1of1.bin": "application/octet-stream"}
     for name, digest in hashes.items():
-        r = run(client("GET", f"/vendor/basic-pitch-1.0.1/{name}"))
+        r = run(client("GET", f"/vendor/basic-pitch-1.0.1-2/{name}"))
         assert r.status_code == 200, name
         assert hashlib.sha256(r.content).hexdigest() == digest, name
         assert r.headers["content-type"].split(";")[0] == types[name]
         assert "immutable" in r.headers["cache-control"]
 
 def test_basic_pitch_route_serves_only_the_hashed_files(client):
-    for path in ("/vendor/basic-pitch-1.0.1/SHA256SUMS", "/vendor/basic-pitch-1.0.1/model/..%2f..%2f..%2ftandem_backend.py",
-                 "/vendor/basic-pitch-1.0.1/%2e%2e/%2e%2e/tandem_backend.py", "/vendor/basic-pitch-1.0.1/model",
-                 "/vendor/basic-pitch-1.0.1/", "/vendor/basic-pitch-1.0.2/basic-pitch.mjs"):
+    for path in ("/vendor/basic-pitch-1.0.1-2/SHA256SUMS", "/vendor/basic-pitch-1.0.1-2/model/..%2f..%2f..%2ftandem_backend.py",
+                 "/vendor/basic-pitch-1.0.1-2/%2e%2e/%2e%2e/tandem_backend.py", "/vendor/basic-pitch-1.0.1-2/model",
+                 "/vendor/basic-pitch-1.0.1-2/", "/vendor/basic-pitch-1.0.2/basic-pitch.mjs",
+                 "/vendor/basic-pitch-1.0.1/basic-pitch.mjs"):
         assert run(client("GET", path)).status_code == 404, path
 
 def test_basic_pitch_licenses_cover_every_mit_package():
-    text = (server.Path(server.__file__).resolve().parent / "vendor/basic-pitch-1.0.1/LICENSES.txt").read_text()
+    text = (server.Path(server.__file__).resolve().parent / "vendor/basic-pitch-1.0.1-2/LICENSES.txt").read_text()
     table = text.split("\n\n==== ", 1)[0].splitlines()[2:]
     mit = [row.split()[0] for row in table if "MIT" in row.split(" ", 2)[2]]
     assert mit, "license table lists no MIT packages"
@@ -988,8 +989,8 @@ def test_samples_load_only_from_this_app():
 def test_transcription_loads_basic_pitch_only_from_this_app():
     source = (server.Path(server.__file__).resolve().parent / "transcription.js").read_text()
     assert "https://" not in source and "http://" not in source
-    assert '"/vendor/basic-pitch-1.0.1/basic-pitch.mjs"' in source
-    assert '"/vendor/basic-pitch-1.0.1/model/model.json"' in source
+    assert '"/vendor/basic-pitch-1.0.1-2/basic-pitch.mjs"' in source
+    assert '"/vendor/basic-pitch-1.0.1-2/model/model.json"' in source
 
 
 def capture_world_tune(monkeypatch):

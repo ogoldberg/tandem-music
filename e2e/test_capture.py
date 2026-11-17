@@ -304,7 +304,7 @@ def test_vendor_files_are_cached_on_first_use_and_served_offline(phone_on_own_se
     wait_for_service_worker(page)
     page.reload()  # now the worker controls the page
     page.wait_for_function("!!navigator.serviceWorker.controller")
-    files = ["/vendor/basic-pitch-1.0.1/model/model.json", "/vendor/gm-samples-1/bass/24.mp3"]
+    files = ["/vendor/basic-pitch-1.0.1-2/model/model.json", "/vendor/gm-samples-1/bass/24.mp3"]
     sizes = page.evaluate(FETCH_SIZES, files)
     assert all(size > 0 for size in sizes)
     assert page.evaluate(VENDOR_CACHED, files)

@@ -26,7 +26,7 @@ from playwright.sync_api import sync_playwright
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
 BASIC_PITCH = """async ({url, rate}) => {
-  const { BasicPitch } = await import("/vendor/basic-pitch-1.0.1/basic-pitch.mjs");
+  const { BasicPitch } = await import("/vendor/basic-pitch-1.0.1-2/basic-pitch.mjs");
   const { pitchContour, MIN_MIDI } = await import("/contour.js");
   const { resampleForBasicPitch, MELODY_SALIENCE, BASIC_PITCH_MODEL } = await import("/transcription.js");
   window.bp ||= new BasicPitch(BASIC_PITCH_MODEL);

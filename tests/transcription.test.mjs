@@ -61,6 +61,8 @@ test("vocal target limits clip the last note to the recording length",()=>{
   assert.deepEqual(normalizeBasicPitchNotes([{pitchMidi:60,startTimeSeconds:179.8,durationSeconds:2}],{...VOCAL_TARGET_LIMITS,maxSeconds:180}),[{m:60,t:179.8,d:.2}]);
 });
 
+// TensorFlow.js's flags, which the stand-ins accept and ignore.
+const noEnv=()=>({set(){}});
 // A stand-in for the Basic Pitch module whose model hears `pitchAt(t)` (MIDI, NaN when nothing is sung):
 // each frame's contour peaks at that pitch and its note activation is high there (TRANS.2 reads both).
 function sungModel(seconds,pitchAt,calls=[],backend){
@@ -72,7 +74,7 @@ function sungModel(seconds,pitchAt,calls=[],backend){
   }
   return async()=>({
     BasicPitch:class{constructor(url){calls.push(url)}async evaluateModel(buffer,onFrames,onProgress){onFrames(frames,frames.map(()=>new Array(88).fill(0)),contours);onProgress(1)}},
-    outputToNotesPoly:()=>[],addPitchBendsToNoteEvents:(_c,raw)=>raw,noteFramesToTime:()=>[],
+    outputToNotesPoly:()=>[],addPitchBendsToNoteEvents:(_c,raw)=>raw,noteFramesToTime:()=>[],env:noEnv,
     ...(backend?{getBackend:()=>backend}:{}),
   });
 }
@@ -124,7 +126,7 @@ test("detectVocalTargets returns confident notes and the sung pitch contour acro
   const load=async()=>({
     BasicPitch:class{async evaluateModel(_b,onFrames,onProgress){onFrames([[0],[0],[0]],[[0],[0],[0]],[peak,peak,silent]);onProgress(1)}},
     outputToNotesPoly:()=>[],addPitchBendsToNoteEvents:(_c,raw)=>raw,
-    noteFramesToTime:()=>[{pitchMidi:69,startTimeSeconds:0,durationSeconds:.2,amplitude:.5}],
+    noteFramesToTime:()=>[{pitchMidi:69,startTimeSeconds:0,durationSeconds:.2,amplitude:.5}],env:noEnv,
   });
   const {notes,contour}=await detectVocalTargets(buffer22k(180),()=>{},{loadModule:load});
   assert.deepEqual(notes,[{m:69,t:0,d:.2,c:.5}]);
@@ -145,11 +147,24 @@ test("the page gets a task between the model's windows, so it can draw the progr
         onProgress(1);
       }
     },
-    outputToNotesPoly:()=>[],addPitchBendsToNoteEvents:(_c,raw)=>raw,noteFramesToTime:()=>[],
+    outputToNotesPoly:()=>[],addPitchBendsToNoteEvents:(_c,raw)=>raw,noteFramesToTime:()=>[],env:noEnv,
   });
   const timer=setInterval(()=>ticks++,0);
   try{await transcribeWithBasicPitch(buffer22k(4),()=>{},{loadModule:load})}finally{clearInterval(timer)}
   assert.ok(seen.at(-1)>seen[0], `timer ticks seen at each window: ${seen}`);
+});
+
+// FIX.2: on the Mali GPUs of Pixel phones (Mali-G710 in the Pixel 7, checked on the device), TensorFlow.js's
+// packed WebGL kernels give Basic Pitch wrong numbers: a sung phrase of eight notes came back as four notes
+// of 0.17 s. Unpacked kernels give the right notes there and are faster on Mali and on an Apple M5, so
+// packing is turned off before the model is built, for the melody and for the vocal targets alike.
+test("WebGL packing is turned off before Basic Pitch's model is built",async()=>{
+  for(const run of [load=>transcribeWithBasicPitch(buffer22k(3),()=>{},{loadModule:load}),load=>detectVocalTargets(buffer22k(3),()=>{},{loadModule:load})]){
+    const log=[],model=sungModel(3,()=>64,log);
+    const load=async()=>{const m=await model();return {...m,env:()=>({set:(k,v)=>log.push(['set',k,v])})}};
+    await run(load);
+    assert.deepEqual(log.slice(0,2),[['set','WEBGL_PACK',false],'/vendor/basic-pitch-1.0.1-2/model/model.json']);
+  }
 });
 
 // FIX.1 (#18): without WebGL, TensorFlow.js runs Basic Pitch on its slow "cpu" backend; progress says which.

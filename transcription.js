@@ -1,9 +1,9 @@
 // Tandem client-side transcription adapter.
 // Spotify Basic Pitch is Apache-2.0 licensed. Its model runs in the browser.
-// Both are served by this app (vendor/basic-pitch-1.0.1, built by
+// Both are served by this app (vendor/basic-pitch-1.0.1-2, built by
 // tools/basic-pitch/build.sh, hashes in its SHA256SUMS), not by a CDN.
-export const BASIC_PITCH_PACKAGE = "/vendor/basic-pitch-1.0.1/basic-pitch.mjs";
-export const BASIC_PITCH_MODEL = "/vendor/basic-pitch-1.0.1/model/model.json";
+export const BASIC_PITCH_PACKAGE = "/vendor/basic-pitch-1.0.1-2/basic-pitch.mjs";
+export const BASIC_PITCH_MODEL = "/vendor/basic-pitch-1.0.1-2/model/model.json";
 import { pitchContour, mergeFragments, sungNotes, MIN_MIDI } from "./contour.js";
 
 // Melody transcribed into the project stays within what /api/chat and its prompt accept
@@ -124,7 +124,11 @@ async function runBasicPitch(audioBuffer, progress, maxSeconds, loadModule) {
     throw new TypeError("Expected a decoded AudioBuffer");
   }
   if (audioBuffer.duration > maxSeconds) throw new Error(`For browser transcription, use a recording under ${maxSeconds} seconds.`);
-  const { BasicPitch, outputToNotesPoly, noteFramesToTime, addPitchBendsToNoteEvents, getBackend = () => null } = await loadModule();
+  const { BasicPitch, outputToNotesPoly, noteFramesToTime, addPitchBendsToNoteEvents, getBackend = () => null, env } = await loadModule();
+  // FIX.2: TensorFlow.js's packed WebGL kernels give Basic Pitch wrong numbers on Mali GPUs (Pixel 6 to 9;
+  // on a Pixel 7 an eight-note phrase came back as four 0.17 s notes). Unpacked kernels are right there,
+  // and faster there and on an Apple M5, so packing is off everywhere; the cpu backend ignores the flag.
+  env().set("WEBGL_PACK", false);
   const model = new BasicPitch(BASIC_PITCH_MODEL);
   // REC.1: the model runs one window of audio at a time on the page's thread, and those steps follow each
   // other without ever handing the thread back, so the page drew nothing until the end and the progress
