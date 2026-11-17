@@ -310,7 +310,10 @@ function addHeld(range, held) {
 export function withPass(record, { key, label = "", song = "", summary, held = [] }, now) {
   const rec = cleanPracticeRecord(record);
   if (typeof key !== "string" || !/^p[0-9a-f]{16}$/.test(key)) throw Error("A pass needs its stretch's key.");
-  if (!summary || !count(summary.notes) || !summary.notes) throw Error("A pass needs its scores.");
+  // every count the day keeps, or the day would be saved with a bad value and dropped by the next read
+  const s = summary;
+  if (!s || !["notes", "sung", "inTune", "onTime"].every(k => count(s[k])) || !s.notes || s.sung > s.notes
+    || s.inTune > s.sung || s.onTime > s.sung) throw Error("A pass needs its scores.");
   const day = dayOf(now), old = rec.phrases.find(p => p.key === key);
   const days = old ? old.days.map(d => ({ ...d })) : [];
   let today = days.find(d => d.day === day);

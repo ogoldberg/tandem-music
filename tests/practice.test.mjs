@@ -307,6 +307,20 @@ test("a stored record that cannot be read is an error, never overwritten; bad en
   assert.throws(() => withPass(undefined, { key: "nope", summary: { notes: 1 } }, NOON), /key/);
 });
 
+test("a pass whose summary is missing a count is refused, so no day is saved that the next read would drop", () => {
+  const key = "p" + "0".repeat(16), full = { notes: 4, sung: 3, inTune: 2, onTime: 1 };
+  for (const k of ["sung", "inTune", "onTime"]) {
+    const summary = { ...full };
+    delete summary[k];
+    assert.throws(() => withPass(undefined, { key, summary }, NOON), /scores/, k);
+    assert.throws(() => withPass(undefined, { key, summary: { ...full, [k]: -1 } }, NOON), /scores/, k);
+    assert.throws(() => withPass(undefined, { key, summary: { ...full, [k]: 1.5 } }, NOON), /scores/, k);
+  }
+  assert.throws(() => withPass(undefined, { key, summary: { ...full, inTune: 4 } }, NOON), /scores/);
+  const rec = withPass(undefined, { key, summary: full }, NOON);
+  assert.deepEqual(cleanPracticeRecord(JSON.parse(JSON.stringify(rec))), rec);
+});
+
 test("the store keeps passes and takes under the 'practice' key, and forgets them on request", async () => {
   assert.equal(PRACTICE_KEY, "practice");
   assert.throws(() => createPracticeStore(null), TypeError);
