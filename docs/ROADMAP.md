@@ -270,10 +270,11 @@ These models are too large and slow for Vercel's serverless functions, which is 
   - **Parked by ADR-012:** in the Mac app a synced folder does this job (DESK.3).
   - **Depends:** STORE.2a, AI.4 (shares the key storage and CSP work)
   - **Acceptance:** save and open through a real bucket the operator provides; keys never reach the Tandem server; CORS setup documented for users.
-- [ ] **AI.5** Compare small models on the real chat prompt and choose the default
+- [~] **AI.5** Compare small models on the real chat prompt and choose the default
   - **Depends:** AI.4
   - Run the real `/api/chat` prompt over a fixed set of test projects and requests on 3-4 small models (Claude Haiku 5.5, a Gemini Flash, a GPT mini or nano, and a local Qwen through Ollama), scoring valid JSON, valid actions, melody-lock respect and whether the edit did what was asked, plus latency and cost. Running it spends money on real keys: ask the operator before each run.
   - **Acceptance:** results table and the chosen default recorded in `docs/DECISIONS.md` or `docs/TESTING.md`; the harness is in the repo and rerunnable.
+  - Done (free local leg, 2026-11-17): the harness `tools/chat-eval/chat_eval.py` (13 cases through the studio's own `chat_messages`, `invoke_llm` and `chat_plan`; scoring tested in `tests/test_chat_eval.py`) ran qwen3:4b/8b/14b, qwen2.5:7b, gemma3:12b and llama3.1:8b through Ollama; results in `docs/TESTING.md` "Chat model evaluation". Every model ignored melody lock when it was only a key in the project JSON and its reply claimed the dropped edit, so the prompt now states the lock in words and the beat length, and a reply whose melody edit the lock dropped says so. Local recommendation: qwen3:8b (72% of edits right, about 20 s an answer), llama3.1:8b for speed (51%, 2.6 s). Remaining: the paid leg (Claude Haiku 5.5, a Gemini Flash, a GPT mini), which needs the operator's keys and agreement to spend, then the default.
 - [x] **VOX.4** On-device pitch correction: WORLD compiled to WebAssembly
   - **Depends:** VOX.1
   - **Parked by ADR-012, planned again by ADR-013:** the Mac app runs WORLD natively, but the phone has no local backend, so tuning on the phone without the network needs this. Take it up after MOB.1-MOB.3.

@@ -123,8 +123,8 @@ def test_an_edit_uses_the_saved_provider_model_and_key_and_melody_lock_still_hol
     save(settings, provider=name, model="test-model", key=KEY)
     r = chat(settings)
     assert r.status_code == 200, r.text
-    # Melody lock (on in PROJECT) removed the transpose; the tempo change came through.
-    assert r.json() == {"reply": "Raised it and sped it up.", "actions": [{"type": "set_tempo", "bpm": 120}]}
+    # Melody lock (on in PROJECT) removed the transpose, and the reply says so; the tempo change came through.
+    assert r.json() == {"reply": "Raised it and sped it up. " + server.LOCKED_REPLY, "actions": [{"type": "set_tempo", "bpm": 120}]}
     request = provider["seen"][0]
     assert (request.url.host, request.url.path) == (host, path)
     assert request.headers[auth[0]] == auth[1]

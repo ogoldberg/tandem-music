@@ -135,6 +135,22 @@ def test_melody_lock_blocks_transcription_rewrites(client,monkeypatch):
     }}))
     assert response.status_code==200
     assert response.json()["actions"]==[{"type":"add_hit","drum":"kick","start":0.0}]
+    # AI.5: the reply was written for the dropped melody edits too, so it says they were not made.
+    assert response.json()["reply"]=="Added a rhythm "+server.LOCKED_REPLY
+
+def test_the_model_is_told_in_words_when_melody_lock_is_on(client,monkeypatch):
+    # AI.5: with the lock only a key in the project JSON, every model tried melody edits under it.
+    seen=[]
+    async def fake(messages, config=None):
+        seen.append(messages[-1]["content"])
+        return json.dumps({"reply":"Faster","actions":[{"type":"set_tempo","bpm":120}]})
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    for locked in (True,False):
+        r=run(client("POST","/api/chat",json={"message":"Faster","project":{"notes":[],"drums":[],"melody_locked":locked}}))
+        assert r.status_code==200 and r.json()["reply"]=="Faster"
+    assert server.MELODY_LOCK_NOTE+"Request: Faster" in seen[0]
+    assert "Melody lock" not in seen[1] and seen[1].endswith("\nRequest: Faster")
+    assert "one beat lasts 60/bpm seconds" in server.SYSTEM
 
 def test_chat_bad_model_reply(client,monkeypatch):
     async def fake(messages, config=None): return "Not JSON"
@@ -540,9 +556,9 @@ def test_contour_module_is_served_and_precached(client):
     assert "./contour.js" in sw.text
 
 @pytest.mark.parametrize("provider,path,body",[
-    ("openai-compatible","/chat/completions",'{"choices":[{"message":{"content":"OK"}}]}'),
-    ("anthropic","/v1/messages",'{"content":[{"type":"text","text":"OK"}]}'),
-    ("gemini","/v1beta/models/test-model:generateContent",'{"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}')
+    ("openai-compatible","/chat/completions",'{"choices":[{"message":{"content":"OK"}}],"usage":{"prompt_tokens":11,"completion_tokens":3}}'),
+    ("anthropic","/v1/messages",'{"content":[{"type":"text","text":"OK"}],"usage":{"input_tokens":11,"output_tokens":3}}'),
+    ("gemini","/v1beta/models/test-model:generateContent",'{"candidates":[{"content":{"parts":[{"text":"OK"}]}}],"usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":3}}')
 ])
 def test_provider_adapters(monkeypatch,provider,path,body):
     monkeypatch.setenv("TANDEM_PROVIDER",provider)
@@ -558,7 +574,21 @@ def test_provider_adapters(monkeypatch,provider,path,body):
     monkeypatch.setattr(server.httpx,"AsyncClient",lambda **kwargs: actual(transport=transport,**kwargs))
     assert run(server.invoke_llm([{"role":"user","content":"hello"}]))=="OK"
     assert seen[0].endswith(path)
+    # AI.5: the token counts each provider reports reach a usage dict, for pricing evaluation runs.
+    usage={}
+    assert run(server.invoke_llm([{"role":"user","content":"hello"}],usage=usage))=="OK"
+    assert usage=={"input":11,"output":3}
 
+
+def test_a_provider_timeout_says_what_happened(monkeypatch):
+    # AI.5: httpx's timeout has an empty message, which left "AI provider request failed: " and nothing.
+    monkeypatch.setenv("TANDEM_PROVIDER","ollama"); monkeypatch.setenv("TANDEM_MODEL","slow-model")
+    def handler(request): raise httpx.ReadTimeout("",request=request)
+    actual=httpx.AsyncClient
+    monkeypatch.setattr(server.httpx,"AsyncClient",lambda **kwargs: actual(transport=httpx.MockTransport(handler),**kwargs))
+    with pytest.raises(server.HTTPException) as caught:
+        run(server.invoke_llm([{"role":"user","content":"hello"}]))
+    assert caught.value.status_code==504 and "longer than 75 seconds" in caught.value.detail
 
 def test_client_model_module_is_served(client):
     response = run(client("GET", "/transcription.js"))

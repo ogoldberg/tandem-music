@@ -93,6 +93,48 @@ HARM.2 tests: `tests/harmony.test.mjs` checks that `harmonyLines` offers the def
 
 HARM.3 tests: `tests/tuning.test.mjs` checks `harmonyTargets` (a harmony note split where the sung notes begin and end, a sliver under 50 ms folded into its neighbour, notes outside MIDI 36-96 left out and counted, the line not changed), `keepSpans` (silent outside the spans, untouched inside, a fade just outside each edge) and `harmonyFingerprint` (the same for the same notes in any order, different when a note moves). `tests/test_vocal_benchmark.py::test_sung_harmony_follows_the_harmony_voice` is the acceptance check (docs/AUDIO.md, Sung harmony): every benchmark case at 16 and 44.1 kHz on both engines, tuned to targets built by `harmonyTargets` itself (run by Node), each harmony note's median and the 90th percentile of all frames within 20 cents. `e2e/test_sung_harmony.py` imports a four-note take, opens a project with the matching melody and a harmony voice a third above three of the notes, and sings it on the device: the `harmony-voice-sung.wav` stem is within 20 cents of each harmony note and silent over the note without one and in the gaps, the instrument's `harmony-voice.wav` stem is left out while it plays and back when it is muted or removed, undo and redo take it back and bring it back with its audio, a reload keeps it linked, and editing the line says it has changed since it was sung. `e2e/test_guided.py` sings the kept line from the guided Song step. The Node tests also check the `voice2_sung` slot, `harmony-voice-sung.wav` in Tandem files and stems, `arrangementSeconds`, the DAWproject audio track and `projectFromState`; `tests/test_api.py` checks `ProjectSungHarmony` and `tests/test_desktop_projects.py` the project folder file.
 
+
+## Chat model evaluation (AI.5)
+
+`tools/chat-eval/chat_eval.py` (see its README) asks a model 13 fixed cases through the studio's own chat path (`chat_messages`, `invoke_llm`, `chat_plan`) and scores valid JSON, valid actions, melody-lock respect (on what the model wrote, over the runs with an answer: a timeout is not scored) and whether the edit did what was asked, with seconds and tokens. `tests/test_chat_eval.py` checks the scoring with a faked model: a right answer to every case scores full marks and each kind of wrong answer fails the score it should. The runs below (2026-11-17, 3 repeats a case) keep every answer in `tools/chat-eval/results/`.
+
+**Local models, free leg** (Ollama 0.40.16 on an M5 with 32 GB, one model loaded at a time, the app's temperature 0.5 and 75 s timeout). First run, with melody lock only a key in the project JSON:
+
+| Model | Runs | JSON | Valid actions | Melody lock | Did what was asked | Median s | 90th pct s | Tokens in/out | Cost per request |
+|---|---|---|---|---|---|---|---|---|---|
+| ollama gemma3:12b | 39 | 90% | 90% | 69% | 54% | 3.5 | 10.0 | 1130/84 | free (this Mac) |
+| ollama llama3.1:8b | 39 | 92% | 85% | 80% | 56% | 1.7 | 4.8 | 1109/55 | free (this Mac) |
+| ollama qwen3:14b | 39 | 62% | 62% | 89% | 56% | 52.4 | 75.0 | 1169/524 | free (this Mac) |
+| ollama qwen3:4b | 39 | 26% | 26% | 67% | 18% | 75.0 | 75.0 | 1172/2011 | free (this Mac) |
+| ollama qwen3:8b | 39 | 82% | 77% | 67% | 59% | 17.0 | 39.2 | 1138/423 | free (this Mac) |
+
+No model kept to the lock when asked to "transpose the melody" or "add a high C": every answer (12 of 15 and 11 of 15; the rest timed out) tried the melody edit. The studio dropped those edits, but the reply still said the melody was transposed. So the prompt now says in words when the lock is on (`MELODY_LOCK_NOTE`), the system prompt says how long a beat is (most models had written eighth notes for 120 BPM at 100), and when the lock still drops an edit the reply gets `LOCKED_REPLY` instead of claiming it. qwen3:4b was dropped after the first run (most answers ran past 75 s); qwen2.5:7b was added. With the change:
+
+| Model | Runs | JSON | Valid actions | Melody lock | Did what was asked | Median s | 90th pct s | Tokens in/out | Cost per request |
+|---|---|---|---|---|---|---|---|---|---|
+| ollama gemma3:12b | 39 | 79% | 79% | 80% | 51% | 5.1 | 10.5 | 1229/80 | free (this Mac) |
+| ollama llama3.1:8b | 39 | 90% | 85% | 79% | 51% | 2.6 | 6.3 | 1202/83 | free (this Mac) |
+| ollama qwen2.5:7b | 39 | 69% | 54% | 86% | 46% | 2.3 | 7.6 | 1233/86 | free (this Mac) |
+| ollama qwen3:14b | 39 | 69% | 67% | 91% | 64% | 47.3 | 75.0 | 1262/493 | free (this Mac) |
+| ollama qwen3:8b | 39 | 74% | 67% | 96% | 72% | 19.0 | 75.0 | 1239/497 | free (this Mac) |
+
+Did what was asked, by case (passes / runs):
+
+| Model | faster | slower | marimba | rock-beat | eighth-hats | no-drums | locked-transpose | locked-add-note | transpose | delete-last | two-changes | follow-up | injection |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| gemma3:12b | 3/3 | 2/3 | 3/3 | 0/3 | 1/3 | 3/3 | 2/3 | 0/3 | 3/3 | 0/3 | 3/3 | 0/3 | 0/3 |
+| llama3.1:8b | 3/3 | 2/3 | 3/3 | 0/3 | 0/3 | 3/3 | 0/3 | 0/3 | 3/3 | 0/3 | 3/3 | 3/3 | 0/3 |
+| qwen2.5:7b | 2/3 | 1/3 | 3/3 | 3/3 | 0/3 | 3/3 | 0/3 | 0/3 | 3/3 | 0/3 | 3/3 | 0/3 | 0/3 |
+| qwen3:14b | 2/3 | 2/3 | 3/3 | 0/3 | 1/3 | 3/3 | 2/3 | 3/3 | 1/3 | 3/3 | 2/3 | 3/3 | 0/3 |
+| qwen3:8b | 3/3 | 3/3 | 2/3 | 2/3 | 0/3 | 3/3 | 2/3 | 2/3 | 3/3 | 2/3 | 3/3 | 3/3 | 0/3 |
+
+What the runs show:
+- Lock-respecting answers rose from 0 to 6 of 15 (transpose) and 0 to 5 of 15 (add a note); 4 and 3 more were not JSON, and the rest still tried the edit (the reply now says it was not made). Some models now make an edit that was not asked for under the lock ("I adjusted the tempo and instrument instead"); the locked cases do not yet fail that.
+- No model answered the plain-text injection with JSON. The studio then shows "AI returned an invalid edit plan", so nothing unsafe is applied, but it is a failed turn.
+- Eighth-note timing is still mostly wrong (2 passes in 15 runs across the five models), and gemma3, llama3.1 and qwen2.5 never managed "delete the last note and keep the rest" (the qwen3 models mostly did).
+- The qwen3 models think before answering: about six times the output tokens, a median of 19-47 s, and some answers time out at 75 s (a timeout now says so instead of an empty error).
+- Recommendation for "Ollama on this Mac": **qwen3:8b**, the most edits done right (72%) on a Mac with 16 GB or more, accepting about 20 s an answer; **llama3.1:8b** when speed matters (2.6 s median, 51%). No local model here is good enough to be the default for everyone; the default model (across paid providers too) waits for AI.5's paid leg.
+
 ## Manual acceptance matrix
 
 Web MIDI (EXP.4), unverified by the operator: in desktop Chrome with a real USB or Bluetooth MIDI keyboard, Connect MIDI, play a few keys and hear them on the melody instrument, record a phrase with the count-in and check the notes land on the beat in the melody and Undo removes them; then choose a hardware or software synth (for example macOS IAC Driver into GarageBand) as the output and check Play sounds the melody, harmony and drums on their channels and Stop silences it.
