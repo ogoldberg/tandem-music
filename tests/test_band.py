@@ -259,7 +259,7 @@ def test_the_catalog_pins_musicgen_melody_without_pickles():
 
 
 def test_transformers_is_pinned_in_requirements_models():
-    text = open(os.path.join(os.path.dirname(__file__), "..", "requirements-models.txt")).read()
+    text = open(os.path.join(os.path.dirname(__file__), "..", "requirements-models.in")).read()
     pinned = {line.split("==")[0].strip().lower() for line in text.splitlines() if "==" in line and not line.startswith("#")}
     assert {"torch", "transformers", "safetensors"} <= pinned
 

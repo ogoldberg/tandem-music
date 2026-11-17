@@ -1,0 +1,2 @@
+# SEC.9: the auditor CI runs over the locks (compiled to audit.txt by compile.sh).
+pip-audit==2.10.1
