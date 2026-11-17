@@ -246,11 +246,17 @@ def captured_take(page, info):
       const x = new Float32Array(n); for (let i = 0; i < n; i++) x[i] = v.getInt16(44 + 2 * i, true) / 32767;
       const batches = window.__batches.splice(0), first = Math.ceil(Math.round(info.start * rate * 1e6) / 1e6);
       let gaps = 0, end = null;
-      for (const b of batches) { const at = Math.round(b.t * rate); if (end !== null && at !== end) gaps++; end = at + b.channels[0].length; }
-      const want = new Float32Array(n);
+      // Only a break that falls inside the take counts: frames before its zero are dropped by the studio anyway.
+      for (const b of batches) { const at = Math.round(b.t * rate); if (end !== null && at !== end && at > first && end < first + n) gaps++; end = at + b.channels[0].length; }
+      // The take's frames per channel, made mono as the studio does (recordings.js monoSamples: a channel 60 dB below the
+      // loudest is left out), then written as 16-bit.
+      const chans = Array.from({ length: Math.max(1, ...batches.map(b => b.channels.length)) }, () => new Float32Array(n));
       for (const b of batches) { const at = Math.round(b.t * rate) - first;
-        for (let i = 0; i < b.channels[0].length; i++) if (at + i >= 0 && at + i < n) {
-          let s = 0; for (const c of b.channels) s += c[i] / b.channels.length; want[at + i] = Math.round(Math.max(-1, Math.min(1, s)) * 32767) / 32767; } }
+        chans.forEach((ch, c) => { const src = b.channels[Math.min(c, b.channels.length - 1)];
+          for (let i = 0; i < src.length; i++) if (at + i >= 0 && at + i < n) ch[at + i] = src[i]; }); }
+      const level = ch => Math.sqrt(ch.reduce((a, v) => a + v * v, 0) / Math.max(1, ch.length)), loudest = Math.max(...chans.map(level));
+      const live = loudest ? chans.filter(ch => level(ch) > loudest * 0.001) : chans, want = new Float32Array(n);
+      for (let i = 0; i < n; i++) { let s = 0; for (const ch of live) s += ch[i] / live.length; want[i] = Math.round(Math.max(-1, Math.min(1, s)) * 32767) / 32767; }
       let differ = 0, sum = 0, quiet = 0, blocks = 0;
       for (let i = 0; i < n; i++) { if (Math.abs(x[i] - want[i]) > 1.5 / 32767) differ++; sum += x[i] * x[i]; }
       const rms = Math.sqrt(sum / n);
