@@ -6,10 +6,43 @@ import sys
 import time
 from pathlib import Path
 
+import re
+
 import httpx
 import pytest
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+# SEC.7: the pages' Content-Security-Policy has no 'unsafe-eval'. Playwright's wait_for_function
+# checks its predicate once, and when it is not yet true polls it with a function it builds from
+# the predicate's text inside the page, which the policy refuses ("Refused to evaluate a string as
+# JavaScript"). This polls the same way (every animation frame, the predicate's value not awaited,
+# so a Promise is truthy as before) with the predicate written into the evaluated source, which
+# Playwright runs through the DevTools protocol and the page's policy does not govern. The pages
+# keep their real policy in every e2e test.
+_FUNCTION = re.compile(r"^(async\s+)?(function\b|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)")
+
+
+def _csp_safe_wait_for_function(self, expression, *, arg=None, timeout=None, polling=None):
+    source = expression.strip()
+    predicate = f"({source})" if _FUNCTION.match(source) else f"(() => ({source}))"
+    limit = 30_000 if timeout is None else timeout
+    ok = self.evaluate(f"""async (arg) => {{
+      const predicate = {predicate};
+      const end = performance.now() + {limit};
+      for (;;) {{
+        if (predicate(arg)) return true;
+        if ({limit} > 0 && performance.now() > end) return false;
+        await new Promise(r => {"setTimeout(r, " + str(polling) + ")" if isinstance(polling, (int, float)) else "requestAnimationFrame(() => r())"});
+      }}
+    }}""", arg)
+    if not ok:
+        raise PlaywrightTimeoutError(f"Timeout {limit}ms exceeded waiting for {source[:200]}")
+
+
+Page.wait_for_function = _csp_safe_wait_for_function
 
 
 def _free_port():

@@ -24,7 +24,7 @@ A whole-repo static audit (seven dimensions: crypto, authorization and sessions,
 
 Fixed since (SEC.6): with "This device" chosen a beat take is read on the device by `beatbox.js` and never sent to `/api/analyze` (the guided flow's automatic Transcribe, rhythm-mode Transcribe and a layer transcribed into the drums; `e2e/test_beatbox.py`).
 
-Open (filed in `docs/ROADMAP.md`): no Content-Security-Policy (SEC.7); off Vercel, `/api/chat` without a token is open and the rate limit is in-process per socket address, so self-hosting behind a proxy needs a token and a store (low, SEC.8); no hashed lockfile for `requirements.txt` or `requirements-models.txt`, CI actions pinned by tag not SHA, model files hash-checked then reopened by path, and a custom backend URL saved in the Mac app also redirects Tune's server engine (SEC.9).
+Open (filed in `docs/ROADMAP.md`): off Vercel, `/api/chat` without a token is open and the rate limit is in-process per socket address, so self-hosting behind a proxy needs a token and a store (low, SEC.8); no hashed lockfile for `requirements.txt` or `requirements-models.txt`, CI actions pinned by tag not SHA, model files hash-checked then reopened by path, and a custom backend URL saved in the Mac app also redirects Tune's server engine (SEC.9).
 
 ## Request limits (SEC.1)
 Enforced by `RequestGuardMiddleware` in `request_guards.py` before a route reads its body. These are the hosted limits; in the Mac app, requests from its own window (checked by `tandem_desktop.guarded_app`, DESK.2) are not rate-limited and may send up to 240,000,000 bytes and 600 s of audio (`/api/tune` up to 600 s and 4096 note targets) in one request:
@@ -72,6 +72,9 @@ These apply to the optional hosted mode (operator's key on Vercel), not to bring
 3. Avoid logging audio, secrets or complete personal prompts.
 4. Add authentication, per-user quotas, safe usage limits and abuse monitoring before public commercial launch.
 5. Separate project ownership and persistent object storage if cloud saving is introduced.
+
+## Content-Security-Policy (SEC.7)
+`/` and `/capture` are sent with a Content-Security-Policy (`page_policy` in `tandem_backend.py`), defence in depth behind the XSS fix above. Scripts run only from this origin, from the page's one inline module script by its SHA-256 hash (read from the bytes sent, so an edited page never goes out with a stale hash), from Blob URLs (the pitch and capture AudioWorklets are built from source in the page) and as WebAssembly (`'wasm-unsafe-eval'`, the WORLD tuner); there is no `'unsafe-inline'` or `'unsafe-eval'`, so an injected `<script>`, an inline event handler or a `javascript:` URL does not run (`e2e/test_csp.py`), and the whole e2e suite runs with the policy on. `object-src`, `base-uri`, `form-action` and `frame-ancestors` are `'none'`. Styles may be inline. `connect-src` is `'self'`, any `https:` origin and `http://localhost`/`http://127.0.0.1` on any port, because the API base in Settings is the person's to choose; so the policy limits what runs, not where a script that runs could send data. The Mac app's launch secret is added by a WebKit user script, which the page's policy does not govern.
 
 ## Other safeguards
 - Browser microphone access requires permission and HTTPS.
