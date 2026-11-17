@@ -22,7 +22,7 @@ class PinnedClock:
 def client(monkeypatch):
     monkeypatch.delenv("TANDEM_ACCESS_TOKEN",raising=False)
     for name in ("VERCEL","UPSTASH_REDIS_REST_URL","UPSTASH_REDIS_REST_TOKEN","KV_REST_API_URL","KV_REST_API_TOKEN",
-                 "TANDEM_AUDIO_RATE_LIMIT","TANDEM_AUDIO_RATE_WINDOW_SECONDS"):
+                 "TANDEM_AUDIO_RATE_LIMIT","TANDEM_AUDIO_RATE_WINDOW_SECONDS","TANDEM_CHAT_RATE_LIMIT","TANDEM_CHAT_RATE_WINDOW_SECONDS"):
         monkeypatch.delenv(name,raising=False)
     guards.reset_memory_store()
     monkeypatch.setattr(guards,"upstash_transport",None)
@@ -69,6 +69,58 @@ def test_token_auth(client,monkeypatch):
     monkeypatch.setenv("TANDEM_ACCESS_TOKEN","secret")
     assert run(client("POST","/api/chat",json={"message":"hi","project":{}})).status_code==401
     assert run(client("GET","/api/health",headers={"x-tandem-token":"secret"})).status_code==200
+
+def test_the_right_token_passes_and_a_wrong_one_of_any_length_does_not(client,monkeypatch):
+    monkeypatch.setenv("TANDEM_ACCESS_TOKEN","secret")
+    chat=lambda token:run(client("POST","/api/chat",headers={"x-tandem-token":token},json={"message":"hi","project":{}})).status_code
+    assert chat("secret")==503  # past the token check: the app itself says no model is set
+    for wrong in ("secre","secrets","SECRET",""):
+        assert chat(wrong)==401
+
+CHAT_BODY={"message":"hi","project":{}}
+
+def test_chat_is_rate_limited_per_client_in_its_own_bucket(client,monkeypatch):
+    # Security audit L1: a leaked access token must not spend the AI key without limit.
+    monkeypatch.setenv("TANDEM_ACCESS_TOKEN","secret")
+    monkeypatch.setenv("TANDEM_CHAT_RATE_LIMIT","2")
+    monkeypatch.setenv("TANDEM_AUDIO_RATE_LIMIT","1")
+    chat=lambda:run(client("POST","/api/chat",headers={"x-tandem-token":"secret"},json=CHAT_BODY))
+    assert [chat().status_code for _ in range(2)]==[503,503]
+    blocked=chat()
+    assert blocked.status_code==429 and "chat" in blocked.json()["detail"] and 1<=int(blocked.headers["retry-after"])<=60
+    # the audio bucket is separate: chat did not use it up
+    assert run(client("POST","/api/analyze?mode=melody",files={"file":("a.wav",short_tone(),"audio/wav")})).status_code==200
+
+def test_a_wrong_token_is_refused_before_it_counts(client,monkeypatch):
+    monkeypatch.setenv("TANDEM_ACCESS_TOKEN","secret")
+    monkeypatch.setenv("TANDEM_CHAT_RATE_LIMIT","1")
+    for _ in range(3):
+        assert run(client("POST","/api/chat",headers={"x-tandem-token":"nope"},json=CHAT_BODY)).status_code==401
+    assert run(client("POST","/api/chat",headers={"x-tandem-token":"secret"},json=CHAT_BODY)).status_code==503
+
+def test_vercel_chat_limit_uses_the_shared_store_and_fails_closed_without_it(client,monkeypatch):
+    monkeypatch.setenv("VERCEL","1")
+    monkeypatch.setenv("TANDEM_ACCESS_TOKEN","secret")
+    chat=lambda:run(client("POST","/api/chat",headers={"x-tandem-token":"secret","x-forwarded-for":"203.0.113.5"},json=CHAT_BODY))
+    r=chat()
+    assert r.status_code==503 and "UPSTASH_REDIS_REST_URL" in r.json()["detail"]
+    monkeypatch.setenv("TANDEM_CHAT_RATE_LIMIT","1")
+    store=FakeUpstash(); store.install(monkeypatch)
+    assert [chat().status_code for _ in range(2)]==[503,429]
+    assert all(k.startswith("tandem:rl:chat:203.0.113.5:") for k in store.counts)
+
+def test_the_mac_apps_own_window_is_not_chat_limited(monkeypatch):
+    for name in ("VERCEL","TANDEM_ACCESS_TOKEN","UPSTASH_REDIS_REST_URL","UPSTASH_REDIS_REST_TOKEN","KV_REST_API_URL","KV_REST_API_TOKEN"):
+        monkeypatch.delenv(name,raising=False)
+    monkeypatch.setenv("TANDEM_CHAT_RATE_LIMIT","1")
+    guards.reset_memory_store()
+    async def local(scope,receive,send):
+        scope["tandem_local"]=True  # what tandem_desktop.guarded_app sets once the launch secret checks out
+        await server.app(scope,receive,send)
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=local),base_url="http://test") as c:
+            return [(await c.post("/api/chat",json=CHAT_BODY)).status_code for _ in range(3)]
+    assert run(call())==[503,503,503]
 
 def test_production_fails_closed_without_token(client, monkeypatch):
     monkeypatch.setenv("VERCEL", "1")
@@ -589,6 +641,23 @@ def test_a_provider_timeout_says_what_happened(monkeypatch):
     with pytest.raises(server.HTTPException) as caught:
         run(server.invoke_llm([{"role":"user","content":"hello"}]))
     assert caught.value.status_code==504 and "longer than 75 seconds" in caught.value.detail
+
+def test_a_provider_error_names_its_status_not_its_url(monkeypatch):
+    # Security audit I3: httpx's error text carries the request URL, which may hold a credential.
+    monkeypatch.setenv("TANDEM_PROVIDER","openai-compatible"); monkeypatch.setenv("TANDEM_MODEL","m")
+    monkeypatch.setenv("TANDEM_BASE_URL","https://gateway.test/key-in-path-s3cr3t/v1")
+    def handler(request): return httpx.Response(401,text="no")
+    actual=httpx.AsyncClient
+    monkeypatch.setattr(server.httpx,"AsyncClient",lambda **kwargs: actual(transport=httpx.MockTransport(handler),**kwargs))
+    with pytest.raises(server.HTTPException) as caught:
+        run(server.invoke_llm([{"role":"user","content":"hello"}]))
+    assert caught.value.status_code==502 and "401" in caught.value.detail
+    assert "s3cr3t" not in caught.value.detail and "gateway.test" not in caught.value.detail
+    def refuse(request): raise httpx.ConnectError("could not reach https://gateway.test/key-in-path-s3cr3t/v1",request=request)
+    monkeypatch.setattr(server.httpx,"AsyncClient",lambda **kwargs: actual(transport=httpx.MockTransport(refuse),**kwargs))
+    with pytest.raises(server.HTTPException) as caught:
+        run(server.invoke_llm([{"role":"user","content":"hello"}]))
+    assert caught.value.detail=="AI provider request failed: ConnectError"
 
 def test_client_model_module_is_served(client):
     response = run(client("GET", "/transcription.js"))

@@ -50,6 +50,16 @@ def audio_limit() -> tuple[int, int]:
     return limit, window
 
 
+def chat_limit() -> tuple[int, int]:
+    """(max requests, window seconds) per client for /api/chat, so a leaked access token cannot
+    spend the operator's AI key without limit (security audit L1)."""
+    limit = int(os.getenv("TANDEM_CHAT_RATE_LIMIT", "10"))
+    window = int(os.getenv("TANDEM_CHAT_RATE_WINDOW_SECONDS", "60"))
+    if limit < 1 or window < 1:
+        raise ValueError("TANDEM_CHAT_RATE_LIMIT and TANDEM_CHAT_RATE_WINDOW_SECONDS must be >= 1")
+    return limit, window
+
+
 class MemoryStore:
     """Fixed-window counter for a single process. Local development only."""
 
@@ -150,7 +160,7 @@ class _BodyTooLarge(Exception):
 
 
 class RequestGuardMiddleware:
-    """ASGI middleware: rate-limits audio routes, then caps request body size
+    """ASGI middleware: rate-limits audio routes and /api/chat, then caps request body size
     for audio routes and /api/chat (checked on Content-Length and while streaming).
     Requests from the Mac app's own window (is_local) are not rate-limited and may send
     longer audio."""
@@ -167,11 +177,15 @@ class RequestGuardMiddleware:
                 max_bytes = LOCAL_AUDIO_BODY_MAX_BYTES
             else:
                 max_bytes = AUDIO_BODY_MAX_BYTES
-                blocked = await self._rate_limit(scope)
+                blocked = await self._rate_limit(scope, "audio")
                 if blocked:
                     return await self._send(send, *blocked)
         elif path == CHAT_PATH:
             max_bytes = CHAT_BODY_MAX_BYTES
+            if not is_local(scope):
+                blocked = await self._rate_limit(scope, "chat")
+                if blocked:
+                    return await self._send(send, *blocked)
         else:
             return await self.app(scope, receive, send)
 
@@ -216,18 +230,18 @@ class RequestGuardMiddleware:
         if overflow and not started:
             await self._send(send, *_json_response(413, f"Request body over {max_bytes} bytes"))
 
-    async def _rate_limit(self, scope):
+    async def _rate_limit(self, scope, kind):
         try:
-            limit, window = audio_limit()
+            limit, window = audio_limit() if kind == "audio" else chat_limit()
             store = resolve_store()
             window_index = math.floor(time.time() / window)
-            key = f"tandem:rl:audio:{client_id(scope)}:{window_index}"
+            key = f"tandem:rl:{kind}:{client_id(scope)}:{window_index}"
             count = await store.hit(key, window)
         except (RateLimitUnavailable, ValueError) as exc:
             return _json_response(503, "Rate limiting unavailable: " + str(exc))
         if count > limit:
             retry_after = max(1, int((window_index + 1) * window - time.time()))
-            return _json_response(429, f"Too many audio requests; limit is {limit} per {window} seconds",
+            return _json_response(429, f"Too many {kind} requests; limit is {limit} per {window} seconds",
                                   [(b"retry-after", str(retry_after).encode())])
         return None
 

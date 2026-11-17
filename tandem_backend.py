@@ -1,5 +1,5 @@
 """Tandem API: vendor-neutral music agent and WAV analysis/tuning."""
-import io, json, os, re, wave
+import hmac, io, json, os, re, wave
 from pathlib import Path
 from typing import Any, Literal
 import httpx
@@ -261,7 +261,7 @@ async def authenticate(req: Request, call_next):
         secret=os.getenv("TANDEM_ACCESS_TOKEN", "")
         if os.getenv("VERCEL") and not secret:
             return Response('{"detail":"Set TANDEM_ACCESS_TOKEN in Vercel to protect AI spending"}',status_code=503,media_type="application/json")
-        if secret and req.headers.get("x-tandem-token") != secret:
+        if secret and not hmac.compare_digest((req.headers.get("x-tandem-token") or "").encode(), secret.encode()):
             return Response('{"detail":"Invalid Tandem access token"}',status_code=401,media_type="application/json")
     return await call_next(req)
 # Per-request audio limits. The hosted limits keep each request inside Vercel's time and body
@@ -588,8 +588,11 @@ async def invoke_llm(messages,config=None,usage=None):
         except httpx.TimeoutException as exc:
             # AI.5: a timeout's own message is empty; a slow local thinking model hits this.
             raise HTTPException(504,"The AI model took longer than 75 seconds to answer; try again or choose a faster model") from exc
+        except httpx.HTTPStatusError as exc:
+            # Only the status: the exception's text carries the provider's URL, which may hold a credential.
+            raise HTTPException(502,"AI provider request failed: the provider answered "+str(exc.response.status_code)) from exc
         except (httpx.HTTPError,KeyError,IndexError) as exc:
-            raise HTTPException(502,"AI provider request failed: "+(str(exc) or type(exc).__name__)[:400])
+            raise HTTPException(502,"AI provider request failed: "+type(exc).__name__) from exc
 PROTECTED_MELODY_ACTIONS={"transpose","add_note","replace_notes","remove_track"}
 def touches_melody(action):
     """Whether an action changes the melody, which melody lock (ADR-004) forbids."""

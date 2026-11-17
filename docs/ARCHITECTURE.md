@@ -48,7 +48,7 @@ Vercel runs `api/index.py` which imports `tandem_backend.app`. FastAPI serves th
 | POST /api/analyze | Server heuristic melody/beatbox analysis | Public |
 | POST /api/tune | WORLD monophonic voice pitch correction | Public |
 
-The audio endpoints consume CPU. `request_guards.py` rate-limits them per client IP through Upstash Redis (in-process counters only off Vercel) and caps request bodies before any route reads them; see [SECURITY.md](SECURITY.md#request-limits-sec1). Per-IP limits are not per-user quotas: treat this as an experimental personal app, not a production multi-tenant API.
+The audio endpoints consume CPU. `request_guards.py` rate-limits them (and, after the token check, `/api/chat` in a bucket of its own) per client IP through Upstash Redis (in-process counters only off Vercel) and caps request bodies before any route reads them; see [SECURITY.md](SECURITY.md#request-limits-sec1). Per-IP limits are not per-user quotas: treat this as an experimental personal app, not a production multi-tenant API.
 
 ## Portable music schema (early internal format)
 ```json

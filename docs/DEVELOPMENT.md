@@ -88,8 +88,9 @@ Vercel project settings: https://vercel.com/oren-goldbergs-projects-c0a37bd5/tan
 | `TANDEM_API_KEY` | Provider credential | Secret. Configure in Vercel; never commit |
 | `TANDEM_BASE_URL` | Optional compatible API base | For supported gateways/proxies; ensure server can reach it |
 | `TANDEM_ACCESS_TOKEN` | Shared personal access password for `/api/chat` | **Required on Vercel to use paid AI**; not per-user authentication |
-| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Shared rate-limit store for the audio routes | **Required on Vercel** or `/api/analyze` and `/api/tune` return 503. Add the Upstash Redis integration from the Vercel Marketplace (free tier); it sets these, or the equivalent `KV_REST_API_URL`/`KV_REST_API_TOKEN`, which are also accepted. Secret token; never commit |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Shared rate-limit store for the audio routes and chat | **Required on Vercel** or `/api/analyze` and `/api/tune` return 503. Add the Upstash Redis integration from the Vercel Marketplace (free tier); it sets these, or the equivalent `KV_REST_API_URL`/`KV_REST_API_TOKEN`, which are also accepted. Secret token; never commit |
 | `TANDEM_AUDIO_RATE_LIMIT`, `TANDEM_AUDIO_RATE_WINDOW_SECONDS` | Audio-route rate limit per client IP | Defaults 20 requests per 60 s; limits are listed in [SECURITY.md](SECURITY.md#request-limits-sec1) |
+| `TANDEM_CHAT_RATE_LIMIT`, `TANDEM_CHAT_RATE_WINDOW_SECONDS` | `/api/chat` rate limit per client IP, after the token check (SEC.5) | Defaults 10 requests per 60 s; uses the same store, so chat also returns 503 on Vercel without it |
 | `TANDEM_ALLOWED_ORIGINS` | Cross-origin requests | Usually unnecessary with single-origin deployment |
 | `TANDEM_MUSIC_PROVIDER`, `TANDEM_MUSIC_MODEL` | Reserved music-generation metadata | Setting these **does not enable** music generation; no adapter exists yet |
 
