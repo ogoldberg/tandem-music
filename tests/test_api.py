@@ -540,9 +540,9 @@ def test_contour_module_is_served_and_precached(client):
     assert "./contour.js" in sw.text
 
 @pytest.mark.parametrize("provider,path,body",[
-    ("openai-compatible","/chat/completions",'{"choices":[{"message":{"content":"OK"}}]}'),
-    ("anthropic","/v1/messages",'{"content":[{"type":"text","text":"OK"}]}'),
-    ("gemini","/v1beta/models/test-model:generateContent",'{"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}')
+    ("openai-compatible","/chat/completions",'{"choices":[{"message":{"content":"OK"}}],"usage":{"prompt_tokens":11,"completion_tokens":3}}'),
+    ("anthropic","/v1/messages",'{"content":[{"type":"text","text":"OK"}],"usage":{"input_tokens":11,"output_tokens":3}}'),
+    ("gemini","/v1beta/models/test-model:generateContent",'{"candidates":[{"content":{"parts":[{"text":"OK"}]}}],"usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":3}}')
 ])
 def test_provider_adapters(monkeypatch,provider,path,body):
     monkeypatch.setenv("TANDEM_PROVIDER",provider)
@@ -558,6 +558,10 @@ def test_provider_adapters(monkeypatch,provider,path,body):
     monkeypatch.setattr(server.httpx,"AsyncClient",lambda **kwargs: actual(transport=transport,**kwargs))
     assert run(server.invoke_llm([{"role":"user","content":"hello"}]))=="OK"
     assert seen[0].endswith(path)
+    # AI.5: the token counts each provider reports reach a usage dict, for pricing evaluation runs.
+    usage={}
+    assert run(server.invoke_llm([{"role":"user","content":"hello"}],usage=usage))=="OK"
+    assert usage=={"input":11,"output":3}
 
 
 def test_client_model_module_is_served(client):

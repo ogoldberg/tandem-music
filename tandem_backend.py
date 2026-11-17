@@ -555,7 +555,9 @@ def extract_json(s):
         m=re.search(r"\{.*\}",s,re.S)
         if m:return json.loads(m.group())
         raise ValueError("Model did not return JSON")
-async def invoke_llm(messages,config=None):
+async def invoke_llm(messages,config=None,usage=None):
+    """The model's text for the messages. AI.5: a dict passed as usage gets the request's input and
+    output token counts when the provider reports them (the chat evaluation prices runs with them)."""
     config=config or env_llm_config()
     provider=config["provider"]; model=config["model"]; key=config["key"]; base=config["base_url"].rstrip("/")
     if not model: raise HTTPException(503,"Set TANDEM_MODEL and the provider configuration on the server")
@@ -565,38 +567,51 @@ async def invoke_llm(messages,config=None):
             if provider=="anthropic":
                 url=(base or "https://api.anthropic.com")+"/v1/messages"
                 r=await client.post(url,headers={"x-api-key":key,"anthropic-version":"2023-06-01","content-type":"application/json"},json={"model":model,"max_tokens":1800,"system":SYSTEM,"messages":[m for m in messages if m["role"]!="system"]})
-                r.raise_for_status()
-                return "".join(x.get("text","") for x in r.json().get("content",[]) if x.get("type")=="text")
+                r.raise_for_status(); body=r.json(); u=body.get("usage") or {}
+                if usage is not None: usage.update(input=u.get("input_tokens"),output=u.get("output_tokens"))
+                return "".join(x.get("text","") for x in body.get("content",[]) if x.get("type")=="text")
             if provider=="gemini":
                 url=(base or "https://generativelanguage.googleapis.com")+"/v1beta/models/"+model+":generateContent"
                 contents=[{"role":"model" if m["role"]=="assistant" else "user","parts":[{"text":m["content"]}]} for m in messages if m["role"]!="system"]
                 r=await client.post(url,headers={"x-goog-api-key":key},json={"systemInstruction":{"parts":[{"text":SYSTEM}]},"contents":contents,"generationConfig":{"responseMimeType":"application/json"}})
-                r.raise_for_status()
-                return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                r.raise_for_status(); body=r.json(); u=body.get("usageMetadata") or {}
+                if usage is not None: usage.update(input=u.get("promptTokenCount"),output=u.get("candidatesTokenCount"))
+                return body["candidates"][0]["content"]["parts"][0]["text"]
             # OpenAI-compatible APIs work with OpenAI, compatible gateways, local vLLM, LM Studio and Ollama.
             url=(base or ("http://localhost:11434/v1" if provider=="ollama" else "https://api.openai.com/v1"))+"/chat/completions"
             headers={"content-type":"application/json"}
             if key:headers["authorization"]="Bearer "+key
             r=await client.post(url,headers=headers,json={"model":model,"messages":[{"role":"system","content":SYSTEM}]+messages,"temperature":0.5})
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
+            r.raise_for_status(); body=r.json(); u=body.get("usage") or {}
+            if usage is not None: usage.update(input=u.get("prompt_tokens"),output=u.get("completion_tokens"))
+            return body["choices"][0]["message"]["content"]
         except (httpx.HTTPError,KeyError,IndexError) as exc:
             raise HTTPException(502,"AI provider request failed: "+str(exc)[:400])
-@app.post("/api/chat")
-async def chat(req: ChatRequest, request: Request):
+PROTECTED_MELODY_ACTIONS={"transpose","add_note","replace_notes","remove_track"}
+def touches_melody(action):
+    """Whether an action changes the melody, which melody lock (ADR-004) forbids."""
+    return action["type"] in PROTECTED_MELODY_ACTIONS and (action["type"]!="remove_track" or action.get("track")=="melody")
+def chat_messages(req: ChatRequest):
+    """The messages /api/chat sends the model after the system prompt (also used by the AI.5 evaluation)."""
     project=req.project.model_dump()
     # GENRE.1: a project without a genre is sent to the model exactly as before.
     if project["genre"] is None: del project["genre"]
     prior=[{"role":m.role,"content":m.content} for m in req.history[-10:]]
     genre=("Genre: "+GENRES[req.project.genre]+"\n") if req.project.genre else ""
-    raw=await invoke_llm(prior+[{"role":"user","content":genre+"Current project: "+json.dumps(project)[:18000]+"\nRequest: "+req.message}],llm_config(request))
-    try: obj=extract_json(raw)
-    except (ValueError,json.JSONDecodeError): raise HTTPException(502,"AI returned an invalid edit plan; retry or change model")
+    return prior+[{"role":"user","content":genre+"Current project: "+json.dumps(project)[:18000]+"\nRequest: "+req.message}]
+def chat_plan(raw, req: ChatRequest):
+    """The reply and the allowed actions from the model's text: parsed, allowlisted and clamped, and
+    with melody lock on, every melody change left out. Raises ValueError when the text is not JSON."""
+    obj=extract_json(raw)
+    if not isinstance(obj,dict): raise ValueError("Model did not return a JSON object")
     actions=normalize_actions(obj.get("actions",[]))
-    if req.project.melody_locked:
-        protected={"transpose","add_note","replace_notes","remove_track"}
-        actions=[a for a in actions if not (a["type"] in protected and (a["type"]!="remove_track" or a.get("track")=="melody"))]
+    if req.project.melody_locked: actions=[a for a in actions if not touches_melody(a)]
     return {"reply":str(obj.get("reply","I updated your arrangement."))[:1200],"actions":actions}
+@app.post("/api/chat")
+async def chat(req: ChatRequest, request: Request):
+    raw=await invoke_llm(chat_messages(req),llm_config(request))
+    try: return chat_plan(raw,req)
+    except (ValueError,json.JSONDecodeError): raise HTTPException(502,"AI returned an invalid edit plan; retry or change model")
 
 async def read_upload(file,max_bytes=AUDIO_BODY_MAX_BYTES):
     data=await file.read(max_bytes)
