@@ -585,8 +585,11 @@ async def invoke_llm(messages,config=None,usage=None):
             r.raise_for_status(); body=r.json(); u=body.get("usage") or {}
             if usage is not None: usage.update(input=u.get("prompt_tokens"),output=u.get("completion_tokens"))
             return body["choices"][0]["message"]["content"]
+        except httpx.TimeoutException as exc:
+            # AI.5: a timeout's own message is empty; a slow local thinking model hits this.
+            raise HTTPException(504,"The AI model took longer than 75 seconds to answer; try again or choose a faster model") from exc
         except (httpx.HTTPError,KeyError,IndexError) as exc:
-            raise HTTPException(502,"AI provider request failed: "+str(exc)[:400])
+            raise HTTPException(502,"AI provider request failed: "+(str(exc) or type(exc).__name__)[:400])
 PROTECTED_MELODY_ACTIONS={"transpose","add_note","replace_notes","remove_track"}
 def touches_melody(action):
     """Whether an action changes the melody, which melody lock (ADR-004) forbids."""

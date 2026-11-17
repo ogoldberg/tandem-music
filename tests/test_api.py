@@ -580,6 +580,16 @@ def test_provider_adapters(monkeypatch,provider,path,body):
     assert usage=={"input":11,"output":3}
 
 
+def test_a_provider_timeout_says_what_happened(monkeypatch):
+    # AI.5: httpx's timeout has an empty message, which left "AI provider request failed: " and nothing.
+    monkeypatch.setenv("TANDEM_PROVIDER","ollama"); monkeypatch.setenv("TANDEM_MODEL","slow-model")
+    def handler(request): raise httpx.ReadTimeout("",request=request)
+    actual=httpx.AsyncClient
+    monkeypatch.setattr(server.httpx,"AsyncClient",lambda **kwargs: actual(transport=httpx.MockTransport(handler),**kwargs))
+    with pytest.raises(server.HTTPException) as caught:
+        run(server.invoke_llm([{"role":"user","content":"hello"}]))
+    assert caught.value.status_code==504 and "longer than 75 seconds" in caught.value.detail
+
 def test_client_model_module_is_served(client):
     response = run(client("GET", "/transcription.js"))
     assert response.status_code == 200
