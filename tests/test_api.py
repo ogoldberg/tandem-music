@@ -1264,6 +1264,42 @@ def test_an_edited_page_is_sent_with_its_new_hash(client,tmp_path,monkeypatch):
     assert second.headers["content-security-policy"]!=first
     assert second.headers["content-security-policy"]==server.page_policy(second.content)
 
+def test_the_policy_hashes_a_script_as_the_browser_reads_it_with_crlf_line_ends():
+    # SEC.7 follow-up: a browser normalizes CR LF and a lone CR to LF before hashing an inline script, so a
+    # checkout with Windows line ends must still send the hash the browser computes.
+    import base64,hashlib
+    h=lambda s:"'sha256-"+base64.b64encode(hashlib.sha256(s).digest()).decode()+"'"
+    d=csp_directives(server.page_policy(b"<script type=module>\r\na()\r\nb()\rc()\n</script>"))
+    assert d["script-src"][-1]==h(b"\na()\nb()\nc()\n")
+
+@pytest.mark.parametrize("path",["/","/capture"])
+def test_a_page_is_revalidated_with_its_etag_and_answered_not_modified(client,path):
+    # SEC.7 follow-up: the pages keep ETag and Last-Modified, and a matching If-None-Match gets 304 with the
+    # policy, so the service worker's network-first fetch does not download the page again.
+    r=run(client("GET",path))
+    etag=r.headers["etag"]; assert etag.startswith('"') and r.headers["last-modified"].endswith("GMT")
+    again=run(client("GET",path,headers={"If-None-Match":etag}))
+    assert again.status_code==304 and again.content==b""
+    assert again.headers["etag"]==etag
+    assert again.headers["content-security-policy"]==r.headers["content-security-policy"]
+    other=run(client("GET",path,headers={"If-None-Match":'"stale"'}))
+    assert other.status_code==200 and other.content==r.content
+
+def test_an_edited_page_gets_a_new_etag(client,tmp_path,monkeypatch):
+    page=tmp_path/"index.html"; page.write_bytes(b"<script type=module>one()</script>")
+    monkeypatch.setattr(server,"__file__",str(tmp_path/"tandem_backend.py"))
+    first=run(client("GET","/")).headers["etag"]
+    page.write_bytes(b"<script type=module>two(2)</script>")
+    second=run(client("GET","/",headers={"If-None-Match":first}))
+    assert second.status_code==200 and second.headers["etag"]!=first
+
+def test_a_weak_or_any_if_none_match_is_answered_not_modified(client):
+    # SEC.7 follow-up review: If-None-Match compares weakly, so W/"<etag>" matches, and * matches any page.
+    etag=run(client("GET","/")).headers["etag"]
+    for value in ("W/"+etag,"*",'"stale", W/'+etag):
+        r=run(client("GET","/",headers={"If-None-Match":value}))
+        assert r.status_code==304 and r.content==b"", value
+
 # SEC.8: off Vercel too, chat without a token and the in-process rate-limit store are allowed only for a
 # request straight from this computer (or the Mac app's window), or when the operator says so in the env.
 def remote_client(address,headers=None):

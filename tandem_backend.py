@@ -1,5 +1,6 @@
 """Tandem API: vendor-neutral music agent and WAV analysis/tuning."""
 import base64, hashlib, hmac, io, json, os, re, wave
+from email.utils import formatdate
 from pathlib import Path
 from typing import Any, Literal
 import httpx
@@ -29,10 +30,12 @@ async def validation_error(request: Request, exc: RequestValidationError):
 # computer, because the API base (#api) is the person's to choose. The hash is read from the bytes
 # that are sent, so an edited page never goes out with a stale hash.
 INLINE_SCRIPT = re.compile(rb"<script(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script\s*>", re.S | re.I)
-_pages: dict[Path, tuple[tuple[int, int], bytes, str]] = {}
+_pages: dict[Path, tuple[tuple[int, int], bytes, dict[str, str]]] = {}
 
 def page_policy(body: bytes) -> str:
-    hashes = " ".join("'sha256-" + base64.b64encode(hashlib.sha256(s).digest()).decode() + "'"
+    # A browser hashes the script's text after turning CR LF and a lone CR into LF.
+    hashes = " ".join("'sha256-" + base64.b64encode(hashlib.sha256(
+                          s.replace(b"\r\n", b"\n").replace(b"\r", b"\n")).digest()).decode() + "'"
                       for s in INLINE_SCRIPT.findall(body))
     return "; ".join([
         "default-src 'self'",
@@ -48,20 +51,29 @@ def page_policy(body: bytes) -> str:
         "frame-ancestors 'none'",
     ])
 
-def page_response(name: str) -> Response:
+def page_response(name: str, request: Request) -> Response:
+    """The page with its policy and validators; a matching If-None-Match gets 304, so the service
+    worker's network-first fetch does not download an unchanged page again."""
     path = Path(__file__).resolve().parent / name
     st = path.stat()
     key = (st.st_mtime_ns, st.st_size)
     hit = _pages.get(path)
     if not hit or hit[0] != key:
         body = path.read_bytes()
-        hit = (key, body, page_policy(body))
+        hit = (key, body, {
+            "Content-Security-Policy": page_policy(body),
+            "ETag": '"' + hashlib.sha256(body).hexdigest()[:32] + '"',
+            "Last-Modified": formatdate(st.st_mtime, usegmt=True),
+        })
         _pages[path] = hit
-    return Response(hit[1], media_type="text/html", headers={"Content-Security-Policy": hit[2]})
+    sent = {t.strip().removeprefix("W/") for t in request.headers.get("if-none-match", "").split(",")}
+    if hit[2]["ETag"] in sent or "*" in sent:
+        return Response(status_code=304, headers=hit[2])
+    return Response(hit[1], media_type="text/html", headers=hit[2])
 
 @app.get("/", include_in_schema=False)
-def homepage():
-    return page_response("index.html")
+def homepage(request: Request):
+    return page_response("index.html", request)
 
 @app.get("/sw.js", include_in_schema=False)
 def service_worker():
@@ -177,8 +189,8 @@ def app_icon(name: str):
 
 # MOB.1: the phone capture page, its module and its own manifest (so adding it to the home screen opens capture).
 @app.get("/capture", include_in_schema=False)
-def capture_page():
-    return page_response("capture.html")
+def capture_page(request: Request):
+    return page_response("capture.html", request)
 
 @app.get("/bundle.js", include_in_schema=False)
 def bundle_js():
