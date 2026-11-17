@@ -1,5 +1,5 @@
 """Tandem API: vendor-neutral music agent and WAV analysis/tuning."""
-import hmac, io, json, os, re, wave
+import base64, hashlib, hmac, io, json, os, re, wave
 from pathlib import Path
 from typing import Any, Literal
 import httpx
@@ -22,9 +22,46 @@ async def validation_error(request: Request, exc: RequestValidationError):
     errors=[{"loc":list(e.get("loc",()))[:8],"msg":str(e.get("msg",""))[:200],"type":e.get("type","")} for e in exc.errors()[:20]]
     return JSONResponse(status_code=422,content={"detail":errors})
 
+# SEC.7: each page is sent with a Content-Security-Policy that runs only its own scripts: files from
+# this origin, its one inline module script by hash (no 'unsafe-inline', so an injected inline script
+# or event handler does not run), the AudioWorklets the page builds from Blob URLs (pitch.js, take.js)
+# and WebAssembly (the WORLD tuner). connect-src allows any https origin and a server on this
+# computer, because the API base (#api) is the person's to choose. The hash is read from the bytes
+# that are sent, so an edited page never goes out with a stale hash.
+INLINE_SCRIPT = re.compile(rb"<script(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script\s*>", re.S | re.I)
+_pages: dict[Path, tuple[tuple[int, int], bytes, str]] = {}
+
+def page_policy(body: bytes) -> str:
+    hashes = " ".join("'sha256-" + base64.b64encode(hashlib.sha256(s).digest()).decode() + "'"
+                      for s in INLINE_SCRIPT.findall(body))
+    return "; ".join([
+        "default-src 'self'",
+        f"script-src 'self' blob: 'wasm-unsafe-eval' {hashes}".rstrip(),
+        "worker-src 'self' blob:",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "media-src 'self' blob:",
+        "connect-src 'self' https: http://localhost:* http://127.0.0.1:*",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "frame-ancestors 'none'",
+    ])
+
+def page_response(name: str) -> Response:
+    path = Path(__file__).resolve().parent / name
+    st = path.stat()
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _pages.get(path)
+    if not hit or hit[0] != key:
+        body = path.read_bytes()
+        hit = (key, body, page_policy(body))
+        _pages[path] = hit
+    return Response(hit[1], media_type="text/html", headers={"Content-Security-Policy": hit[2]})
+
 @app.get("/", include_in_schema=False)
 def homepage():
-    return FileResponse(Path(__file__).resolve().parent / "index.html", media_type="text/html")
+    return page_response("index.html")
 
 @app.get("/sw.js", include_in_schema=False)
 def service_worker():
@@ -141,7 +178,7 @@ def app_icon(name: str):
 # MOB.1: the phone capture page, its module and its own manifest (so adding it to the home screen opens capture).
 @app.get("/capture", include_in_schema=False)
 def capture_page():
-    return FileResponse(Path(__file__).resolve().parent / "capture.html", media_type="text/html")
+    return page_response("capture.html")
 
 @app.get("/bundle.js", include_in_schema=False)
 def bundle_js():

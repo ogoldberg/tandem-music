@@ -41,12 +41,15 @@ Vercel runs `api/index.py` which imports `tandem_backend.app`. FastAPI serves th
 ## Implemented API
 | Route | Behavior | Authorization |
 |---|---|---|
-| GET / | Browser studio | Public |
+| GET / | Browser studio, with a Content-Security-Policy (SEC.7) | Public |
+| GET /capture | Phone capture page, with a Content-Security-Policy (SEC.7) | Public |
 | GET /api/health | Health metadata | Public |
 | GET /api/config | Non-secret model/capability metadata | Public |
 | POST /api/chat | Text LLM project edit plan | Requires shared token on Vercel |
 | POST /api/analyze | Server heuristic melody/beatbox analysis | Public |
 | POST /api/tune | WORLD monophonic voice pitch correction | Public |
+
+Both pages are sent by `page_response`, which reads the file and adds the policy `page_policy` builds from it: scripts from this origin, Blob URLs (the AudioWorklets) and WebAssembly, and the page's inline module script by its SHA-256 hash, so no injected inline script or event handler runs; see `docs/SECURITY.md`.
 
 The audio endpoints consume CPU. `request_guards.py` rate-limits them (and, after the token check, `/api/chat` in a bucket of its own) per client IP through Upstash Redis (in-process counters only off Vercel) and caps request bodies before any route reads them; see [SECURITY.md](SECURITY.md#request-limits-sec1). Per-IP limits are not per-user quotas: treat this as an experimental personal app, not a production multi-tenant API.
 

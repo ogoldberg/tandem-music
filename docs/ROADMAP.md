@@ -47,9 +47,10 @@ This is the working task list, in strategic order: protect the deployment, prove
 - [ ] **SEC.6** Do not upload a beat take when "This device" is chosen
   - The guided flow's automatic Transcribe after a beat take, rhythm-mode Transcribe and a layer transcribed into the drums POST the take to `/api/analyze` even with the device transcriber chosen (audit M1). Read beats on the device (port the onset detector to JS, as VOX.4 did for WORLD), or honour the setting and say beats need the server.
   - **Acceptance:** a Chromium test records a beat in the guided view with "This device" and sees no `/api/analyze` request; the beat still becomes drums, or the step says why it did not.
-- [ ] **SEC.7** A Content-Security-Policy for the studio and capture pages
+- [x] **SEC.7** A Content-Security-Policy for the studio and capture pages
   - `script-src 'self'` with a hash or nonce for the inline module script, no `'unsafe-inline'`, `connect-src` covering a custom API base; worker and WebAssembly sources allowed. Defence in depth behind SEC.5's XSS fix.
   - **Acceptance:** every e2e test passes with the header on; a test injects an inline script and sees it blocked.
+  - Done: `page_policy` in `tandem_backend.py` sends the policy with both pages, the inline module script allowed by its hash; `tests/test_api.py` checks the header and hash, `e2e/test_csp.py` injects a script element, a module script, an event handler and a `javascript:` URL into each page and sees all four blocked. `connect-src` allows any `https:` origin and local servers for a custom API base (`docs/SECURITY.md`).
 - [ ] **SEC.8** Fail closed off Vercel too
   - Off Vercel, `/api/chat` with a server key and no token is open, and the rate limit falls back to an in-process counter keyed by socket address (one bucket behind a proxy). Decide from what is configured, not where it runs: refuse chat without a token unless `TANDEM_ALLOW_OPEN_CHAT=1` or the request is loopback/local; require `TANDEM_RATE_LIMIT_STORE=memory` to use the in-process store. Low: the supported deployments (Vercel, the Mac app, local development) are not affected.
   - **Acceptance:** tests for a non-Vercel server with a key and no token, and with no store.

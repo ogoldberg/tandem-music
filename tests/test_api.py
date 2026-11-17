@@ -1218,3 +1218,40 @@ def test_world_wasm_assets_are_served_with_recorded_hashes(client):
     for name in ("worldtune.js", "tuneworker.js"):
         r = run(client("GET", f"/{name}"))
         assert r.status_code == 200 and r.headers["content-type"].startswith("text/javascript"), name
+
+def csp_directives(header):
+    return {part.split()[0]:part.split()[1:] for part in (p.strip() for p in header.split(";")) if part}
+
+@pytest.mark.parametrize("path,name",[("/","index.html"),("/capture","capture.html")])
+def test_each_page_runs_only_its_own_inline_script(client,path,name):
+    # SEC.7: the policy names the hash of exactly the page's one inline script, never 'unsafe-inline'.
+    import base64,hashlib,re
+    r=run(client("GET",path))
+    assert r.status_code==200 and r.headers["content-type"].startswith("text/html")
+    body=open(name,"rb").read()
+    assert r.content==body
+    scripts=re.findall(rb"<script[^>]*>(.*?)</script>",body,re.S)
+    assert len(scripts)==1 and len(scripts[0])>1000
+    want="'sha256-"+base64.b64encode(hashlib.sha256(scripts[0]).digest()).decode()+"'"
+    d=csp_directives(r.headers["content-security-policy"])
+    assert d["script-src"]==["'self'","blob:","'wasm-unsafe-eval'",want]
+    assert "'unsafe-inline'" not in d["script-src"] and "'unsafe-eval'" not in d["script-src"]
+    assert d["object-src"]==["'none'"] and d["base-uri"]==["'none'"] and d["frame-ancestors"]==["'none'"]
+    assert d["connect-src"][:2]==["'self'","https:"]
+
+def test_the_policy_hashes_every_inline_script_and_not_a_script_file():
+    body=b"<script type=module>a()</script><script src='./x.js'></script><SCRIPT>b()</SCRIPT >"
+    d=csp_directives(server.page_policy(body))
+    import base64,hashlib
+    h=lambda s:"'sha256-"+base64.b64encode(hashlib.sha256(s).digest()).decode()+"'"
+    assert d["script-src"]==["'self'","blob:","'wasm-unsafe-eval'",h(b"a()"),h(b"b()")]
+
+def test_an_edited_page_is_sent_with_its_new_hash(client,tmp_path,monkeypatch):
+    page=tmp_path/"index.html"; page.write_bytes(b"<script type=module>one()</script>")
+    monkeypatch.setattr(server,"__file__",str(tmp_path/"tandem_backend.py"))
+    first=run(client("GET","/")).headers["content-security-policy"]
+    page.write_bytes(b"<script type=module>two(2)</script>")
+    second=run(client("GET","/"))
+    assert second.content==b"<script type=module>two(2)</script>"
+    assert second.headers["content-security-policy"]!=first
+    assert second.headers["content-security-policy"]==server.page_policy(second.content)
