@@ -8,7 +8,8 @@ recording of the same length and rate as the one sent; the original stays.
 
 The models are the TorchScript files RAVE exports for realtime use, downloaded and verified by the
 MODEL.1 runtime (`RAVE_MODELS` in models.CATALOG, pinned to one commit by URL, SHA-256 and size)
-and loaded with torch.jit.load only after the runtime hashed them again. They are streaming
+and loaded with torch.jit.load from the very bytes that were hashed again before loading
+(`ModelStore.read_verified`, SEC.9), never by reopening the file. They are streaming
 (causal, with cached convolutions), so the audio is fed in blocks, which keeps progress and cancel
 working; the model is loaded fresh for every recording, because its caches carry the end of the
 previous recording into the next one.
@@ -64,10 +65,14 @@ def model_rate(model):
     raise TimbreError("The instrument model does not say its sample rate.")
 
 
-def load_rave(path, rate):
-    """A RAVE model from its verified TorchScript file, checked to be an encoder and decoder at `rate`."""
+def load_rave(data, rate):
+    """A RAVE model from the verified bytes of its TorchScript file (SEC.9: loaded from the bytes that
+    were hashed, never by reopening the path), checked to be an encoder and decoder at `rate`."""
+    if not isinstance(data, (bytes, bytearray)):
+        raise TypeError("load_rave takes the verified bytes of the model file, not a path")
+    import io
     import torch
-    model = torch.jit.load(str(path), map_location="cpu")
+    model = torch.jit.load(io.BytesIO(data), map_location="cpu")
     model.eval()
     if not all(hasattr(model, name) for name in ("encode", "decode", "forward")):
         raise TimbreError("The instrument model is not a RAVE encoder and decoder.")
@@ -121,7 +126,8 @@ class Timbre:
 
         def work(folder, job):
             job.report(0.02, "Loading the " + spec.label)
-            model = load_rave(folder / spec.files[0].name, sr)
+            pinned = self.runtime.spec(spec.id)  # the runtime's pinned entry, which it verified
+            model = load_rave(self.runtime.store.read_verified(pinned, pinned.files[0]), sr)
             y = transfer(model, x, rate, sr, job)
             job.check()
             with self._lock:

@@ -18,6 +18,8 @@ uvicorn tandem_backend:app --reload --host 127.0.0.1 --port 8000
 
 Open http://localhost:8000. The FastAPI server serves the browser interface and API **on the same origin**; there is no need for a second frontend development server. Browser microphone requires permission; localhost is treated as a secure context. The built-in transcription module loads the Basic Pitch bundle and model from this same server (`vendor/basic-pitch-1.0.1/`); no CDN is involved. Rebuild them with `bash tools/basic-pitch/build.sh` (needs Node and network access to the npm registry); `--check` verifies the committed files are reproducible.
 
+**Dependencies are locked (SEC.9).** Edit the `requirements*.in` files, never the `.txt` ones: `sh tools/locks/compile.sh` (needs [uv](https://docs.astral.sh/uv/); 0.13.8 was used) compiles each into its hashed lock, keeping locked versions the sources still allow (`--upgrade` takes the newest). Every install command above and below reads a lock, and pip checks each downloaded file against its SHA-256, so a changed file on the index fails the install. `requirements.txt` is what Vercel installs; the dev, e2e and desktop locks are compiled against it, so they get its versions; the models lock is for the Mac app on Apple silicon with macOS 14 or later (torch has no Intel macOS wheel and MLX is Apple silicon only) and resolves on its own because magenta-rt needs numpy below 2.4. uv ignores the upper bound of a package's `Requires-Python` when compiling, but pip does not, so a release that is only for older Pythons needs a bound in the `.in` file (as `backports.strenum<1.3` in `requirements-models.in`). CI's `audit` job runs `pip-audit` over every lock and fails on a package with a known vulnerability; `tests/test_locks.py` checks every lock still satisfies its source and carries hashes, and that every CI action is pinned to a commit SHA.
+
 If a PyWorld wheel is unsupported on your workstation's OS/architecture, investigate compatible binaries instead of silently removing tuning or calling the feature verified. On Vercel Python 3.12 the earlier `pyworld` package failed to resolve; `pyworld-prebuilt==0.3.6.post1` allowed a READY build. This is a packaging result, not proof of natural sounding correction.
 
 ## Mac app from source (DESK.1-DESK.3, AI.4, MODEL.1, SEP.1, GEN.2, TIMBRE.1)
@@ -25,7 +27,7 @@ If a PyWorld wheel is unsupported on your workstation's OS/architecture, investi
 The Mac app is the same studio in a native window (pywebview over WKWebView), with the same FastAPI app running on `127.0.0.1` behind it. It runs from source; a signed `.app` is DESK.4.
 
 ```bash
-python -m pip install -r requirements-desktop.txt   # requirements.txt plus pywebview and keyring
+python -m pip install -r requirements-desktop.txt   # the hosted lock plus pywebview and keyring
 python -m tandem_desktop
 ```
 

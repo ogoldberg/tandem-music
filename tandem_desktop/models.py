@@ -137,7 +137,7 @@ MUSICGEN_MELODY = ModelSpec(
 # TIMBRE.1: RAVE instrument models from the Intelligent Instruments Lab, one TorchScript file each,
 # pinned to one commit of Intelligent-Instruments-Lab/rave-models. Run by tandem_desktop/timbre.py.
 # RAVE publishes its models only as TorchScript (no safetensors): torch.jit.load runs TorchScript code
-# in torch's own interpreter, not Python, and the file is loaded only after its SHA-256 matches the pin.
+# in torch's own interpreter, not Python, and it loads the bytes whose SHA-256 matched the pin (SEC.9).
 # The models are CC-BY-NC 4.0: non-commercial use only (LIC.1).
 _RAVE = "https://huggingface.co/Intelligent-Instruments-Lab/rave-models/resolve/c25a03d625840c40cd3a48779ed72f2a1947d7b4/"
 _RAVE_LICENCE = "RAVE models CC-BY-NC 4.0 (non-commercial use only; LIC.1)"
@@ -338,6 +338,19 @@ class ModelStore:
             if not path.is_file() or path.stat().st_size != f.size or _sha256(path, job) != f.sha256:
                 raise ModelError(f"{spec.label} is not installed or its file {f.name} has changed. Download it again.")
         return folder
+
+    def read_verified(self, spec, f):
+        """SEC.9: the bytes of `spec`'s file `f`, read once and checked against its pinned size and
+        SHA-256. A loader given these bytes runs exactly what was checked, never a file swapped in
+        after the check (TorchScript runs code, so this matters for RAVE)."""
+        path = self.folder(spec) / f.name
+        try:
+            data = path.read_bytes() if path.stat().st_size == f.size else b""
+        except OSError:
+            data = b""
+        if len(data) != f.size or hashlib.sha256(data).hexdigest() != f.sha256:
+            raise ModelError(f"{spec.label} is not installed or its file {f.name} has changed. Download it again.")
+        return data
 
     def download(self, spec, job, client_factory=None):
         """Stream each file to <name>.part, hashing as it comes; keep it only when the hash and

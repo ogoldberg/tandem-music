@@ -1,0 +1,3 @@
+-r requirements.in
+pywebview==6.2.1
+keyring==25.7.0

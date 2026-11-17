@@ -297,7 +297,7 @@ def test_the_catalog_pins_mrt2_small_in_one_folder_without_pickles():
 
 
 def test_magenta_rt_and_mlx_are_pinned_for_apple_silicon_only():
-    lines = [line for line in (ROOT / "requirements-models.txt").read_text().splitlines()
+    lines = [line for line in (ROOT / "requirements-models.in").read_text().splitlines()
              if line.strip() and not line.startswith("#")]
     pins = {line.split("==")[0].split("[")[0].strip().lower(): line for line in lines if "==" in line}
     for name, version in (("magenta-rt", "2.0.3"), ("mlx", "0.31.1"), ("mlx-metal", "0.31.1")):
