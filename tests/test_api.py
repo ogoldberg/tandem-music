@@ -528,6 +528,14 @@ def test_drawline_module_is_served_and_precached(client):
     assert "from './drawline.js'" in run(client("GET","/")).text
     assert "'./drawline.js'" in run(client("GET","/sw.js")).text
 
+def test_exercises_module_is_served_and_precached(client):
+    # PRACTICE.3: the studio's module script imports exercises.js statically, so it cannot start offline without it.
+    js=run(client("GET","/exercises.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function exerciseNotes" in js.text
+    assert "from './exercises.js'" in run(client("GET","/")).text
+    assert "'./exercises.js'" in run(client("GET","/sw.js")).text
+
 def test_practice_module_is_served_and_precached(client):
     # PRACTICE.1: the studio's module script imports practice.js statically, so it cannot start offline without it.
     js=run(client("GET","/practice.js"))
