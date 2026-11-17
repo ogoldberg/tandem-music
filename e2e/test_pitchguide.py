@@ -76,22 +76,6 @@ def wait_for_readings(page, n, selector="#pitchnow"):
                            timeout=10000)
 
 
-def stored_take(page):
-    """The newest recording in OPFS, decoded: its length, level, the RMS of each 256-frame block and its pitch."""
-    return page.evaluate("""async () => {
-      const r = await (await navigator.storage.getDirectory()).getDirectoryHandle('recordings');
-      let newest = null; for await (const e of r.values()) { const f = await e.getFile(); if (!newest || f.lastModified >= newest.lastModified) newest = f; }
-      const ac = new OfflineAudioContext(1, 1, 44100); const b = await ac.decodeAudioData(await newest.arrayBuffer());
-      const x = b.getChannelData(0); let sum = 0, quietest = Infinity;
-      for (let i = 0; i + 256 <= x.length; i += 256) { let s = 0; for (let j = i; j < i + 256; j++) s += x[j] * x[j]; quietest = Math.min(quietest, Math.sqrt(s / 256)); sum += s; }
-      const { createPitchTracker } = await import('/pitch.js');
-      const tr = createPitchTracker(b.sampleRate), hz = [];
-      for (let i = 0; i < x.length; i += 128) for (const p of tr.push(x.subarray(i, i + 128), 0)) if (p.hz) hz.push(p.hz);
-      hz.sort((a, c) => a - c);
-      return { seconds: b.duration, rms: Math.sqrt(sum / x.length), quietest, hz: hz[hz.length >> 1], readings: hz.length };
-    }""")
-
-
 def record(page, seconds, *, guide=True):
     page.set_checked("#pitchguide", guide)
     page.click("#record")
@@ -237,17 +221,72 @@ def test_when_the_guide_cannot_start_the_take_records_and_says_so(tone_browser, 
     assert not problems, problems
 
 
+# Keeps every batch the capture worklet posts (its context time and frames), so a test can check the take against what
+# the microphone actually gave: Chromium's media stream source can itself give a few milliseconds of silence while it
+# starts (seen about 70 ms after the take's zero with the count-in off), which is the input, not a frame lost by us.
+CAPTURE_SPY = """(() => {
+  const Node = window.AudioWorkletNode; window.__batches = [];
+  window.AudioWorkletNode = function (ac, name, opts) {
+    const node = new Node(ac, name, opts);
+    if (name === 'tandem-capture') node.port.addEventListener('message', e => {
+      if (e.data && e.data.channels) window.__batches.push({ t: e.data.t, rate: ac.sampleRate, channels: e.data.channels.map(c => Array.from(c)) });
+    });
+    return node;
+  };
+})()"""
+
+
+def captured_take(page, info):
+    """The newest stored take beside the capture's batches: whether the batches run without a gap from before the take's
+    zero to Stop, how many 16-bit samples differ from those frames, and the take's length, level and pitch."""
+    return page.evaluate("""async info => {
+      const r = await (await navigator.storage.getDirectory()).getDirectoryHandle('recordings');
+      let newest = null; for await (const e of r.values()) { const f = await e.getFile(); if (!newest || f.lastModified >= newest.lastModified) newest = f; }
+      const v = new DataView(await newest.arrayBuffer()), rate = v.getUint32(24, true), n = v.getUint32(40, true) / 2;
+      const x = new Float32Array(n); for (let i = 0; i < n; i++) x[i] = v.getInt16(44 + 2 * i, true) / 32767;
+      const batches = window.__batches.splice(0), first = Math.ceil(Math.round(info.start * rate * 1e6) / 1e6);
+      let gaps = 0, end = null;
+      // Only a break that falls inside the take counts: frames before its zero are dropped by the studio anyway.
+      for (const b of batches) { const at = Math.round(b.t * rate); if (end !== null && at !== end && at > first && end < first + n) gaps++; end = at + b.channels[0].length; }
+      // The take's frames per channel, made mono as the studio does (recordings.js monoSamples: a channel 60 dB below the
+      // loudest is left out), then written as 16-bit.
+      const chans = Array.from({ length: Math.max(1, ...batches.map(b => b.channels.length)) }, () => new Float32Array(n));
+      for (const b of batches) { const at = Math.round(b.t * rate) - first;
+        chans.forEach((ch, c) => { const src = b.channels[Math.min(c, b.channels.length - 1)];
+          for (let i = 0; i < src.length; i++) if (at + i >= 0 && at + i < n) ch[at + i] = src[i]; }); }
+      const level = ch => Math.sqrt(ch.reduce((a, v) => a + v * v, 0) / Math.max(1, ch.length)), loudest = Math.max(...chans.map(level));
+      const live = loudest ? chans.filter(ch => level(ch) > loudest * 0.001) : chans, want = new Float32Array(n);
+      for (let i = 0; i < n; i++) { let s = 0; for (const ch of live) s += ch[i] / live.length; want[i] = Math.round(Math.max(-1, Math.min(1, s)) * 32767) / 32767; }
+      let differ = 0, sum = 0, quiet = 0, blocks = 0;
+      for (let i = 0; i < n; i++) { if (Math.abs(x[i] - want[i]) > 1.5 / 32767) differ++; sum += x[i] * x[i]; }
+      const rms = Math.sqrt(sum / n);
+      for (let i = 0; i + 256 <= n; i += 256) { let s = 0; for (let j = i; j < i + 256; j++) s += x[j] * x[j]; blocks++; if (Math.sqrt(s / 256) < 0.3 * rms) quiet++; }
+      const { createPitchTracker } = await import('/pitch.js');
+      const tr = createPitchTracker(rate), hz = [];
+      for (let i = 0; i < n; i += 128) for (const p of tr.push(x.subarray(i, i + 128), 0)) if (p.hz) hz.push(p.hz);
+      hz.sort((a, c) => a - c);
+      return { seconds: n / rate, rate, rms, hz: hz[hz.length >> 1], differ, gaps, batches: batches.length,
+               covers: !!batches.length && Math.round(batches[0].t * rate) <= first && end >= first + n, quiet, blocks };
+    }""", info)
+
+
 def test_the_take_is_the_same_with_the_guide_as_without(tone_studio):
     page = tone_studio
+    page.add_init_script(CAPTURE_SPY)
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
     page.uncheck("#countin")
     without, _ = record(page, 1.5, guide=False)
-    plain = stored_take(page)
+    plain = captured_take(page, without)
     with_guide, data = record(page, 1.5, guide=True)
-    guided = stored_take(page)
+    guided = captured_take(page, with_guide)
     for info, take in ((without, plain), (with_guide, guided)):
-        # Every frame from the take's zero to Stop, with no gap: the tone is in every 256-frame block.
-        assert take["seconds"] == pytest.approx(info["frames"] / info["rate"], abs=0.002)
-        assert take["quietest"] > 0.3 * take["rms"], take
+        assert take["seconds"] == pytest.approx(info["frames"] / info["rate"], abs=0.002) and take["rate"] == info["rate"]
+        # Every frame from the take's zero to Stop, with no gap: the worklet's batches run on without a break, cover the
+        # take, and the stored take is exactly their frames.
+        assert take["gaps"] == 0 and take["covers"] and take["differ"] == 0, take
+        # The tone is in the take (the input's own start-up silence is at most a block or two).
+        assert take["quiet"] <= 0.02 * take["blocks"], take
         assert abs(1200 * math.log2(take["hz"] / TONE_HZ)) <= 10
     assert guided["rms"] == pytest.approx(plain["rms"], rel=0.02)
     assert int(data["count"]) > 20
