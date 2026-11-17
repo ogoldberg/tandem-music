@@ -46,7 +46,7 @@ Vercel runs `api/index.py` which imports `tandem_backend.app`. FastAPI serves th
 | GET /api/health | Health metadata | Public |
 | GET /api/config | Non-secret model/capability metadata | Public |
 | POST /api/chat | Text LLM project edit plan | Requires shared token on Vercel |
-| POST /api/analyze | Server heuristic melody/beatbox analysis | Public |
+| POST /api/analyze | Server heuristic melody/beatbox analysis (beats are read on the device by `beatbox.js` unless Server is chosen, SEC.6) | Public |
 | POST /api/tune | WORLD monophonic voice pitch correction | Public |
 
 Both pages are sent by `page_response`, which reads the file and adds the policy `page_policy` builds from it: scripts from this origin, Blob URLs (the AudioWorklets) and WebAssembly, and the page's inline module script by its SHA-256 hash, so no injected inline script or event handler runs; see `docs/SECURITY.md`.
