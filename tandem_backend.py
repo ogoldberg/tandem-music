@@ -271,6 +271,10 @@ def beatbox_js():
 def practice_js():
     return FileResponse(Path(__file__).resolve().parent / "practice.js", media_type="text/javascript")
 
+@app.get("/exercises.js", include_in_schema=False)
+def exercises_js():
+    return FileResponse(Path(__file__).resolve().parent / "exercises.js", media_type="text/javascript")
+
 @app.get("/sections.js", include_in_schema=False)
 def sections_js():
     return FileResponse(Path(__file__).resolve().parent / "sections.js", media_type="text/javascript")

@@ -265,3 +265,64 @@ def test_your_range_and_a_stretchs_progress_are_kept_on_the_device_across_a_relo
     page.reload()
     page.wait_for_function("document.getElementById('notecount').textContent !== ''")
     expect(page.locator("#rangebox")).to_be_hidden()
+
+
+SEED_PRACTICE = """record => new Promise((resolve, reject) => {
+  const open = indexedDB.open('tandem');
+  open.onerror = () => reject(open.error);
+  open.onsuccess = () => {
+    const db = open.result, tx = db.transaction('kv', 'readwrite');
+    tx.objectStore('kv').put(record, 'practice');
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => reject(tx.error);
+  };
+})"""
+
+
+def test_a_warm_up_in_your_range_is_added_after_the_song_and_practised(practice_page):
+    """PRACTICE.3: with no range kept yet a warm-up is refused; with D4 to A5 held, the D major arpeggio goes into the
+    melody a bar after the song's end (6 s at 120 bpm, the song ending at 2.5 s) as one edit, inside the range and on the
+    beats, the Timeline marks it, Practise sings it and scores its notes, and Undo takes it out."""
+    page = practice_page
+    with_melody(page)
+    page.uncheck("#countin")
+    page.evaluate("() => { const k = document.getElementById('harmonykey'); k.value = '2:major'; k.dispatchEvent(new Event('change')); }")
+    page.select_option("#warmup", "arpeggio")
+    page.click("#addwarmup")
+    expect(page.locator("#status")).to_contain_text("Your range is not known yet")
+    assert page.locator("#notecount").text_content().startswith("4 ")
+
+    page.evaluate(SEED_PRACTICE, {"version": 1, "range": {"held": {"62": 1, "81": 1}, "passes": 2, "takes": 0}, "phrases": []})
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    expect(page.locator("#vocalrange")).to_have_text("Your range: D4 to A5, held steadily over 2 passes.")
+    page.uncheck("#countin")
+    page.evaluate("() => { const k = document.getElementById('harmonykey'); k.value = '2:major'; k.dispatchEvent(new Event('change')); }")
+    page.select_option("#warmup", "arpeggio")
+    page.click("#addwarmup")
+    expect(page.locator("#status")).to_contain_text("Arpeggio added from 6.0 to 10.0 s (D4 to D5)")
+    expect(page.locator("#undo")).to_have_attribute("title", re.compile("Add warm-up: Arpeggio"))
+    draft = lambda: page.evaluate(IDB_DRAFT)
+    wait_until(page, f"async () => (await ({IDB_DRAFT})())?.notes?.length === 11", "the warm-up is in the draft")
+    notes = draft()["notes"]
+    assert notes[:4] == NOTES, notes[:4]
+    assert notes[4:] == [{"m": m, "t": 6 + 0.5 * i, "d": 1 if i == 6 else 0.5} for i, m in enumerate([62, 66, 69, 74, 69, 66, 62])], notes[4:]
+    from test_playhead import loop_bounds
+    expect(page.locator("#loop")).to_have_attribute("aria-pressed", "true")
+    assert loop_bounds(page) == (6.0, 10.0), loop_bounds(page)
+    page.screenshot(path=str(SHOTS / "practice-warmup.png"))
+
+    page.click("#practice")
+    expect(page.locator("#status")).to_contain_text("Sing the marked section (6.0 to 10.0 s)", timeout=8000)
+    page.wait_for_function("(document.getElementById('practiceinfo').dataset.passes | 0) >= 1", timeout=20000)
+    data = json.loads(page.locator("#practiceinfo").get_attribute("data-pass"))
+    scores = {s["i"]: s for s in data["scores"]}
+    assert sorted(scores) == list(range(4, 11)), scores
+    # The fake microphone sings A4 40 cents sharp: the two A4s of the arpeggio read sharp by about that.
+    for i in (6, 8):
+        assert scores[i]["pitch"] == "sharp" and abs(scores[i]["cents"] - SHARP) <= 8, scores[i]
+    page.click("#practicestop")
+    expect(page.locator("#practice")).to_have_attribute("aria-pressed", "false")
+
+    page.click("#undo")
+    wait_until(page, f"async () => (await ({IDB_DRAFT})())?.notes?.length === 4", "Undo takes the warm-up out")
