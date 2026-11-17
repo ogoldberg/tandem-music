@@ -352,7 +352,10 @@ def cmd_run(a):
     if a.no_condition and a.runtime != "mlx":
         sys.exit("--no-condition is for mlx only")
     go = (lambda wav: run_mlx(path, wav, not a.no_condition)) if a.runtime == "mlx" else (lambda wav: run_cpp(path, wav, a.whisper_cli, tmp, dtw))
-    go(out / "wav16" / f"{names[0]}.wav")  # warm-up: the model loaded once, untimed
+    try:
+        go(out / "wav16" / f"{names[0]}.wav")  # warm-up: the model loaded once, untimed
+    except subprocess.CalledProcessError:
+        pass  # the timed pass below runs it again and keeps the failure
     results, total = {}, 0.0
     for name in names:
         t = time.perf_counter()

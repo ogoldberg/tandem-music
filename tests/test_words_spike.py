@@ -178,10 +178,10 @@ def test_score_and_table_from_a_run(tmp_path, capsys):
 
 
 FAKE_CLI = """#!/usr/bin/env python3
-import json, pathlib, sys
+import json, os, pathlib, sys
 a = sys.argv
 wav, prefix = pathlib.Path(a[a.index("-f") + 1]), a[a.index("-of") + 1]
-if wav.stem == "en002a":
+if wav.stem in os.environ["FAKE_FAIL"].split(","):
     sys.exit(134)
 words = [("Twinkle", 0), ("twinkle", 2000), ("little", 4000), ("star", 6000)]
 segs = [{"text": " " + w, "offsets": {"from": t, "to": t + 300}} for w, t in words]
@@ -189,7 +189,8 @@ pathlib.Path(prefix + ".json").write_text(json.dumps({"transcription": segs}))
 """
 
 
-def test_a_recording_whisper_cpp_fails_on_is_kept_as_failed_and_left_out(tmp_path, capsys):
+def test_a_recording_whisper_cpp_fails_on_is_kept_as_failed_and_left_out(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("FAKE_FAIL", "en002a")
     cli = tmp_path / "whisper-cli"
     cli.write_text(FAKE_CLI)
     cli.chmod(0o755)
@@ -210,3 +211,19 @@ def test_a_recording_whisper_cpp_fails_on_is_kept_as_failed_and_left_out(tmp_pat
     assert (r["recordings"], r["failed"], r["words"], r["wer"]) == (2, 1, 8, 0)
     assert r["audio_minutes"] == 2.0 and set(r["per_recording"]) == {"en001a", "en003a"}
     assert "| cpp-small.en | 2 (1) | 8 | 0.0% |" in capsys.readouterr().out
+
+
+def test_a_run_goes_on_when_the_first_recording_fails_in_the_warm_up(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_FAIL", "en001a")
+    cli = tmp_path / "whisper-cli"
+    cli.write_text(FAKE_CLI)
+    cli.chmod(0o755)
+    names = ("en001a", "en002a")
+    (tmp_path / "refs.json").write_text(json.dumps({n: {"words": REF, "onsets": ONSETS, "seconds": 60.0} for n in names}))
+    (tmp_path / "wav16").mkdir()
+    for n in names:
+        (tmp_path / "wav16" / f"{n}.wav").write_bytes(b"")
+    spike.main(["run", "--runtime", "cpp", "--model", "small.en", "--models", str(tmp_path / "models"),
+                "--out", str(tmp_path), "--whisper-cli", str(cli)])
+    run = json.loads((tmp_path / "runs" / "cpp-small.en.json").read_text())
+    assert run["recordings"]["en001a"]["error"] == "exit 134" and len(run["recordings"]["en002a"]["raw"]) == 4

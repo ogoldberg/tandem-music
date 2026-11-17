@@ -20,7 +20,7 @@ shasum -a 256 "$W/csd/CSD.zip" && unzip -q "$W/csd/CSD.zip" -d "$W/csd"
 
 # The spike environment (Python 3.12; mlx needs Apple silicon). ffmpeg converts the audio.
 uv venv --python 3.12 "$W/venv"
-uv pip install --python "$W/venv/bin/python" mlx-whisper==0.4.3 mlx==0.32.4 jiwer==4.0.0 numpy soundfile
+uv pip install --python "$W/venv/bin/python" mlx-whisper==0.4.3 mlx==0.32.4 numpy
 
 # whisper.cpp v1.9.5 (commit d1be6fde11ac6e0407606b4e42fe72d34add8037), built with Metal.
 git clone --branch v1.9.5 https://github.com/ggml-org/whisper.cpp "$W/whisper.cpp"
