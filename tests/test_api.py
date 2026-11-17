@@ -1263,3 +1263,73 @@ def test_an_edited_page_is_sent_with_its_new_hash(client,tmp_path,monkeypatch):
     assert second.content==b"<script type=module>two(2)</script>"
     assert second.headers["content-security-policy"]!=first
     assert second.headers["content-security-policy"]==server.page_policy(second.content)
+
+# SEC.8: off Vercel too, chat without a token and the in-process rate-limit store are allowed only for a
+# request straight from this computer (or the Mac app's window), or when the operator says so in the env.
+def remote_client(address,headers=None):
+    async def call(method,path,**kwargs):
+        transport=httpx.ASGITransport(app=server.app,client=(address,40000))
+        async with httpx.AsyncClient(transport=transport,base_url="http://test") as c:
+            return await c.request(method,path,headers={**(headers or {}),**kwargs.pop("headers",{})},**kwargs)
+    return call
+
+def test_a_server_off_vercel_with_a_key_and_no_token_refuses_chat_from_another_machine(client,monkeypatch):
+    monkeypatch.setenv("TANDEM_API_KEY","sk-operator")
+    monkeypatch.setenv("TANDEM_MODEL","m")
+    monkeypatch.setenv("TANDEM_RATE_LIMIT_STORE","memory")
+    r=run(remote_client("203.0.113.5")("POST","/api/chat",json=CHAT_BODY))
+    assert r.status_code==503 and "TANDEM_ACCESS_TOKEN" in r.json()["detail"]
+    monkeypatch.setenv("TANDEM_ACCESS_TOKEN","secret")
+    assert run(remote_client("203.0.113.5")("POST","/api/chat",json=CHAT_BODY)).status_code==401
+
+def test_open_chat_is_the_operators_choice(client,monkeypatch):
+    monkeypatch.setenv("TANDEM_RATE_LIMIT_STORE","memory")
+    monkeypatch.setenv("TANDEM_ALLOW_OPEN_CHAT","1")
+    called=[]
+    async def fake(messages,config=None,usage=None):
+        called.append(1); return '{"reply":"ok","actions":[]}'
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    monkeypatch.setenv("TANDEM_MODEL","m")
+    r=run(remote_client("203.0.113.5")("POST","/api/chat",json=CHAT_BODY))
+    assert r.status_code==200 and called==[1]
+
+def test_chat_from_this_computer_needs_no_token(client,monkeypatch):
+    monkeypatch.setenv("TANDEM_MODEL","m")
+    async def fake(messages,config=None,usage=None): return '{"reply":"ok","actions":[]}'
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    assert run(client("POST","/api/chat",json=CHAT_BODY)).status_code==200
+    # A local proxy (portless) forwarding a browser on this computer is still this computer.
+    assert run(client("POST","/api/chat",headers={"x-forwarded-for":"127.0.0.1"},json=CHAT_BODY)).status_code==200
+
+@pytest.mark.parametrize("headers",[
+    {"x-forwarded-for":"203.0.113.5"},
+    {"x-forwarded-for":"127.0.0.1, 203.0.113.5"},  # a proxy appending the real client to a forged loopback
+    {"x-real-ip":"203.0.113.5"},
+    {"forwarded":"for=203.0.113.5;proto=https"},
+    {"forwarded":'for="[2001:db8::1]:443"'},
+])
+def test_a_proxy_on_this_computer_forwarding_another_machine_is_not_this_computer(client,monkeypatch,headers):
+    monkeypatch.setenv("TANDEM_API_KEY","sk-operator")
+    monkeypatch.setenv("TANDEM_MODEL","m")
+    monkeypatch.setenv("TANDEM_RATE_LIMIT_STORE","memory")
+    async def fake(messages,config=None,usage=None): return '{"reply":"ok","actions":[]}'
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    r=run(client("POST","/api/chat",headers=headers,json=CHAT_BODY))
+    assert r.status_code==503 and "TANDEM_ACCESS_TOKEN" in r.json()["detail"]
+
+def test_a_server_off_vercel_with_no_store_refuses_rate_limited_routes_from_another_machine(client,monkeypatch):
+    send=lambda c:run(c("POST","/api/analyze?mode=melody",files={"file":("a.wav",short_tone(),"audio/wav")}))
+    r=send(remote_client("203.0.113.5"))
+    assert r.status_code==503 and "TANDEM_RATE_LIMIT_STORE" in r.json()["detail"]
+    r=send(remote_client("127.0.0.1",{"x-forwarded-for":"203.0.113.5"}))
+    assert r.status_code==503
+    assert send(client).status_code==200  # this computer: local development is unchanged
+    monkeypatch.setenv("TANDEM_RATE_LIMIT_STORE","memory")
+    monkeypatch.setenv("TANDEM_AUDIO_RATE_LIMIT","1")
+    assert [send(remote_client("203.0.113.5")).status_code for _ in range(2)]==[200,429]
+
+def test_the_memory_store_is_never_used_on_vercel(client,monkeypatch):
+    monkeypatch.setenv("VERCEL","1")
+    monkeypatch.setenv("TANDEM_RATE_LIMIT_STORE","memory")
+    r=run(client("POST","/api/analyze?mode=melody",files={"file":("a.wav",short_tone(),"audio/wav")}))
+    assert r.status_code==503 and "UPSTASH_REDIS_REST_URL" in r.json()["detail"]

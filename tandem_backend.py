@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response, FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from request_guards import RequestGuardMiddleware, AUDIO_BODY_MAX_BYTES, LOCAL_AUDIO_BODY_MAX_BYTES, is_local
+from request_guards import RequestGuardMiddleware, AUDIO_BODY_MAX_BYTES, LOCAL_AUDIO_BODY_MAX_BYTES, is_local, from_this_computer
 
 app = FastAPI(title="Tandem API", version="0.2.0")
 
@@ -299,8 +299,9 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET","
 async def authenticate(req: Request, call_next):
     if req.url.path == "/api/chat":
         secret=os.getenv("TANDEM_ACCESS_TOKEN", "")
-        if os.getenv("VERCEL") and not secret:
-            return Response('{"detail":"Set TANDEM_ACCESS_TOKEN in Vercel to protect AI spending"}',status_code=503,media_type="application/json")
+        # SEC.8: without a token, chat is open only to this computer or when the operator says so.
+        if not secret and not (os.getenv("TANDEM_ALLOW_OPEN_CHAT")=="1" and not os.getenv("VERCEL")) and (os.getenv("VERCEL") or not from_this_computer(req.scope)):
+            return Response('{"detail":"Set TANDEM_ACCESS_TOKEN to protect AI spending (or TANDEM_ALLOW_OPEN_CHAT=1 off Vercel)"}',status_code=503,media_type="application/json")
         if secret and not hmac.compare_digest((req.headers.get("x-tandem-token") or "").encode(), secret.encode()):
             return Response('{"detail":"Invalid Tandem access token"}',status_code=401,media_type="application/json")
     return await call_next(req)
