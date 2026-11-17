@@ -156,6 +156,25 @@ def test_another_openai_compatible_server_gets_its_address_and_an_optional_key(s
         assert save(settings, provider="custom", model="m", base_url=bad).status_code == 400
 
 
+def test_a_key_never_goes_over_plain_http_to_another_machine(settings, provider):
+    # Security audit L2: http:// to another host would send the Keychain key in the clear.
+    for base in ("http://192.168.1.20:1234/v1", "http://ai.example/v1", "http://10.0.0.5/v1"):
+        r = save(settings, provider="custom", model="m", base_url=base, key=KEY)
+        assert r.status_code == 400 and "https://" in r.text and settings.keys.items == {}
+    # without a key such a server is still fine (a LAN server that needs none)
+    assert save(settings, provider="custom", model="m", base_url="http://192.168.1.20:1234/v1").json()["ready"] is True
+    assert chat(settings).status_code == 200 and "authorization" not in provider["seen"][-1].headers
+    # this Mac's own addresses and any https:// server may have a key
+    for base in ("http://localhost:1234/v1", "http://127.0.0.1:1234/v1", "http://[::1]:1234/v1", "https://ai.example/v1"):
+        assert save(settings, provider="custom", model="m", base_url=base, key=KEY).status_code == 200
+    # a key already in the store for a plain remote address (saved before this check) is never sent
+    settings.keys.items["custom http://ai.example/v1"] = KEY
+    save(settings, provider="custom", model="m", base_url="http://ai.example/v1")
+    seen = len(provider["seen"])
+    r = chat(settings)
+    assert r.status_code == 503 and "https://" in r.text and len(provider["seen"]) == seen
+
+
 def test_without_the_key_the_edit_is_refused_and_says_what_to_do(settings, provider):
     save(settings, provider="openai", model="test-model")
     r = chat(settings)

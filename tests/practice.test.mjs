@@ -317,6 +317,8 @@ test("a pass whose summary is missing a count is refused, so no day is saved tha
     assert.throws(() => withPass(undefined, { key, summary: { ...full, [k]: 1.5 } }, NOON), /scores/, k);
   }
   assert.throws(() => withPass(undefined, { key, summary: { ...full, inTune: 4 } }, NOON), /scores/);
+  assert.throws(() => withPass(undefined, { key, summary: { ...full, sung: 5 } }, NOON), /scores/);
+  assert.throws(() => withPass(undefined, { key, summary: { ...full, onTime: 4 } }, NOON), /scores/);
   const rec = withPass(undefined, { key, summary: full }, NOON);
   assert.deepEqual(cleanPracticeRecord(JSON.parse(JSON.stringify(rec))), rec);
 });

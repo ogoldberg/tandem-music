@@ -9,6 +9,7 @@ only whether a key is saved. /api/chat in the app's own window uses these settin
 existing invoke_llm, normalize_actions and melody lock apply unchanged. Nothing here imports
 keyring until the Keychain is used, so CI can test it on Linux with a stand-in key store.
 """
+import ipaddress
 import json
 import os
 import re
@@ -86,6 +87,25 @@ def _check_base(base):
     return (parts.scheme + "://" + parts.netloc.lower() + parts.path).rstrip("/")
 
 
+def _plain_remote(base):
+    """Whether a key sent to this address would cross a network unencrypted: http:// to anything
+    but this Mac (localhost, 127.0.0.0/8, ::1)."""
+    parts = urlsplit(base)
+    if parts.scheme != "http":
+        return False
+    host = (parts.hostname or "").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return False
+    try:
+        return not ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return True
+
+
+PLAIN_REMOTE = ("A key is sent only over https:// to a server on another machine: this address uses http://, "
+                "so anyone on the network could read the key. Use the server's https:// address, or leave the key empty.")
+
+
 def _account(settings):
     """The Keychain item for these settings: the provider, or for another server its address too, so
     a key saved for one server is never sent to another."""
@@ -161,6 +181,8 @@ class AISettings:
             if PROVIDERS[provider]["key"] is False:
                 raise AISettingsError(f"{PROVIDERS[provider]['label']} needs no key.")
             key = _check_key(key)
+            if provider == "custom" and _plain_remote(settings["base_url"]):
+                raise AISettingsError(PLAIN_REMOTE)
         with self._lock:
             try:
                 before = self.load()
@@ -188,6 +210,8 @@ class AISettings:
             return None
         info = PROVIDERS[settings["provider"]]
         key = self.keys.get(_account(settings)) or ""
+        if key and settings["provider"] == "custom" and _plain_remote(settings["base_url"]):
+            raise AISettingsError(PLAIN_REMOTE)
         if info["key"] is True and not key:
             raise AISettingsError(f"Add your {info['label']} key in Your AI settings to use {info['label']}.")
         return {"provider": info["kind"], "model": settings["model"], "key": key,

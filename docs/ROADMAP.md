@@ -42,6 +42,20 @@ This is the working task list, in strategic order: protect the deployment, prove
   - Also review memory/CPU use under malicious or unexpected inputs (oversized, malformed, long, many-channel WAVs) and make sure no route reads unbounded input.
   - Tighten the `/api/chat` project schema validation (typed, bounded `notes`/`drums`/`bpm`/`instrument` instead of a free-form dict) before paid AI is enabled in AI.1.
   - **Acceptance:** tests prove requests over the limit get 429, each rejected input class is refused, and malformed `/api/chat` projects get 422; limits documented in `docs/SECURITY.md` and `docs/DEVELOPMENT.md`.
+- [x] **SEC.5** Fix the 2026-11-17 security audit's high and low findings
+  - Done: a layer's name from an opened project set as text, not markup, in the mixer strip (stored XSS, high; `e2e/test_injection.py`); `/api/chat` rate-limited per client after the token check (`TANDEM_CHAT_RATE_LIMIT`, 10 per 60 s, fails closed on Vercel without the store; not in the Mac app's own window); the access token compared in constant time; a provider error gives its status, never its URL; the Mac app refuses to save or send a key over `http://` to another machine; `python-multipart>=0.0.18` and `starlette>=0.49.1`; CI with `permissions: contents: read`; the chat disclosure names lyrics, sections and genre. Summary in `docs/SECURITY.md` (Audit 2026-11-17).
+- [ ] **SEC.6** Do not upload a beat take when "This device" is chosen
+  - The guided flow's automatic Transcribe after a beat take, rhythm-mode Transcribe and a layer transcribed into the drums POST the take to `/api/analyze` even with the device transcriber chosen (audit M1). Read beats on the device (port the onset detector to JS, as VOX.4 did for WORLD), or honour the setting and say beats need the server.
+  - **Acceptance:** a Chromium test records a beat in the guided view with "This device" and sees no `/api/analyze` request; the beat still becomes drums, or the step says why it did not.
+- [ ] **SEC.7** A Content-Security-Policy for the studio and capture pages
+  - `script-src 'self'` with a hash or nonce for the inline module script, no `'unsafe-inline'`, `connect-src` covering a custom API base; worker and WebAssembly sources allowed. Defence in depth behind SEC.5's XSS fix.
+  - **Acceptance:** every e2e test passes with the header on; a test injects an inline script and sees it blocked.
+- [ ] **SEC.8** Fail closed off Vercel too
+  - Off Vercel, `/api/chat` with a server key and no token is open, and the rate limit falls back to an in-process counter keyed by socket address (one bucket behind a proxy). Decide from what is configured, not where it runs: refuse chat without a token unless `TANDEM_ALLOW_OPEN_CHAT=1` or the request is loopback/local; require `TANDEM_RATE_LIMIT_STORE=memory` to use the in-process store. Low: the supported deployments (Vercel, the Mac app, local development) are not affected.
+  - **Acceptance:** tests for a non-Vercel server with a key and no token, and with no store.
+- [ ] **SEC.9** Supply-chain and small hardening from the audit
+  - A hashed lock compiled from `requirements.txt` (and per platform for `requirements-models.txt`) that Vercel installs, with `pip-audit` in CI; CI actions pinned to commit SHAs; TorchScript loaded from the hashed bytes rather than reopened by path; in the Mac app, Tune's server engine always the app's own origin, not a custom API base saved earlier.
+  - **Acceptance:** Vercel builds from the lock; CI fails on a known-vulnerable pin; tests for the model load and the Tune engine's host.
 
 ### 2. Prove the core loop
 - [x] **PERF.1** Move vocal polish into the browser so recordings are not uploaded and have no 90 s / 4.5 MB cap
