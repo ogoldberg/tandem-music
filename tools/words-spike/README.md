@@ -36,19 +36,21 @@ P="$W/venv/bin/python"; S=tools/words-spike/spike.py
 # The reference and the 16 kHz mono WAVs both runtimes read.
 "$P" -I $S refs --csd "$W/csd/CSD" --out "$W/out"
 
-# Six runs, one process each; each loads its model and transcribes the first recording once, untimed.
+# Six runs (seven with the one below), one process each; each loads its model and transcribes the first recording once, untimed.
 export HF_HOME="$W/hf"
 for m in large-v3-turbo small.en; do
   "$P" -I $S run --runtime mlx --model $m --models "$W/models" --out "$W/out"
   "$P" -I $S run --runtime cpp --model $m --models "$W/models" --out "$W/out" --whisper-cli "$W/whisper.cpp/build/bin/whisper-cli"
   "$P" -I $S run --runtime cpp --dtw --model $m --models "$W/models" --out "$W/out" --whisper-cli "$W/whisper.cpp/build/bin/whisper-cli"
 done
+# And mlx large-v3-turbo with each 30 s window decoded without the text before it as its prompt.
+"$P" -I $S run --runtime mlx --no-condition --model large-v3-turbo --models "$W/models" --out "$W/out"
 
 # Every run against the reference: out/results.json and the two tables in docs/AUDIO.md.
 "$P" -I $S score --out "$W/out"
 ```
 
-`run --limit 2` runs only the first two recordings (the smoke test).
+`run --limit 2` runs only the first two recordings (the smoke test). When whisper-cli exits with an error on a recording, the run keeps `{"error": "exit <code>"}` for it and goes on; `score` leaves those recordings out of every number (and their time out of the speed) and counts them under Recordings (failed).
 
 whisper.cpp is run one word a segment (`-ml 1 -sow`), English only (`-l en`). Its DTW word times need flash attention off (`-nfa`) and are only in the full JSON (`-ojf`), in centiseconds (`t_dtw`); the presets are `large.v3.turbo` and `small.en`.
 
