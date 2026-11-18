@@ -1413,3 +1413,64 @@ def test_config_tells_another_machine_that_chat_is_closed(client,monkeypatch):
     monkeypatch.setenv("TANDEM_ACCESS_TOKEN","secret")
     there=run(remote_client("203.0.113.5")("GET","/api/config")).json()
     assert there["ai_ready"] is True and there["requires_token"] is True
+
+# PRACTICE.4: the last practice pass's scores, as practice.js scorePass gives them, go to the model with the request.
+PASS={"number":3,"start":0.5,"end":2.5,"notes":[
+    {"i":0,"m":69,"t":0.5,"d":0.5,"sung":True,"cents":4,"settle":0.03,"spread":6,"onset":0.02,"octave":0,"pitch":"in","timing":"on"},
+    {"i":1,"m":72,"t":1.0,"d":0.5,"sung":True,"cents":-38,"settle":0.12,"spread":18,"onset":0.16,"octave":0,"pitch":"flat","timing":"late"},
+    {"i":2,"m":76,"t":2.25,"d":0.25,"sung":True,"cents":-52,"settle":None,"spread":30,"onset":None,"octave":-1,"pitch":"flat","timing":None},
+    {"i":3,"m":67,"t":1.5,"d":0.25,"sung":False,"cents":None,"settle":None,"spread":None,"onset":None,"octave":None,"pitch":"missed","timing":None}]}
+
+def test_chat_carries_the_practice_pass_scores_and_the_reading_comes_back_apart(client,monkeypatch):
+    seen=[]
+    async def fake(messages, config=None):
+        seen.append(messages[-1]["content"])
+        return json.dumps({"reply":"Here is what the numbers show.","reading":"  The high notes came in flat.  ","actions":[]})
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    r=run(client("POST","/api/chat",json={"message":"How did that pass go?","practice":PASS,
+        "project":{"bpm":120,"notes":[{"m":69,"t":0.5,"d":0.5}],"drums":[]}}))
+    assert r.status_code==200
+    assert r.json()=={"reply":"Here is what the numbers show.","actions":[],"reading":"The high notes came in flat."}
+    prompt=seen[0]
+    assert "Last practice pass (pass 3, 0.50 to 2.50 s)" in prompt
+    lines=prompt.split("Last practice pass")[1].splitlines()[1:5]
+    # In time order, named, with every measurement; a beat (0.5 s at 120 bpm) of rest ends a phrase.
+    assert lines==[
+        "1. A4 at 0.50 s for 0.50 s: in tune, +4 cents, settled after 0.03 s, spread 6 cents, came in 20 ms late (on)",
+        "2. C5 at 1.00 s for 0.50 s: -38 cents, settled after 0.12 s, spread 18 cents, came in 160 ms late (late)",
+        "3. G4 at 1.50 s for 0.25 s (phrase end): not heard",
+        "4. E5 at 2.25 s for 0.25 s (phrase end): -52 cents, sung 1 octave down, never settled, spread 30 cents"]
+    assert server.PRACTICE_NOTE+"Request: How did that pass go?" in prompt
+
+def test_octave_sung_and_early_entries_are_said(client):
+    p={**PASS,"notes":[{**PASS["notes"][0],"octave":-1,"onset":-0.15,"timing":"early"}]}
+    text=server.practice_lines(server.PracticePass.model_validate(p),100)
+    assert "sung 1 octave down" in text and "came in 150 ms early (early)" in text
+
+def test_practice_scores_bring_no_new_actions_and_melody_lock_still_holds(client,monkeypatch):
+    async def fake(messages, config=None):
+        return json.dumps({"reply":"Lowered the flat notes","reading":"C5 was flat.","actions":[
+            {"type":"replace_notes","notes":[{"m":71,"t":1,"d":0.5}]},{"type":"tune_voice","cents":38},
+            {"type":"set_tempo","bpm":90}]})
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    r=run(client("POST","/api/chat",json={"message":"Fix it","practice":PASS,"project":{"notes":[{"m":72,"t":1,"d":0.5}],"melody_locked":True}}))
+    assert r.status_code==200
+    assert r.json()["actions"]==[{"type":"set_tempo","bpm":90}]
+    assert r.json()["reply"]=="Lowered the flat notes "+server.LOCKED_REPLY and r.json()["reading"]=="C5 was flat."
+
+def test_without_a_pass_the_prompt_and_reply_are_as_before(client,monkeypatch):
+    seen=[]
+    async def fake(messages, config=None):
+        seen.append(messages[-1]["content"])
+        return json.dumps({"reply":"Faster","reading":"made up","actions":[]})
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    r=run(client("POST","/api/chat",json={"message":"Faster","project":{"melody_locked":False}}))
+    assert r.json()=={"reply":"Faster","actions":[]}
+    assert "practice" not in seen[0].lower() and seen[0].endswith("\nRequest: Faster")
+
+def test_practice_pass_is_validated(client):
+    bad=[{**PASS,"extra":1},{**PASS,"end":0.5},{**PASS,"notes":[]},
+         {**PASS,"notes":[{**PASS["notes"][0],"pitch":"great"}]},{**PASS,"notes":[{**PASS["notes"][0],"hint":"x"}]},
+         {**PASS,"notes":[PASS["notes"][0]]*(server.PRACTICE_MAX_NOTES+1)}]
+    for p in bad:
+        assert run(client("POST","/api/chat",json={"message":"How was it?","practice":p})).status_code==422
