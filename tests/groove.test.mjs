@@ -241,8 +241,10 @@ test("barOrigin: a free-time recording keeps its first downbeat, as a time withi
 });
 
 test("barOrigin: a starter beat from zero holds the grid at zero under a sloppy take", () => {
-  const notes = [0.04, 0.63, 1.17, 1.85].map((t, i) => ({ m: 60 + i, t, d: 0.4 }));
+  // Alone these notes agree on a beat 0.11 s after zero; under a starter beat from zero the grid stays at zero.
+  const notes = [0.11, 0.71, 1.31, 1.91].map((t, i) => ({ m: 60 + i, t, d: 0.4 }));
   const drums = grooveHits("straight", { bpm: 100, bars: 2 });
+  assert.ok(close(barOrigin({ bpm: 100, notes, drums: [] }), 0.11, 1e-6));
   assert.equal(barOrigin({ bpm: 100, notes, drums }), 0);
 });
 
@@ -297,4 +299,11 @@ test("quantize lines up the chords and the harmony voice when they are the only 
   assert.deepEqual(out.harmony.map(n => n.t), [0, 2.4]);
   assert.deepEqual(out.voice2.map(n => n.t), [0.6]);
   assert.equal(barOrigin({ bpm: 100, notes: [], drums: [], harmony: [{ m: 48, t: 1.37, d: 1 }, { m: 48, t: 3.77, d: 1 }] }), 1.37);
+});
+
+test("a melody that ends before the song's first bar line is not given a chord off the grid", () => {
+  // A beat from 1.37 s at 100 bpm puts the bar line before the melody at -1.03 s; the melody ends at 0.97 s.
+  const project = { bpm: 100, notes: [0.27, 0.57, 0.87].map((t, i) => ({ t, m: 60 + 2 * i, d: 0.1 })), drums: grooveHits("straight", { bpm: 100, bars: 4, from: 1.37 }) };
+  assert.ok(close(barOrigin(project), 1.37, 1e-6));
+  assert.throws(() => generateHarmony(project, { key: { tonic: 0, mode: "major" } }), /ends before the song's first bar line/);
 });

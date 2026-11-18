@@ -205,10 +205,13 @@ export function generateHarmony(project, { style = "chords", key = null, feel = 
   const end = Math.max(...melody.map(n => n.t + n.d));
   const first = grid + Math.floor((melody[0].t - grid) / bar + 1e-6) * bar;
   // A pickup (a first note in the second half of its bar) is left unaccompanied, and no chord starts before zero;
-  // but a melody that ends before the next bar line is accompanied in its own bar.
+  // but a melody that ends before the next bar line is accompanied in its own bar, when that bar starts at zero or later.
   let origin = first;
   if (melody[0].t - first >= bar / 2 - 1e-6 || first < -1e-6) origin += bar;
-  if (origin >= end - 1e-6) origin = Math.max(0, first);
+  if (origin >= end - 1e-6) {
+    if (first < -1e-6) throw new Error("The melody ends before the song's first bar line: sing a little longer, or quantize it first.");
+    origin = first;
+  }
   const bars = Math.max(1, Math.ceil((end - origin) / bar - 1e-6));
 
   const picked = [];
