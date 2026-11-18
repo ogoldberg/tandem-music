@@ -326,3 +326,54 @@ def test_a_warm_up_in_your_range_is_added_after_the_song_and_practised(practice_
 
     page.click("#undo")
     wait_until(page, f"async () => (await ({IDB_DRAFT})())?.notes?.length === 4", "Undo takes the warm-up out")
+
+
+def test_ask_about_this_pass_sends_its_scores_and_shows_the_labelled_reading(practice_page):
+    """PRACTICE.4: Ask about this pass sends the marked pass's scores with the chat message; the request is checked
+    against the server's own ChatRequest and prompt, and the canned model text goes through the server's chat_plan,
+    so a melody edit is dropped under melody lock and the reading is shown under its own label."""
+    import tandem_backend as server
+    page = practice_page
+    with_melody(page)
+    page.uncheck("#countin")
+    expect(page.locator("#practiceask")).to_be_hidden()
+    page.click("#practice")
+    page.wait_for_function("(document.getElementById('practiceinfo').dataset.passes | 0) >= 1", timeout=20000)
+    page.click("#practicestop")
+    expect(page.locator("#practiceask")).to_be_enabled()
+    shown = json.loads(page.locator("#practiceinfo").get_attribute("data-pass"))
+    before = page.evaluate(IDB_DRAFT)
+
+    sent = []
+    model_text = json.dumps({"reply": "The numbers are below.", "reading": "Every A4 was about 40 cents sharp; C5 came out as an A4.",
+                             "actions": [{"type": "transpose", "semitones": -1}]})
+
+    def answer(route):
+        req = server.ChatRequest.model_validate(json.loads(route.request.post_data))
+        sent.append((req, server.chat_messages(req)[-1]["content"]))
+        route.fulfill(status=200, json=server.chat_plan(model_text, req))
+    page.route("**/api/chat", answer)
+    page.click("#practiceask")
+    reading = page.locator("#chat .bubble.reading")
+    expect(reading).to_contain_text("The AI's reading of your pass's measurements")
+    expect(reading).to_contain_text("Every A4 was about 40 cents sharp")
+    expect(page.locator("#status")).to_have_text("The AI reply did not change the project.")
+    assert "melody is protected" in page.evaluate("() => [...document.querySelectorAll('#chat .bubble')].at(-2).textContent")
+
+    req, prompt = sent[0]
+    assert req.message == "What patterns do you see in my last practice pass?"
+    assert req.practice.number == shown["pass"] and (req.practice.start, req.practice.end) == (0.5, 2.5)
+    assert [s.model_dump() for s in req.practice.notes] == shown["scores"]
+    assert "Last practice pass (pass %d, 0.50 to 2.50 s)" % shown["pass"] in prompt
+    assert "\n3. C5 at 1.50 s for 0.50 s" in prompt and "cents" in prompt
+    page.locator("#chat").screenshot(path=str(SHOTS / "practice-chat.png"))
+    assert page.evaluate(IDB_DRAFT) == before
+
+    # Once the melody changes the marks go, and so do the scores: the next message carries none.
+    page.click("#addnote")
+    expect(page.locator("#practiceask")).to_be_hidden()
+    page.fill("#prompt", "and now?")
+    page.click("#chatform button[type=submit]")
+    wait_until(page, "async () => document.querySelectorAll('#chat .bubble').length >= 6", "the second answer")
+    assert len(sent) == 2 and sent[1][0].practice is None and "practice" not in sent[1][1].lower()
+    assert page.locator("#chat .bubble.reading").count() == 1

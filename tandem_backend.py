@@ -582,11 +582,47 @@ class ChatTurn(BaseModel):
     role: Literal["user","assistant"]
     # Same cap as ChatRequest.message: the browser sends earlier messages back verbatim as history.
     content: str = Field(max_length=3000)
+class PracticeScore(BaseModel):
+    """PRACTICE.4: one melody note's score from a practice pass, as practice.js scorePass gives it."""
+    model_config=ConfigDict(extra="forbid")
+    i: int = Field(ge=0,le=1023)
+    m: int = Field(ge=0,le=127)
+    t: float = Field(ge=0,le=600,allow_inf_nan=False)
+    d: float = Field(gt=0,le=600,allow_inf_nan=False)
+    sung: bool
+    cents: int | None = Field(default=None,ge=-1200,le=1200)
+    settle: float | None = Field(default=None,ge=0,le=600,allow_inf_nan=False)
+    spread: int | None = Field(default=None,ge=0,le=2400)
+    onset: float | None = Field(default=None,ge=-1,le=600,allow_inf_nan=False)
+    octave: int | None = Field(default=None,ge=-10,le=10)
+    pitch: Literal["in","sharp","flat","missed"]
+    timing: Literal["on","early","late"] | None = None
+    @model_validator(mode="after")
+    def _sung(self):
+        # scorePass gives a sung note its cents and a pitch other than missed, and an unsung one neither.
+        if self.sung and (self.cents is None or self.pitch=="missed"): raise ValueError("A sung note has its cents and pitch")
+        if not self.sung and (self.cents is not None or self.pitch!="missed"): raise ValueError("A note not heard has no cents")
+        return self
+PRACTICE_MAX_NOTES=256
+class PracticePass(BaseModel):
+    """PRACTICE.4: the last practice pass shown on the melody roll: its number, the stretch practised
+    (seconds) and every melody note's score in it, sent with a chat message so the model can read them."""
+    model_config=ConfigDict(extra="forbid")
+    number: int = Field(ge=1,le=100000)
+    start: float = Field(ge=0,le=600,allow_inf_nan=False)
+    end: float = Field(gt=0,le=600,allow_inf_nan=False)
+    notes: list[PracticeScore] = Field(min_length=1,max_length=PRACTICE_MAX_NOTES)
+    @model_validator(mode="after")
+    def _span(self):
+        if self.end<=self.start: raise ValueError("A practice pass ends after it starts")
+        return self
 class ChatRequest(BaseModel):
     model_config=ConfigDict(extra="forbid")
     message: str = Field(min_length=1,max_length=3000)
     project: ChatProject = Field(default_factory=ChatProject)
     history: list[ChatTurn] = Field(default_factory=list,max_length=12)
+    # PRACTICE.4: the last practice pass's scores, while they are shown on the melody roll.
+    practice: PracticePass | None = None
 
 SYSTEM = """You are Tandem, a supportive, musically knowledgeable co-composer. Respond to the user's musical request using JSON ONLY:
 {"reply":"short natural language explanation","actions":[{"type":"set_tempo","bpm":110},{"type":"set_instrument","instrument":"marimba"},{"type":"transpose","semitones":2},{"type":"add_note","pitch":60,"start":0,"duration":0.5},{"type":"add_hit","drum":"kick","start":0},{"type":"remove_track","track":"rhythm"}]}
@@ -667,6 +703,34 @@ MELODY_LOCK_NOTE=("Melody lock is on: the studio ignores transpose, add_note, re
     "If the request asks to change the melody, use none of them, do what else was asked, and say in the reply that the melody is protected "
     "and that turning off \"Protect original melody from AI edits\" allows melody changes.\n")
 LOCKED_REPLY="(Your melody is protected, so the melody change was not made. Turn off \"Protect original melody from AI edits\" to allow it.)"
+PITCH_NAMES=("C","C#","D","D#","E","F","F#","G","G#","A","A#","B")
+def pitch_name(m): return PITCH_NAMES[m%12]+str(m//12-1)
+PRACTICE_NOTE=("If the request asks about this practice pass or about the singing, describe in a \"reading\" field of the JSON, "
+    "in plain words, the patterns these measurements show (for example the high notes or the phrase ends sung flat, late "
+    "entries, notes slow to settle or wobbling), naming the notes, and keep \"reply\" to one short sentence. They are "
+    "pitch and timing measurements only: never claim to have heard the voice, its tone or its words, and do not change "
+    "the project because of them. Leave \"reading\" out when the request is not about the practice.\n")
+def practice_lines(practice: PracticePass, bpm: float):
+    """PRACTICE.4: the practice pass in words for the prompt, one line per scored note in time order. A note
+    ends a phrase when a rest of a beat or more follows it before the next scored note, or it is the last."""
+    notes=sorted(practice.notes,key=lambda s:(s.t,s.i)); beat=60/bpm
+    out=[f"Last practice pass (pass {practice.number}, {practice.start:.2f} to {practice.end:.2f} s), measured by the studio "
+         "from the microphone, one melody note a line in time order. cents: how far the held pitch was from the note "
+         "(+ sharp, - flat; within 25 is in tune); settled: how long the voice took to come within 50 cents; spread: how "
+         "much the held pitch moved (cents between its quartiles); came in: when the voice reached the note against the "
+         "note's start (within 100 ms is on time)."]
+    for k,s in enumerate(notes):
+        head=f"{k+1}. {pitch_name(s.m)} at {s.t:.2f} s for {s.d:.2f} s"
+        nxt=notes[k+1] if k+1<len(notes) else None
+        if nxt is None or nxt.t-(s.t+s.d)>=beat-1e-6: head+=" (phrase end)"
+        if not s.sung: out.append(head+": not heard"); continue
+        parts=[("in tune, " if s.pitch=="in" else "")+f"{s.cents:+d} cents"]
+        if s.octave: parts.append(f"sung {abs(s.octave)} octave{'s' if abs(s.octave)>1 else ''} {'up' if s.octave>0 else 'down'}")
+        parts.append(f"settled after {s.settle:.2f} s" if s.settle is not None else "never settled")
+        if s.spread is not None: parts.append(f"spread {s.spread} cents")
+        if s.onset is not None: parts.append(f"came in {abs(round(s.onset*1000))} ms {'early' if s.onset<0 else 'late'} ({s.timing})")
+        out.append(head+": "+", ".join(parts))
+    return "\n".join(out)+"\n"
 def chat_messages(req: ChatRequest):
     """The messages /api/chat sends the model after the system prompt (also used by the AI.5 evaluation)."""
     project=req.project.model_dump()
@@ -677,7 +741,9 @@ def chat_messages(req: ChatRequest):
     # AI.5: every model tried melody edits under the lock when it was only a key in the project JSON,
     # and its reply then claimed an edit the studio had dropped; the lock is now said in words.
     lock=MELODY_LOCK_NOTE if req.project.melody_locked else ""
-    return prior+[{"role":"user","content":genre+"Current project: "+json.dumps(project)[:18000]+"\n"+lock+"Request: "+req.message}]
+    # PRACTICE.4: the last practice pass's scores, only while they are shown; without them the prompt is as before.
+    practice=practice_lines(req.practice,req.project.bpm)+PRACTICE_NOTE if req.practice else ""
+    return prior+[{"role":"user","content":genre+"Current project: "+json.dumps(project)[:18000]+"\n"+lock+practice+"Request: "+req.message}]
 def chat_plan(raw, req: ChatRequest):
     """The reply and the allowed actions from the model's text: parsed, allowlisted and clamped, and
     with melody lock on, every melody change left out. Raises ValueError when the text is not JSON."""
@@ -690,7 +756,12 @@ def chat_plan(raw, req: ChatRequest):
         # The reply was written for the actions the model sent, so it must not claim a dropped one.
         if len(kept)<len(actions): reply+=" "+LOCKED_REPLY
         actions=kept
-    return {"reply":reply,"actions":actions}
+    plan={"reply":reply,"actions":actions}
+    # PRACTICE.4: the model's reading of the practice measurements, kept apart from the reply so the page can
+    # label it as such; only when a pass was sent. It never brings actions of its own.
+    reading=obj.get("reading") if req.practice else None
+    if isinstance(reading,str) and reading.strip(): plan["reading"]=reading.strip()[:1500]
+    return plan
 @app.post("/api/chat")
 async def chat(req: ChatRequest, request: Request):
     raw=await invoke_llm(chat_messages(req),llm_config(request))
