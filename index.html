@@ -348,7 +348,8 @@ $('demo').onclick=demo;
 $('melodylock').onchange=()=>edit($('melodylock').checked?'Protect melody':'Unprotect melody',()=>{state.melody_locked=$('melodylock').checked});
 $('bpm').onchange=()=>edit('Change tempo',()=>{state.bpm=Number($('bpm').value)});
 $('swing').oninput=()=>{$('swingvalue').textContent=$('swing').value+'%'};
-$('detecttempo').onclick=()=>{const bpm=estimateTempo([...state.notes.map(n=>n.t),...state.drums.map(h=>h.t)],{range:tempoRange(state.genre)});if(bpm===null){status('Detect tempo needs at least four notes or drum hits.');return}if(bpm===state.bpm){status('Tempo is already '+bpm+' bpm');return}edit('Detect tempo',()=>{state.bpm=bpm});status('Detected tempo: '+bpm+' bpm')};
+// FIX.4: a take sung to a count-in, a click or the song keeps the tempo it was sung to, unless a tempo near it fits clearly better.
+$('detecttempo').onclick=()=>{const timed=audio!==null&&timedTakes.get(audio)===state.bpm,bpm=estimateTempo([...state.notes.map(n=>n.t),...state.drums.map(h=>h.t)],{prefer:tempoRange(state.genre),current:state.bpm,timed});if(bpm===null){status('Detect tempo needs at least four notes or drum hits.');return}if(bpm===state.bpm){status('Tempo is already '+bpm+' bpm'+(timed?' (the take was sung to it)':''));return}edit('Detect tempo',()=>{state.bpm=bpm});status('Detected tempo: '+bpm+' bpm')};
 $('quantize').onclick=()=>{if(!state.notes.length&&!state.drums.length&&!state.harmony.length&&!state.voice2.length){status('Nothing to quantize yet.');return}try{const division=Number($('grid').value),swing=Number($('swing').value)/100,strength=Number($('qstrength').value),grid=$('grid').selectedOptions[0].textContent;const q=quantizeProject(state,{division,swing,strength});const label='Quantize to '+grid+(division>1&&swing?' with '+Math.round(swing*100)+'% swing':'');if(edit(label,()=>{state.notes=q.notes;state.drums=q.drums;state.harmony=q.harmony;state.voice2=q.voice2}))status(label+' at '+state.bpm+' bpm');else status('Already on the '+grid+' grid')}catch(e){status(e.message)}};
 $('instrument').onchange=()=>edit('Change instrument',()=>{state.instrument=$('instrument').value});
 $('addnote').onclick=()=>edit('Add note',()=>{state.notes.push({m:60,t:Math.round((Math.max(0,...state.notes.map(n=>n.t+n.d))+.1)*100)/100,d:.4})});
@@ -369,7 +370,7 @@ function chooseGenre(id){const g=genreById(id||null),to=g?g.id:null;if((state.ge
 $('genre').onchange=e=>chooseGenre(e.target.value);$('ggenre').onchange=e=>chooseGenre(e.target.value);
 // How a beatbox is read into a groove: with a genre, the hits just transcribed are lined up to its grid and swing as an edit
 // of its own (Undo gives them as played), at a tempo found in the genre's range when there are no notes yet (a song's tempo is kept).
-function readBeatAsGenre(){const g=genreById(state.genre);if(!g||state.drums.length<4)return;const song=state.notes.length||state.harmony.length||state.voice2.length,bpm=song?state.bpm:(estimateTempo(state.drums.map(h=>h.t),{range:g.tempo})??state.bpm),{drums}=quantizeProject({bpm,notes:[],drums:state.drums},g.beat);edit('Read the beat as '+g.name,()=>{state.bpm=bpm;state.drums=drums});message('Read the beat as '+g.name+': '+(song?'':'speed '+bpm+' beats a minute, ')+'lined up to 1/'+(g.beat.division*4)+(g.beat.swing?' with '+Math.round(g.beat.swing*100)+'% swing':'')+'. Undo gives the hits as you played them.')}
+function readBeatAsGenre(){const g=genreById(state.genre);if(!g||state.drums.length<4)return;const song=state.notes.length||state.harmony.length||state.voice2.length,bpm=song?state.bpm:(estimateTempo(state.drums.map(h=>h.t),{prefer:g.tempo,current:state.bpm})??state.bpm),{drums}=quantizeProject({bpm,notes:[],drums:state.drums},g.beat);edit('Read the beat as '+g.name,()=>{state.bpm=bpm;state.drums=drums});message('Read the beat as '+g.name+': '+(song?'':'speed '+bpm+' beats a minute, ')+'lined up to 1/'+(g.beat.division*4)+(g.beat.swing?' with '+Math.round(g.beat.swing*100)+'% swing':'')+'. Undo gives the hits as you played them.')}
 
 function beatBars(){const v=$('groovebars').value;return v==='song'?barsToCover(contentSeconds({...state,drums:[]},audio?audioDuration:0),state.bpm):Number(v)}
 $('addgroove').onclick=()=>{const g=grooveById($('groove').value),bars=beatBars(),keep=$('groovekeep').checked;let drums;try{drums=withBeat(state.drums,grooveHits(g.id,{bpm:state.bpm,bars,from:barOrigin({bpm:state.bpm,notes:state.notes,drums:keep?state.drums:[],harmony:state.harmony,voice2:state.voice2})}),{keep})}catch(e){status(e.message);return}
@@ -733,7 +734,7 @@ $('record').onclick=async()=>{guidedTake=false;if(takeRun||takeStarting||calibra
  let guideError=null;if(g)try{g.run=await startPitchGuide(rc,mic,rs=>guideFeed(t,rs))}catch(e){g=null;guideError=e.message}
  const c=countIn(state.bpm,rc.currentTime+.1,{on:$('countin').checked}),click=$('recclick').checked,heard=c.beats>0||click||!!music,start=takeStart(c.zero,heard?lat.seconds:0);collector=createTakeCollector({zero:start,rate:rc.sampleRate});
  // Only a take sung along with something heard (the count-in, the click or the song) is moved by the round trip.
- const t={rc,stream,capture,c,start,layer:asLayer,latency:{seconds:heard?lat.seconds:0,measured:lat.measured},song:!!music,guide:g,guideError,collector,click,next:0,counting:null,shown:0};
+ const t={rc,stream,capture,c,start,timed:heard,layer:asLayer,latency:{seconds:heard?lat.seconds:0,measured:lat.measured},song:!!music,guide:g,guideError,collector,click,next:0,counting:null,shown:0};
  if(music)scheduleSong(rc,c.zero,music,{from:0,to:Infinity,at:0});
  takeRun=t;if(g)showGuide(true);$('record').disabled=true;$('finish').disabled=false;delete $('finish').dataset.take;
  t.ticker=setInterval(()=>takeTick(t),25);takeTick(t)}catch(e){stream?.getTracks().forEach(x=>x.stop());rc?.close();status('Mic unavailable: '+e.message)}finally{takeStarting=false}};
@@ -745,7 +746,7 @@ async function finishTake(){const t=takeRun;if(!t)return;takeRun=null;clearInter
  const {channels,frames,rate}=t.collector.finish(end);$('finish').dataset.take=JSON.stringify({zero:t.c.zero,start:t.start,latency:t.latency.seconds,measured:t.latency.measured,song:t.song,lead:t.c.lead,beat:t.c.beat,end,rate,frames});
  if(!frames){guidedTake=false;status(end<t.start?'Stopped during the count-in: nothing was recorded':'Nothing was recorded');guideRefresh();return}
  const samples=monoSamples({numberOfChannels:channels.length,length:frames,getChannelData:i=>channels[i]});
- try{if(t.layer)addLayerTake(samples,rate);else if(audio){await addTakeRecording(wavBlob(samples,rate));guideTakeReady()}else{await loadAudio(wavBlob(samples,rate));saveDraftAudio();guideTakeReady()}}catch(e){guidedTake=false;status(e.message);return}
+ try{if(t.layer)addLayerTake(samples,rate);else{const blob=wavBlob(samples,rate);if(t.timed)timedTakes.set(blob,state.bpm);if(audio){await addTakeRecording(blob);guideTakeReady()}else{await loadAudio(blob);saveDraftAudio();guideTakeReady()}}}catch(e){guidedTake=false;status(e.message);return}
  if(!t.layer)keepTakeRange(samples,rate)}
 // TRACK.1: a take recorded as a layer is added to the song's layers as one edit, keeping the take and everything made from it.
 function addLayerTake(samples,rate){const id=newLayerId(),blob=wavBlob(samples,rate);let name='';generated.set(id,blob);edit('Record a layer',()=>{state.layers=addLayer(state.layers,{id,seconds:samples.length/rate});name=state.layers.at(-1).name});status('Recorded '+name+' as a track of its own. Choose what to transcribe it into, or mute it, in its lane.')}
@@ -755,10 +756,12 @@ $('finish').onclick=()=>{finishTake().catch(e=>status('Recording failed: '+e.mes
 // The take the song uses (`audio`, the "original" recording) is the comp of the takes: the take itself when it is the whole of
 // one, else rendered by takes.js renderComp. Undo and redo bring the comp's recording back with what was made from it
 // (separated, polished, tuned, its pitch line), kept by comp in compCache; the vocal targets come back with the edit.
+// FIX.4: recordings taken to a count-in, a click or the song, with the tempo they were sung to (a comp of such takes too).
+const timedTakes=new WeakMap();
 const takeName=id=>state.takes?.list.find(t=>t.id===id)?.name??'a take';
 async function compBlob(t){const whole=wholeTake(t);if(whole){const b=generated.get(whole);if(!b)throw Error('the recording of '+takeName(whole)+' is not on this device');return b}
  const sources={};let rate=0;for(const id of usedTakes(t)){const b=generated.get(id);if(!b)throw Error('the recording of '+takeName(id)+' is not on this device');const buf=await decoded(b);rate=buf.sampleRate;sources[id]=monoSamples(buf)}
- return wavBlob(renderComp(t,sources,rate),rate)}
+ const blob=wavBlob(renderComp(t,sources,rate),rate),at=usedTakes(t).map(id=>timedTakes.get(generated.get(id)));if(at.length&&at.every(x=>x!==undefined&&x===at[0]))timedTakes.set(blob,at[0]);return blob}
 async function showComp(){const t=state.takes,sig=compSig(t);if(sig===shownComp||!audio)return;let c=compCache.get(sig);if(!c){if(!t)return;c={original:await compBlob(t)}}if(compSig(state.takes)!==sig)return;
  compCache.set(shownComp,{original:audio,polished,tuned,vocal,accompaniment,contour:vocalContour});shownComp=sig;
  restoringAudio=true;try{await loadAudio(c.original,{keep:true});restoreDerived(c,'for this take');vocalContour=c.contour??null;renderVocalNotes()}finally{restoringAudio=false}

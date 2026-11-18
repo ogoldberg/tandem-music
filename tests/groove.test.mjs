@@ -203,7 +203,7 @@ for (const run of [8, 9]) {
   });
 }
 
-for (const bpm of [60, 70, 75, 79]) {
+for (const bpm of [55, 60, 65]) {
   test(`limit: slow quarters with an eighth every second beat read double at ${bpm} bpm`, () => {
     const b = 60 / bpm, times = [];
     for (let i = 0; i < 16; i++) { times.push(0.3 + i * b); if (i % 2) times.push(0.3 + i * b + b / 2); }
@@ -211,8 +211,8 @@ for (const bpm of [60, 70, 75, 79]) {
   });
 }
 
-test("the same slow pattern reads correctly from 80 bpm", () => {
-  for (const bpm of [80, 90]) {
+test("the same slow pattern reads correctly from 70 bpm", () => {
+  for (const bpm of [70, 75, 79, 80, 90]) {
     const b = 60 / bpm, times = [];
     for (let i = 0; i < 16; i++) { times.push(0.3 + i * b); if (i % 2) times.push(0.3 + i * b + b / 2); }
     assert.equal(estimateTempo(times), bpm);
@@ -306,4 +306,66 @@ test("a melody that ends before the song's first bar line is not given a chord o
   const project = { bpm: 100, notes: [0.27, 0.57, 0.87].map((t, i) => ({ t, m: 60 + 2 * i, d: 0.1 })), drums: grooveHits("straight", { bpm: 100, bars: 4, from: 1.37 }) };
   assert.ok(close(barOrigin(project), 1.37, 1e-6));
   assert.throws(() => generateHarmony(project, { key: { tonic: 0, mode: "major" } }), /ends before the song's first bar line/);
+});
+
+// FIX.4: Find the speed on sung, syncopated tunes.
+const CELLS = [[0, 1, 1.5, 2.5, 3], [0, 0.5, 1.5, 2, 3], [0, 1.5, 2, 3, 3.5], [0, 1, 2, 2.5, 3.5], [0.5, 1, 1.5, 2.5, 3], [0, 1.5, 3], [0, 0.5, 1, 2, 3], [0, 1.5, 2.5, 3]];
+function seeded(seed) {
+  let s = seed >>> 0 || 1;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+// An eight-bar tune of syncopated one-bar rhythms (offbeat starts, dotted quarters, ties over the beat)
+// ending on a held note, from a random start, each onset off by a Gaussian of sd seconds as a singer is.
+function syncopatedTune(bpm, seed, sd) {
+  const r = seeded(seed * 7919 + bpm), beat = 60 / bpm, start = 0.2 + r() * 1.3, times = [];
+  const gauss = () => { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); };
+  for (let bar = 0; bar < 8; bar++) {
+    const cell = bar === 7 ? [0] : CELLS[Math.floor(r() * CELLS.length)];
+    for (const x of cell) times.push(start + (bar * 4 + x) * beat + gauss() * sd);
+  }
+  return times;
+}
+const right = (est, bpm) => Math.abs(est - bpm) <= 2;
+
+for (const genre of [null, "pop", "folk", "jazz", "rock", "hiphop", "electronic"]) {
+  test(`FIX.4: syncopated sung tunes at 70, 84, 100 and 150 bpm read right in 36 of 40 trials (genre ${genre})`, async () => {
+    const { tempoRange } = await import("../genre.js");
+    for (const bpm of [70, 84, 100, 150]) {
+      let ok = 0; const wrong = [];
+      for (let seed = 1; seed <= 40; seed++) {
+        const est = estimateTempo(syncopatedTune(bpm, seed, 0.03), { prefer: genre ? tempoRange(genre) : null, current: 100 });
+        if (right(est, bpm)) ok++; else wrong.push(est);
+      }
+      assert.ok(ok >= 36, `${bpm} bpm: ${ok} of 40 (wrong: ${wrong.join(", ")})`);
+    }
+  });
+}
+
+test("FIX.4: 150 bpm under pop (80..140) is not pulled to a 3:2 or octave neighbour inside the range", async () => {
+  const { tempoRange } = await import("../genre.js");
+  const answers = Array.from({ length: 40 }, (_, i) => estimateTempo(syncopatedTune(150, i + 1, 0.03), { prefer: tempoRange("pop") }));
+  assert.ok(answers.filter(e => right(e, 150)).length >= 36, answers.join(", "));
+});
+
+test("FIX.4: the current tempo is kept when it fits about as well, and dropped when it does not", () => {
+  const tune = syncopatedTune(100, 3, 0.02);
+  // Notes every 0.4 s fit 150 and 75 bpm about as well; alone 150 wins, a current 75 is kept.
+  const eighths = Array.from({ length: 16 }, (_, i) => i * 0.4);
+  assert.equal(estimateTempo(eighths), 150);
+  assert.equal(estimateTempo(eighths, { current: 75 }), 75, "a near tie keeps the current tempo");
+  assert.equal(estimateTempo(eighths, { current: 100 }), 150, "a 3:2 neighbour of the best is no tie");
+  assert.ok(right(estimateTempo(tune, { current: 133 }), 100), "a 4:3 neighbour fits clearly worse");
+  assert.ok(right(estimateTempo(tune, { current: 150 }), 100), "a 3:2 neighbour fits clearly worse");
+});
+
+test("FIX.4: a timed take searches only near the tempo it was sung to", () => {
+  // Sung to a count-in at 100 bpm but rushed a little: kept at 100.
+  for (let seed = 1; seed <= 20; seed++) assert.equal(estimateTempo(syncopatedTune(100, seed, 0.03), { current: 100, timed: true }), 100);
+  // A tune at 70 sung over a 100 bpm click (ignored): the answer stays within 6% of 100, never 70 or 140.
+  const est = estimateTempo(syncopatedTune(70, 1, 0.02), { current: 100, timed: true });
+  assert.ok(est >= 94 && est <= 106, `estimated ${est}`);
+  // Sung clearly faster than the click: the tempo near it that fits best.
+  assert.equal(estimateTempo(syncopatedTune(104, 2, 0.01), { current: 100, timed: true }), 104);
+  assert.throws(() => estimateTempo([0, 1, 2, 3], { timed: true }), /sung to/);
+  assert.throws(() => estimateTempo([0, 1, 2, 3], { current: 300 }), /45\.\.220/);
 });
