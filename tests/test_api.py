@@ -1471,6 +1471,8 @@ def test_without_a_pass_the_prompt_and_reply_are_as_before(client,monkeypatch):
 def test_practice_pass_is_validated(client):
     bad=[{**PASS,"extra":1},{**PASS,"end":0.5},{**PASS,"notes":[]},
          {**PASS,"notes":[{**PASS["notes"][0],"pitch":"great"}]},{**PASS,"notes":[{**PASS["notes"][0],"hint":"x"}]},
+         # A sung note without its cents (it would have no line to write) and an unsung one with them.
+         {**PASS,"notes":[{**PASS["notes"][0],"cents":None}]},{**PASS,"notes":[{**PASS["notes"][3],"cents":5}]},
          {**PASS,"notes":[PASS["notes"][0]]*(server.PRACTICE_MAX_NOTES+1)}]
     for p in bad:
         assert run(client("POST","/api/chat",json={"message":"How was it?","practice":p})).status_code==422

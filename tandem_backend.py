@@ -597,6 +597,12 @@ class PracticeScore(BaseModel):
     octave: int | None = Field(default=None,ge=-10,le=10)
     pitch: Literal["in","sharp","flat","missed"]
     timing: Literal["on","early","late"] | None = None
+    @model_validator(mode="after")
+    def _sung(self):
+        # scorePass gives a sung note its cents and a pitch other than missed, and an unsung one neither.
+        if self.sung and (self.cents is None or self.pitch=="missed"): raise ValueError("A sung note has its cents and pitch")
+        if not self.sung and (self.cents is not None or self.pitch!="missed"): raise ValueError("A note not heard has no cents")
+        return self
 PRACTICE_MAX_NOTES=256
 class PracticePass(BaseModel):
     """PRACTICE.4: the last practice pass shown on the melody roll: its number, the stretch practised
