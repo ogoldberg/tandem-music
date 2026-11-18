@@ -1,0 +1,7 @@
+{
+  "task_id": "FIX.5",
+  "agent_id": "agent-m5",
+  "branch": "feat/fix5-take-messages",
+  "claimed_at": "2026-11-18T13:51:11Z",
+  "heartbeat": "2026-11-18T13:51:11Z"
+}
