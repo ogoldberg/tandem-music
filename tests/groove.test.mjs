@@ -275,3 +275,12 @@ test("quantize moves the chords and the harmony voice with the melody, on one gr
   assert.deepEqual(out.voice2.map(n => n.t), [0, 0.6]);
   assert.deepEqual(project.harmony[0].t, 0.02, "the input is unchanged");
 });
+
+test("no chord starts before zero: a bar that would begin before the song starts at the next bar line", () => {
+  // On the beat from 2.0 s in free time, with a note at 0.5 s off that beat: its bar would start at -0.4 s.
+  const notes = [0.5, 2.0, 2.6, 3.2, 3.8, 4.4, 5.0, 5.6, 6.2].map((t, i) => ({ m: [64, 60, 62, 64, 65, 67, 65, 64, 62][i], t, d: 0.4 }));
+  assert.ok(close(barOrigin({ bpm: 100, notes, drums: [] }), 2.0, 1e-6));
+  const h = generateHarmony({ bpm: 100, notes }, { key: { tonic: 0, mode: "major" } });
+  assert.deepEqual(h.chords.map(c => c.t), [2.0, 4.4]);
+  assert.ok(h.notes.every(n => n.t >= 0));
+});
