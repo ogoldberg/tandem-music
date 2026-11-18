@@ -1002,7 +1002,9 @@ function beatsOnDevice(buf){const ch=[];for(let c=0;c<buf.numberOfChannels;c++)c
 // FIX.5: a melody take goes to the server as mono at ANALYZE_RATE, so a minute is about 2.6 MB, under Vercel's 4.5 MB
 // request cap. A beat take keeps the context's rate: SEC.6's device reader must read it as the server does (`beatsOnDevice`).
 const ANALYZE_RATE=22050;
-async function atRate(buf,rate){if(buf.sampleRate===rate&&buf.numberOfChannels===1)return buf;const ac=new OfflineAudioContext(1,Math.max(1,Math.ceil(buf.duration*rate)),rate),src=ac.createBufferSource();src.buffer=buf;src.connect(ac.destination);src.start();return ac.startRendering()}
+// The live channels are averaged first, as the server's upload always was: a one-channel render would mix them with
+// Web Audio's speaker coefficients instead, which leave out a 5.1 file's LFE channel.
+async function atRate(buf,rate){let mono=buf;if(buf.numberOfChannels>1){mono=new AudioBuffer({length:buf.length,numberOfChannels:1,sampleRate:buf.sampleRate});mono.copyToChannel(monoSamples(buf),0)}if(mono.sampleRate===rate)return mono;const ac=new OfflineAudioContext(1,Math.max(1,Math.ceil(mono.duration*rate)),rate),src=ac.createBufferSource();src.buffer=mono;src.connect(ac.destination);src.start();return ac.startRendering()}
 async function audioRequest(path,mode,buffer){if(!audio)throw Error('Record a sound first');const whole=buffer??await decoded(take()),wav=monoWav(mode==='rhythm'?whole:await atRate(whole,ANALYZE_RATE)),form=new FormData();form.append('file',wav,'capture.wav');return request(path+(mode?'?mode='+mode:''),{method:'POST',body:form})}
 // FIX.5: a melody is transcribed from the take's first TRANSCRIBE_SECONDS (the project melody's limit), and a take in
 // which nothing is found leaves the part as it was. The outcome is kept for the guided helpers: done, empty or failed.
@@ -1027,7 +1029,8 @@ $('analyze').onclick=async()=>{transcribed={state:'failed',note:'',times:[]};try
    obj=await(await audioRequest('/api/analyze',mode,buffer)).json();
  }
  const found=mode==='melody'?obj.notes||[]:obj.drums||[];
- if(!found.length){transcribed={state:'empty',note:'',times:[]};status(mode==='melody'?'Nothing was heard in the take, so your notes are as they were. Sing closer to the microphone and record again.':'No drum hits were heard in the take, so your drums are as they were. Beatbox closer to the microphone and record again.');return}
+ // A long take is read for its first minute only, so a take heard only after it is told to start sooner, not to sing closer.
+ if(!found.length){transcribed={state:'empty',note:'',times:[]};status(mode==='rhythm'?'No drum hits were heard in the take, so your drums are as they were. Beatbox closer to the microphone and record again.':note?'Nothing was heard in the first '+TRANSCRIBE_SECONDS+' seconds of the '+Math.round(whole.duration)+'-second take, so your notes are as they were. Start singing sooner, or record a shorter take.':'Nothing was heard in the take, so your notes are as they were. Sing closer to the microphone and record again.');return}
  if(mode==='melody'){
    edit('Transcribe melody',()=>{state.notes=obj.notes||[]});
    message('Found '+state.notes.length+' notes. Your previous melody is kept in Undo history; check the pitch and timing.');
