@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { estimateTempo, quantizeProject, swungOffbeat, GRID_DIVISIONS, TEMPO_RANGE } from "../groove.js";
+import { estimateTempo, canEstimateTempo, quantizeProject, swungOffbeat, GRID_DIVISIONS, TEMPO_RANGE } from "../groove.js";
 
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
@@ -368,4 +368,12 @@ test("FIX.4: a timed take searches only near the tempo it was sung to", () => {
   assert.equal(estimateTempo(syncopatedTune(104, 2, 0.01), { current: 100, timed: true }), 104);
   assert.throws(() => estimateTempo([0, 1, 2, 3], { timed: true }), /sung to/);
   assert.throws(() => estimateTempo([0, 1, 2, 3], { current: 300 }), /45\.\.220/);
+});
+
+test('FIX.5: a speed can be found only from four distinct onsets', () => {
+  assert.equal(canEstimateTempo([]), false);
+  assert.equal(canEstimateTempo([0.5, 1.1, 1.7]), false);
+  assert.equal(canEstimateTempo([0.5, 0.505, 1.1, 1.7]), false);
+  assert.equal(canEstimateTempo([0.5, 1.1, 1.7, 2.3]), true);
+  assert.equal(estimateTempo([0.5, 0.505, 1.1, 1.7]), null);
 });

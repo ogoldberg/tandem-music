@@ -8,6 +8,11 @@ export const GRID_DIVISIONS = Object.freeze({ "1/4": 1, "1/8": 2, "1/16": 4 });
 export const TEMPO_RANGE = Object.freeze([45, 220]);
 
 const MIN_ONSETS = 4;
+
+// FIX.5: whether there are enough distinct onsets for estimateTempo to find a speed at all.
+export function canEstimateTempo(times) {
+  return onsetTimes(times).length >= MIN_ONSETS;
+}
 const ONSET_MERGE_SECONDS = 0.01;
 // How far an onset may sit from a grid line and still count, as a Gaussian's sigma. FIX.4: 40 ms, wide
 // enough for a singer's timing (about 30 ms either way), which a 20 ms window read as off the grid.
