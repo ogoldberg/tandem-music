@@ -38,15 +38,20 @@ def hits_studio(hits_browser, server_url):
     assert not problems, "Browser reported errors:\n" + "\n".join(problems)
 
 
-def record_and_transcribe(page, *, count_in):
+def record_take(page, *, count_in):
     page.set_checked("#countin", count_in)
     page.set_checked("#pitchguide", False)
+    page.evaluate("delete document.getElementById('finish').dataset.take")
     page.click("#record")
     expect(page.locator("#status")).to_have_text("Recording…", timeout=8000)
     page.wait_for_timeout(6500)
     page.click("#finish")
     wait_until(page, "async () => !!document.getElementById('finish').dataset.take", "the take has finished")
     expect(page.locator("#status")).to_contain_text("Recorded")
+
+
+def record_and_transcribe(page, *, count_in):
+    record_take(page, count_in=count_in)
     transcribe(page)
 
 
@@ -80,5 +85,36 @@ def test_the_same_hits_imported_are_read_freely(hits_studio, hits_wav):
     page = hits_studio
     page.set_input_files("#audiofile", str(hits_wav))
     expect(page.locator("#analyze")).to_be_enabled()
+    transcribe(page)
+    expect(detect(page)).to_have_text("Detected tempo: 60 bpm")
+
+
+def comp_second_take_in(page):
+    """Use the first take and comp the second in from 2 s, so the song's take is a recording rendered from both."""
+    ids = page.eval_on_selector_all("#takelist .takerow", "els => els.map(e => e.dataset.take)")
+    assert len(ids) == 2, ids
+    page.click(f"#usetake-{ids[0]}")
+    expect(page.locator("#takesinfo")).to_have_text("The song uses Take 1", timeout=15000)
+    page.fill("#compfrom", "2")
+    page.fill("#compto", "9")
+    page.select_option("#comptake", ids[1])
+    page.click("#compin")
+    expect(page.locator("#takesinfo")).to_contain_text("The song uses a comp", timeout=15000)
+
+
+def test_a_comp_of_takes_after_the_count_in_keeps_the_tempo(hits_studio):
+    page = hits_studio
+    record_take(page, count_in=True)
+    record_take(page, count_in=True)
+    comp_second_take_in(page)
+    transcribe(page)
+    expect(detect(page)).to_have_text("Tempo is already 90 bpm (the take was sung to it)")
+
+
+def test_a_comp_with_a_take_recorded_with_nothing_heard_is_read_freely(hits_studio):
+    page = hits_studio
+    record_take(page, count_in=False)
+    record_take(page, count_in=True)
+    comp_second_take_in(page)
     transcribe(page)
     expect(detect(page)).to_have_text("Detected tempo: 60 bpm")

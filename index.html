@@ -761,7 +761,7 @@ const timedTakes=new WeakMap();
 const takeName=id=>state.takes?.list.find(t=>t.id===id)?.name??'a take';
 async function compBlob(t){const whole=wholeTake(t);if(whole){const b=generated.get(whole);if(!b)throw Error('the recording of '+takeName(whole)+' is not on this device');return b}
  const sources={};let rate=0;for(const id of usedTakes(t)){const b=generated.get(id);if(!b)throw Error('the recording of '+takeName(id)+' is not on this device');const buf=await decoded(b);rate=buf.sampleRate;sources[id]=monoSamples(buf)}
- const blob=wavBlob(renderComp(t,sources,rate),rate),at=usedTakes(t).map(id=>timedTakes.get(generated.get(id)));if(at.length&&at.every(x=>x!==undefined&&x===at[0]))timedTakes.set(blob,at[0]);return blob}
+ const blob=wavBlob(renderComp(t,sources,rate),rate),at=[...usedTakes(t)].map(id=>timedTakes.get(generated.get(id)));if(at.length&&at.every(x=>x!==undefined&&x===at[0]))timedTakes.set(blob,at[0]);return blob}
 async function showComp(){const t=state.takes,sig=compSig(t);if(sig===shownComp||!audio)return;let c=compCache.get(sig);if(!c){if(!t)return;c={original:await compBlob(t)}}if(compSig(state.takes)!==sig)return;
  compCache.set(shownComp,{original:audio,polished,tuned,vocal,accompaniment,contour:vocalContour});shownComp=sig;
  restoringAudio=true;try{await loadAudio(c.original,{keep:true});restoreDerived(c,'for this take');vocalContour=c.contour??null;renderVocalNotes()}finally{restoringAudio=false}
