@@ -168,7 +168,7 @@ test("output is sorted by time", () => {
 });
 
 test("an empty project quantizes to an empty project", () => {
-  assert.deepEqual(quantizeProject({ bpm: 100, notes: [], drums: [] }, { division: 2, swing: 0, strength: 1 }), { notes: [], drums: [] });
+  assert.deepEqual(quantizeProject({ bpm: 100, notes: [], drums: [] }, { division: 2, swing: 0, strength: 1 }), { notes: [], drums: [], harmony: [], voice2: [] });
 });
 
 test("quantizeProject rejects bad settings", () => {
@@ -180,14 +180,25 @@ test("quantizeProject rejects bad settings", () => {
 
 // Known limits (issue #29). These pin current behaviour so a change to it is deliberate and the docs follow.
 for (const run of [8, 9]) {
-  test(`limit: a pickup into ${run} even eighths is taken as the beat`, () => {
-    // 120 bpm, pickup at 0.75 then even eighths from 1.0. With 8 eighths the pickup's phase has more onsets
-    // (5 to 4) and wins outright; with 9 they tie (5 to 5) and the earliest phase, the pickup's, wins.
-    // Either way the real downbeats become offbeats and swing moves them.
-    const t = [0.75, ...Array.from({ length: run }, (_, i) => 1.0 + i * 0.25)];
+  test(`limit: off the grid from zero, a pickup into ${run} even eighths is taken as the beat`, () => {
+    // 120 bpm, pickup at 0.85 then even eighths from 1.1 (off the zero grid by 0.1 s). With 8 eighths the
+    // pickup's phase has more onsets (5 to 4) and wins outright; with 9 they tie (5 to 5) and the earliest
+    // phase, the pickup's, wins. Either way the real downbeats become offbeats and swing moves them.
+    const t = [0.85, ...Array.from({ length: run }, (_, i) => 1.1 + i * 0.25)];
     const project = { bpm: 120, notes: t.map(x => ({ m: 60, t: x, d: 0.1 })), drums: [] };
     const out = quantizeProject(project, { division: 2, swing: 1, strength: 1 });
     const want = t.map((x, i) => (i % 2 ? x - 0.25 + 1 / 3 : x));
+    out.notes.forEach((n, i) => assert.ok(close(n.t, want[i], 1e-6), `${i}: ${n.t} vs ${want[i]}`));
+  });
+}
+
+for (const run of [8, 9]) {
+  test(`FIX.3: on the grid from zero, a pickup into ${run} even eighths keeps the downbeats`, () => {
+    // As above but sung to the count-in: the zero grid fits as well as any, so the beat is zero's.
+    const t = [0.75, ...Array.from({ length: run }, (_, i) => 1.0 + i * 0.25)];
+    const project = { bpm: 120, notes: t.map(x => ({ m: 60, t: x, d: 0.1 })), drums: [] };
+    const out = quantizeProject(project, { division: 2, swing: 1, strength: 1 });
+    const want = t.map(x => (Math.abs(x * 2 - Math.round(x * 2)) < 1e-9 ? x : x - 0.25 + 1 / 3));
     out.notes.forEach((n, i) => assert.ok(close(n.t, want[i], 1e-6), `${i}: ${n.t} vs ${want[i]}`));
   });
 }
@@ -206,4 +217,93 @@ test("the same slow pattern reads correctly from 80 bpm", () => {
     for (let i = 0; i < 16; i++) { times.push(0.3 + i * b); if (i % 2) times.push(0.3 + i * b + b / 2); }
     assert.equal(estimateTempo(times), bpm);
   }
+});
+
+// FIX.3: one bar grid for chords, the starter beat and quantize.
+import { barOrigin } from "../groove.js";
+import { grooveHits } from "../beats.js";
+import { generateHarmony } from "../harmony.js";
+
+// 100 bpm (beat 0.6 s, bar 2.4 s); a tune sung after the count-in with a pickup on beat 4 (1.8 s),
+// each onset up to 25 ms off the beat as a singer is.
+const PICKUP_TUNE = [[67, 1.8], [72, 2.41], [71, 3.02], [72, 3.58], [74, 4.21], [76, 4.8], [74, 5.42], [72, 6.03], [71, 7.2], [72, 7.8]]
+  .map(([m, t]) => ({ m, t, d: 0.5 }));
+
+test("barOrigin: zero for a take sung on the grid from zero, a pickup and all", () => {
+  assert.equal(barOrigin({ bpm: 100, notes: PICKUP_TUNE, drums: [] }), 0);
+  assert.equal(barOrigin({ bpm: 100, notes: [], drums: [] }), 0);
+});
+
+test("barOrigin: a free-time recording keeps its first downbeat, as a time within the first bar", () => {
+  // On the beat from 3.37 s, off the zero grid by 0.37 s.
+  const notes = [0, 1, 2, 3, 4, 5].map(i => ({ m: 60 + i, t: 3.37 + i * 0.6, d: 0.5 }));
+  assert.ok(close(barOrigin({ bpm: 100, notes, drums: [] }), 3.37 - 2.4, 1e-6));
+});
+
+test("barOrigin: a starter beat from zero holds the grid at zero under a sloppy take", () => {
+  // Alone these notes agree on a beat 0.11 s after zero; under a starter beat from zero the grid stays at zero.
+  const notes = [0.11, 0.71, 1.31, 1.91].map((t, i) => ({ m: 60 + i, t, d: 0.4 }));
+  const drums = grooveHits("straight", { bpm: 100, bars: 2 });
+  assert.ok(close(barOrigin({ bpm: 100, notes, drums: [] }), 0.11, 1e-6));
+  assert.equal(barOrigin({ bpm: 100, notes, drums }), 0);
+});
+
+test("chords start on the starter beat's bars under a tune with a pickup, which is left unaccompanied", () => {
+  const h = generateHarmony({ bpm: 100, notes: PICKUP_TUNE }, { key: { tonic: 0, mode: "major" } });
+  const kicks = grooveHits("straight", { bpm: 100, bars: 4 }).filter(x => x.k === "kick").map(x => x.t);
+  assert.deepEqual(h.chords.map(c => c.t), [2.4, 4.8, 7.2]);
+  for (const c of h.chords) assert.ok(kicks.some(k => close(k, c.t, 1e-6)), `chord at ${c.t} is on a kick`);
+});
+
+test("a pickup does not move the bar lines of a free-time tune", () => {
+  // On the beat from 1.37 s (off the zero grid) with a half-beat pickup at 1.07 s: the bars start at 1.37 s.
+  const notes = [1.07, 1.37, 1.97, 2.57, 3.17, 3.77, 4.37, 4.97, 5.57].map((t, i) => ({ m: [65, 67, 72, 71, 72, 74, 76, 74, 72][i], t, d: 0.25 }));
+  const h = generateHarmony({ bpm: 100, notes }, { key: { tonic: 0, mode: "major" } });
+  assert.deepEqual(h.chords.map(c => c.t), [1.37, 3.77]);
+});
+
+test("quantize moves the chords and the harmony voice with the melody, on one grid", () => {
+  const project = {
+    bpm: 100,
+    notes: [{ m: 60, t: 0.03, d: 0.5 }, { m: 64, t: 0.62, d: 0.5 }, { m: 67, t: 1.17, d: 0.5 }, { m: 72, t: 1.83, d: 0.5 }],
+    drums: [],
+    harmony: [{ m: 48, t: 0.02, d: 2.3 }, { m: 52, t: 0.02, d: 2.3 }, { m: 55, t: 0.02, d: 2.3 }],
+    voice2: [{ m: 64, t: 0.04, d: 0.5 }, { m: 67, t: 0.61, d: 0.5 }],
+  };
+  const out = quantizeProject(project, { division: 4, swing: 0, strength: 1 });
+  assert.deepEqual(out.notes.map(n => n.t), [0, 0.6, 1.2, 1.8]);
+  assert.deepEqual(out.harmony.map(n => n.t), [0, 0, 0]);
+  assert.deepEqual(out.harmony.map(n => n.m).sort(), [48, 52, 55]);
+  assert.deepEqual(out.voice2.map(n => n.t), [0, 0.6]);
+  assert.deepEqual(project.harmony[0].t, 0.02, "the input is unchanged");
+});
+
+test("no chord starts before zero: a bar that would begin before the song starts at the next bar line", () => {
+  // On the beat from 2.0 s in free time, with a note at 0.5 s off that beat: its bar would start at -0.4 s.
+  const notes = [0.5, 2.0, 2.6, 3.2, 3.8, 4.4, 5.0, 5.6, 6.2].map((t, i) => ({ m: [64, 60, 62, 64, 65, 67, 65, 64, 62][i], t, d: 0.4 }));
+  assert.ok(close(barOrigin({ bpm: 100, notes, drums: [] }), 2.0, 1e-6));
+  const h = generateHarmony({ bpm: 100, notes }, { key: { tonic: 0, mode: "major" } });
+  assert.deepEqual(h.chords.map(c => c.t), [2.0, 4.4]);
+  assert.ok(h.notes.every(n => n.t >= 0));
+});
+
+test("a melody all in the second half of its bar is accompanied in that bar, not by a chord after it ends", () => {
+  const notes = [1.2, 1.5, 1.8].map((t, i) => ({ m: 60 + 2 * i, t, d: 0.2 }));
+  const h = generateHarmony({ bpm: 100, notes }, { key: { tonic: 0, mode: "major" } });
+  assert.deepEqual(h.chords.map(c => c.t), [0]);
+});
+
+test("quantize lines up the chords and the harmony voice when they are the only parts", () => {
+  const out = quantizeProject({ bpm: 100, notes: [], drums: [], harmony: [{ m: 48, t: 0.03, d: 2 }, { m: 52, t: 2.38, d: 2 }], voice2: [{ m: 64, t: 0.62, d: 0.5 }] },
+    { division: 4, swing: 0, strength: 1 });
+  assert.deepEqual(out.harmony.map(n => n.t), [0, 2.4]);
+  assert.deepEqual(out.voice2.map(n => n.t), [0.6]);
+  assert.equal(barOrigin({ bpm: 100, notes: [], drums: [], harmony: [{ m: 48, t: 1.37, d: 1 }, { m: 48, t: 3.77, d: 1 }] }), 1.37);
+});
+
+test("a melody that ends before the song's first bar line is not given a chord off the grid", () => {
+  // A beat from 1.37 s at 100 bpm puts the bar line before the melody at -1.03 s; the melody ends at 0.97 s.
+  const project = { bpm: 100, notes: [0.27, 0.57, 0.87].map((t, i) => ({ t, m: 60 + 2 * i, d: 0.1 })), drums: grooveHits("straight", { bpm: 100, bars: 4, from: 1.37 }) };
+  assert.ok(close(barOrigin(project), 1.37, 1e-6));
+  assert.throws(() => generateHarmony(project, { key: { tonic: 0, mode: "major" } }), /ends before the song's first bar line/);
 });
