@@ -154,8 +154,9 @@ async function runHelper(action){switch(action){
  case 'polish':{$('polishstyle').value=guide.cleanup;const was=polished;await $('polish').onclick();return !!polished&&polished!==was}
  case 'fixpitch':return fixPitch();
  case 'transcribe':$('transcriber').value=guide.transcriber==='server'?'heuristic':'basic-pitch';await $('analyze').onclick();return transcribed.state==='done'?{ok:true,note:transcribed.note}:{ok:false,stop:transcribed.state==='empty'?$('status').textContent:null};
- // FIX.5: under four notes or hits there is no speed to find; that is skipped and said plainly, not a failure.
- case 'tempo':if(!canEstimateTempo(tempoTimes()))return {skipped:true,note:'Too short to find the speed: sing a little longer, or carry on.'};await $('detecttempo').onclick();return /^(Detected tempo|Tempo is already)/.test($('status').textContent);
+ // FIX.5: under four notes or hits in the take there is no speed to find; that is skipped and said plainly, not a failure.
+ // It is the take's own notes that count, not drums or notes already in the song.
+ case 'tempo':if(!canEstimateTempo(transcribed.times))return {skipped:true,note:'Too short to find the speed: sing a little longer, or carry on.'};await $('detecttempo').onclick();return /^(Detected tempo|Tempo is already)/.test($('status').textContent);
  case 'quantize':applyBeat(guide.beat);$('quantize').onclick();return /^(Quantize to|Already on)/.test($('status').textContent);
 }}
 // A helper answers true or false, or {ok, note} with a sentence for the end, {skipped, note}, or {ok:false, stop}: a
@@ -998,13 +999,16 @@ async function request(path,opts={},absolute=false){const url=absolute?path:apiU
 $('connect').onclick=async()=>{try{const x=await(await request('/api/config')).json();$('provider').textContent=x.ai_ready?x.provider+' / '+x.model:(x.ai_problem||'Server online, AI model not configured');localStorage.setItem('tandem-api',$('api').value.trim());tabToken.set($('token').value.trim());status('Backend connection succeeded')}catch(e){status(e.message)}};
 // The drum hits in a recording, read on the device from the samples the server would have been sent.
 function beatsOnDevice(buf){const ch=[];for(let c=0;c<buf.numberOfChannels;c++)ch.push(buf.getChannelData(c));return readBeats(uploadSamples(ch),buf.sampleRate)}
-async function audioRequest(path,mode,buffer){if(!audio)throw Error('Record a sound first');const wav=monoWav(buffer??await decoded(take())),form=new FormData();form.append('file',wav,'capture.wav');return request(path+(mode?'?mode='+mode:''),{method:'POST',body:form})}
+// FIX.5: the take goes to the server as mono at ANALYZE_RATE, so a minute is about 2.6 MB, under Vercel's 4.5 MB request cap.
+const ANALYZE_RATE=22050;
+async function atRate(buf,rate){if(buf.sampleRate===rate&&buf.numberOfChannels===1)return buf;const ac=new OfflineAudioContext(1,Math.max(1,Math.ceil(buf.duration*rate)),rate),src=ac.createBufferSource();src.buffer=buf;src.connect(ac.destination);src.start();return ac.startRendering()}
+async function audioRequest(path,mode,buffer){if(!audio)throw Error('Record a sound first');const wav=monoWav(await atRate(buffer??await decoded(take()),ANALYZE_RATE)),form=new FormData();form.append('file',wav,'capture.wav');return request(path+(mode?'?mode='+mode:''),{method:'POST',body:form})}
 // FIX.5: a melody is transcribed from the take's first TRANSCRIBE_SECONDS (the project melody's limit), and a take in
 // which nothing is found leaves the part as it was. The outcome is kept for the guided helpers: done, empty or failed.
 const TRANSCRIBE_SECONDS=60;
-let transcribed={state:null,note:''};
+let transcribed={state:null,note:'',times:[]};
 function firstSeconds(buf,seconds){const length=Math.min(buf.length,Math.round(seconds*buf.sampleRate));if(length>=buf.length)return buf;const out=new AudioBuffer({length,numberOfChannels:buf.numberOfChannels,sampleRate:buf.sampleRate});for(let c=0;c<buf.numberOfChannels;c++)out.copyToChannel(buf.getChannelData(c).subarray(0,length),c);return out}
-$('analyze').onclick=async()=>{transcribed={state:'failed',note:''};try{
+$('analyze').onclick=async()=>{transcribed={state:'failed',note:'',times:[]};try{
  status('Transcribing…');const mode=$('mode').value==='rhythm'?'rhythm':'melody';
  let obj,note='';
  const whole=mode==='melody'?await decoded(take()):null,buffer=whole&&firstSeconds(whole,TRANSCRIBE_SECONDS);
@@ -1022,7 +1026,7 @@ $('analyze').onclick=async()=>{transcribed={state:'failed',note:''};try{
    obj=await(await audioRequest('/api/analyze',mode,buffer)).json();
  }
  const found=mode==='melody'?obj.notes||[]:obj.drums||[];
- if(!found.length){transcribed={state:'empty',note:''};status(mode==='melody'?'Nothing was heard in the take, so your notes are as they were. Sing closer to the microphone and record again.':'No drum hits were heard in the take, so your drums are as they were. Beatbox closer to the microphone and record again.');return}
+ if(!found.length){transcribed={state:'empty',note:'',times:[]};status(mode==='melody'?'Nothing was heard in the take, so your notes are as they were. Sing closer to the microphone and record again.':'No drum hits were heard in the take, so your drums are as they were. Beatbox closer to the microphone and record again.');return}
  if(mode==='melody'){
    edit('Transcribe melody',()=>{state.notes=obj.notes||[]});
    message('Found '+state.notes.length+' notes. Your previous melody is kept in Undo history; check the pitch and timing.');
@@ -1031,7 +1035,7 @@ $('analyze').onclick=async()=>{transcribed={state:'failed',note:''};try{
    message('Detected '+state.drums.length+' drum hits. Check the beatbox classification and timing.');
    readBeatAsGenre();
  }
- transcribed={state:'done',note};
+ transcribed={state:'done',note,times:found.map(x=>x.t)};
  status('Transcription complete'+(note?'. '+note:''));
 }catch(e){status('Transcription failed: '+e.message+'. Choose Server (fallback) if the browser model is unavailable.')}};
 function rmsLevel(buffer) {
@@ -1176,7 +1180,7 @@ function renderLayers(){$('reclayer').disabled=!audio;if(!audio)$('reclayer').ch
 async function transcribeLayer(id,into){const l=state.layers.find(x=>x.id===id),blob=layerBlob(id);if(!l||!blob)throw Error("that layer's recording is not on this device");if(!LAYER_TARGETS.includes(into))throw Error('unknown part');status('Transcribing '+l.name+'…');let notes=[],drums=[];
  if(into!=='drums'&&$('transcriber').value==='basic-pitch'){status('Loading Basic Pitch on this device…');const {transcribeWithBasicPitch,slowBackendNote}=await import('./transcription.js');notes=await transcribeWithBasicPitch(await decoded(blob),(p,b)=>status('Transcribing '+l.name+' on device: '+p+'%'+slowBackendNote(b,{server:true})))}
  else if(into==='drums'&&$('transcriber').value==='basic-pitch'){status('Reading the beat in '+l.name+' on this device…');drums=beatsOnDevice(await decoded(blob))}
- else{const form=new FormData();form.append('file',monoWav(await decoded(blob)),'layer.wav');const obj=await(await request('/api/analyze?mode='+(into==='drums'?'rhythm':'melody'),{method:'POST',body:form})).json();notes=obj.notes||[];drums=obj.drums||[]}
+ else{const form=new FormData();form.append('file',monoWav(await atRate(await decoded(blob),ANALYZE_RATE)),'layer.wav');const obj=await(await request('/api/analyze?mode='+(into==='drums'?'rhythm':'melody'),{method:'POST',body:form})).json();notes=obj.notes||[];drums=obj.drums||[]}
  edit('Transcribe '+l.name+' into the '+INTO_NAMES[into],()=>{if(into==='drums')state.drums=drums;else if(into==='harmony')state.harmony=notes;else state.notes=notes;state.layers=setInto(state.layers,id,into)});
  const n=into==='drums'?state.drums.length:notes.length;status('Transcribed '+l.name+' into the '+INTO_NAMES[into]+': '+n+(into==='drums'?' drum hits':' notes')+'. What the part held before is kept in Undo.')}
 function renderBand(){

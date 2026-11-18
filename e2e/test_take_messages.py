@@ -8,7 +8,7 @@ import numpy as np
 from playwright.sync_api import expect
 
 from test_guided import guided_page, plan, use_server_transcriber
-from test_studio import IDB_DRAFT
+from test_studio import IDB_DRAFT, wait_until
 
 RATE = 22050
 
@@ -61,17 +61,29 @@ def test_a_silent_take_keeps_the_melody_and_says_nothing_was_heard(browser, serv
 def test_a_two_note_take_skips_the_speed_and_says_why(browser, server_url, tmp_path):
     with guided_page(browser, server_url) as page:
         use_server_transcriber(page)
+        # A beat already in the song does not count towards the take's notes: the speed is still not looked for.
+        page.evaluate("() => document.getElementById('addgroove').click()")
+        wait_until(page, f"""async () => {{ const d = await ({IDB_DRAFT})(); const p = typeof d === 'string' ? JSON.parse(d) : d;
+                               return !!p && p.drums.length >= 16; }}""", "the starter beat in the draft")
+        bpm = page.evaluate("Number(document.getElementById('bpm').value)")
         import_take(page, take_wav(tmp_path / "two.wav", [64, 67], seconds=2.5))
         expect(page.locator("#gstatus")).to_have_text(
             "Done. Check your notes next. Too short to find the speed: sing a little longer, or carry on.")
         assert notes(page) == 2
         assert plan(page) == [["Clean up the sound", "done"], ["Turn your tune into notes", "done"],
                               ["Find the speed", "skipped"]]
+        assert page.evaluate("Number(document.getElementById('bpm').value)") == bpm
 
 
 def test_a_take_over_a_minute_is_transcribed_for_its_first_minute(browser, server_url, tmp_path):
     with guided_page(browser, server_url) as page:
         use_server_transcriber(page)
+        # The multipart body's size, read in the page: Playwright does not give a FormData body back.
+        page.evaluate("""() => { window.analyzeBytes = []; const send = window.fetch;
+          window.fetch = async (url, opts) => {
+            if (String(url).includes('/api/analyze') && opts && opts.body)
+              window.analyzeBytes.push((await new Response(opts.body).arrayBuffer()).byteLength);
+            return send(url, opts); }; }""")
         import_take(page, take_wav(tmp_path / "long.wav", [60, 64] * 35, seconds=70, each=0.6, step=1.0))
         expect(page.locator("#gstatus")).to_have_text(
             "Done. Check your notes next. The take is 70 seconds long, so the notes are from its first 60 seconds.")
@@ -79,6 +91,9 @@ def test_a_take_over_a_minute_is_transcribed_for_its_first_minute(browser, serve
         starts = [n["t"] for n in (json.loads(draft) if isinstance(draft, str) else draft)["notes"]]
         assert len(starts) >= 55, starts
         assert max(starts) < 60 and max(starts) > 58, starts
+        # Vercel refuses a request body over 4.5 MB: the minute goes up as mono at 22,050 Hz, about 2.6 MB.
+        sizes = page.evaluate("window.analyzeBytes")
+        assert len(sizes) == 1 and 2_000_000 < sizes[0] < 4_500_000, sizes
 
 
 def test_the_count_in_keeps_the_record_button_round_and_shows_the_count(browser, server_url):
