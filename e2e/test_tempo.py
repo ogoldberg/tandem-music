@@ -38,12 +38,14 @@ def hits_studio(hits_browser, server_url):
     assert not problems, "Browser reported errors:\n" + "\n".join(problems)
 
 
-def record_take(page, *, count_in):
+def record_take(page, *, count_in, while_recording=None):
     page.set_checked("#countin", count_in)
     page.set_checked("#pitchguide", False)
     page.evaluate("delete document.getElementById('finish').dataset.take")
     page.click("#record")
     expect(page.locator("#status")).to_have_text("Recording…", timeout=8000)
+    if while_recording:
+        while_recording()
     page.wait_for_timeout(6500)
     page.click("#finish")
     wait_until(page, "async () => !!document.getElementById('finish').dataset.take", "the take has finished")
@@ -118,3 +120,30 @@ def test_a_comp_with_a_take_recorded_with_nothing_heard_is_read_freely(hits_stud
     comp_second_take_in(page)
     transcribe(page)
     expect(detect(page)).to_have_text("Detected tempo: 60 bpm")
+
+
+def set_bpm(page, bpm):
+    page.fill("#bpm", str(bpm))
+    page.press("#bpm", "Tab")
+
+
+def test_the_tempo_a_take_was_sung_to_survives_a_reload(hits_studio):
+    page = hits_studio
+    record_and_transcribe(page, count_in=True)
+    page.wait_for_timeout(500)
+    page.reload()
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    expect(page.locator("#hitcount")).not_to_have_text("0")
+    expect(page.locator("#bpm")).to_have_value("90")
+    expect(detect(page)).to_have_text("Tempo is already 90 bpm (the take was sung to it)")
+
+
+def test_the_take_keeps_the_tempo_it_started_at_when_the_tempo_changes_while_recording(hits_studio):
+    page = hits_studio
+    record_take(page, count_in=True, while_recording=lambda: set_bpm(page, 100))
+    transcribe(page)
+    # Sung to the 90 bpm count-in: at 100 it is not the tempo it was sung to, so the hits decide (60).
+    expect(detect(page)).to_have_text("Detected tempo: 60 bpm")
+    page.click("#undo")
+    set_bpm(page, 90)
+    expect(detect(page)).to_have_text("Tempo is already 90 bpm (the take was sung to it)")

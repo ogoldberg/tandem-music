@@ -44,7 +44,7 @@
 import {createHistory} from './history.js';
 import {createVersionStore,projectFromState} from './versions.js';
 import {openKV,migrateLegacy,persistence,PERSISTENCE_TEXT,DRAFT_KEY,LEGACY_DRAFT_KEY} from './storage.js';
-import {openRecordings,cleanLinks,linkedIds,liveChannels,monoSamples,DRAFT_AUDIO_KEY,AUDIO_SLOTS} from './recordings.js';
+import {openRecordings,cleanLinks,linkedIds,liveChannels,monoSamples,recordingId,DRAFT_AUDIO_KEY,AUDIO_SLOTS} from './recordings.js';
 import {countIn,clickTimes,createTakeCollector,startCapture,takeStart} from './take.js';
 import {takeLatency,saveLatency,latencyText,deviceKeyFor,browserEstimate,measureLatency} from './latency.js';
 import {startPitchGuide,guideReading,hzToMidi,drawPitchStrip} from './pitch.js';
@@ -59,7 +59,7 @@ import {STEPS,HELPERS,PITCH_AMOUNTS,BEAT_STYLES,normalizeSettings,readSettings,w
 import {midiSupported,listPorts,partChannels,readMessage,createKeyRecorder,addTake,songEvents,silence,createSender,COUNT_IN_BEATS} from './midi.js';
 import {estimateTempo,quantizeProject,barOrigin} from './groove.js';
 import {MIX_PARTS,OWN_MUTE,LEVEL_MIN,LEVEL_MAX,LEVEL_STEP,cleanMix,channel,dbToGain,mixGains,mixParts,setChannel,levelText,scaled} from './mixer.js';
-import {cleanLayers,addLayer,removeLayer,setInto,newLayerId,layerKey,isLayerKey,layerIdOf,layerStemFile,LAYER_TARGETS,MAX_LAYERS} from './layers.js';import {cleanTakes,addTake as addVoiceTake,pickTake,compSection,removeTake,newTakeId,takeKey,isTakeKey,takeIdOf,isExtraKey,usedTakes,wholeTake,compSig,compText,renderComp,dropCompVocal,MAX_TAKES} from './takes.js';
+import {cleanLayers,addLayer,removeLayer,setInto,newLayerId,layerKey,isLayerKey,layerIdOf,layerStemFile,LAYER_TARGETS,MAX_LAYERS} from './layers.js';import {cleanTakes,addTake as addVoiceTake,pickTake,compSection,removeTake,newTakeId,takeKey,isTakeKey,takeIdOf,isExtraKey,usedTakes,wholeTake,compSig,compText,renderComp,dropCompVocal,MAX_TAKES,TIMED_KEY,cleanTimed,withTimed,compTempo} from './takes.js';
 import {INSTRUMENTS,VOICES,playNote,synthDrum} from './voices.js';
 import {createSampleBank,playSample,playDrumSample,loadWithin} from './samples.js';
 import {MODES,generateHarmony,detectKey,keyLabel as harmonyKeyName,harmonyLines,chordsForKey,CHORD_QUALITIES,chordName,readChords,changeChord} from './harmony.js';
@@ -152,7 +152,7 @@ async function runHelper(action){switch(action){
  case 'polish':{$('polishstyle').value=guide.cleanup;const was=polished;await $('polish').onclick();return !!polished&&polished!==was}
  case 'fixpitch':return fixPitch();
  case 'transcribe':$('transcriber').value=guide.transcriber==='server'?'heuristic':'basic-pitch';await $('analyze').onclick();return $('status').textContent==='Transcription complete';
- case 'tempo':$('detecttempo').onclick();return /^(Detected tempo|Tempo is already)/.test($('status').textContent);
+ case 'tempo':await $('detecttempo').onclick();return /^(Detected tempo|Tempo is already)/.test($('status').textContent);
  case 'quantize':applyBeat(guide.beat);$('quantize').onclick();return /^(Quantize to|Already on)/.test($('status').textContent);
 }}
 async function runHelpers(){const plan=afterTake($('mode').value,guide);planStates={};if(!plan.length){guideRefresh();return}guideBusy=true;guideRefresh();let failed=null;try{for(const a of plan){planStates[a.action]='running';renderPlan();const ok=await runHelper(a.action);planStates[a.action]=ok?'done':'failed';renderPlan();if(!ok&&!failed)failed=$('status').textContent;if(!ok&&a.action==='transcribe')break}}finally{guideBusy=false;guideRefresh()}const done=plan.every(a=>planStates[a.action]==='done');status(done?'Done. Check your notes next.':'Not everything worked: '+failed+' You can do it by hand in the next steps.')}
@@ -349,7 +349,7 @@ $('melodylock').onchange=()=>edit($('melodylock').checked?'Protect melody':'Unpr
 $('bpm').onchange=()=>edit('Change tempo',()=>{state.bpm=Number($('bpm').value)});
 $('swing').oninput=()=>{$('swingvalue').textContent=$('swing').value+'%'};
 // FIX.4: a take sung to a count-in, a click or the song keeps the tempo it was sung to, unless a tempo near it fits clearly better.
-$('detecttempo').onclick=()=>{const timed=audio!==null&&timedTakes.get(audio)===state.bpm,bpm=estimateTempo([...state.notes.map(n=>n.t),...state.drums.map(h=>h.t)],{prefer:tempoRange(state.genre),current:state.bpm,timed});if(bpm===null){status('Detect tempo needs at least four notes or drum hits.');return}if(bpm===state.bpm){status('Tempo is already '+bpm+' bpm'+(timed?' (the take was sung to it)':''));return}edit('Detect tempo',()=>{state.bpm=bpm});status('Detected tempo: '+bpm+' bpm')};
+$('detecttempo').onclick=async()=>{const sung=await tempoSungTo(audio),timed=sung===state.bpm,bpm=estimateTempo([...state.notes.map(n=>n.t),...state.drums.map(h=>h.t)],{prefer:tempoRange(state.genre),current:state.bpm,timed});if(bpm===null){status('Detect tempo needs at least four notes or drum hits.');return}if(bpm===state.bpm){status('Tempo is already '+bpm+' bpm'+(timed?' (the take was sung to it)':''));return}edit('Detect tempo',()=>{state.bpm=bpm});status('Detected tempo: '+bpm+' bpm')};
 $('quantize').onclick=()=>{if(!state.notes.length&&!state.drums.length&&!state.harmony.length&&!state.voice2.length){status('Nothing to quantize yet.');return}try{const division=Number($('grid').value),swing=Number($('swing').value)/100,strength=Number($('qstrength').value),grid=$('grid').selectedOptions[0].textContent;const q=quantizeProject(state,{division,swing,strength});const label='Quantize to '+grid+(division>1&&swing?' with '+Math.round(swing*100)+'% swing':'');if(edit(label,()=>{state.notes=q.notes;state.drums=q.drums;state.harmony=q.harmony;state.voice2=q.voice2}))status(label+' at '+state.bpm+' bpm');else status('Already on the '+grid+' grid')}catch(e){status(e.message)}};
 $('instrument').onchange=()=>edit('Change instrument',()=>{state.instrument=$('instrument').value});
 $('addnote').onclick=()=>edit('Add note',()=>{state.notes.push({m:60,t:Math.round((Math.max(0,...state.notes.map(n=>n.t+n.d))+.1)*100)/100,d:.4})});
@@ -734,7 +734,7 @@ $('record').onclick=async()=>{guidedTake=false;if(takeRun||takeStarting||calibra
  let guideError=null;if(g)try{g.run=await startPitchGuide(rc,mic,rs=>guideFeed(t,rs))}catch(e){g=null;guideError=e.message}
  const c=countIn(state.bpm,rc.currentTime+.1,{on:$('countin').checked}),click=$('recclick').checked,heard=c.beats>0||click||!!music,start=takeStart(c.zero,heard?lat.seconds:0);collector=createTakeCollector({zero:start,rate:rc.sampleRate});
  // Only a take sung along with something heard (the count-in, the click or the song) is moved by the round trip.
- const t={rc,stream,capture,c,start,timed:heard,layer:asLayer,latency:{seconds:heard?lat.seconds:0,measured:lat.measured},song:!!music,guide:g,guideError,collector,click,next:0,counting:null,shown:0};
+ const t={rc,stream,capture,c,start,timed:heard,bpm:state.bpm,layer:asLayer,latency:{seconds:heard?lat.seconds:0,measured:lat.measured},song:!!music,guide:g,guideError,collector,click,next:0,counting:null,shown:0};
  if(music)scheduleSong(rc,c.zero,music,{from:0,to:Infinity,at:0});
  takeRun=t;if(g)showGuide(true);$('record').disabled=true;$('finish').disabled=false;delete $('finish').dataset.take;
  t.ticker=setInterval(()=>takeTick(t),25);takeTick(t)}catch(e){stream?.getTracks().forEach(x=>x.stop());rc?.close();status('Mic unavailable: '+e.message)}finally{takeStarting=false}};
@@ -746,7 +746,7 @@ async function finishTake(){const t=takeRun;if(!t)return;takeRun=null;clearInter
  const {channels,frames,rate}=t.collector.finish(end);$('finish').dataset.take=JSON.stringify({zero:t.c.zero,start:t.start,latency:t.latency.seconds,measured:t.latency.measured,song:t.song,lead:t.c.lead,beat:t.c.beat,end,rate,frames});
  if(!frames){guidedTake=false;status(end<t.start?'Stopped during the count-in: nothing was recorded':'Nothing was recorded');guideRefresh();return}
  const samples=monoSamples({numberOfChannels:channels.length,length:frames,getChannelData:i=>channels[i]});
- try{if(t.layer)addLayerTake(samples,rate);else{const blob=wavBlob(samples,rate);if(t.timed)timedTakes.set(blob,state.bpm);if(audio){await addTakeRecording(blob);guideTakeReady()}else{await loadAudio(blob);saveDraftAudio();guideTakeReady()}}}catch(e){guidedTake=false;status(e.message);return}
+ try{if(t.layer)addLayerTake(samples,rate);else{const blob=wavBlob(samples,rate);if(t.timed)await markTimed(blob,t.bpm);if(audio){await addTakeRecording(blob);guideTakeReady()}else{await loadAudio(blob);saveDraftAudio();guideTakeReady()}}}catch(e){guidedTake=false;status(e.message);return}
  if(!t.layer)keepTakeRange(samples,rate)}
 // TRACK.1: a take recorded as a layer is added to the song's layers as one edit, keeping the take and everything made from it.
 function addLayerTake(samples,rate){const id=newLayerId(),blob=wavBlob(samples,rate);let name='';generated.set(id,blob);edit('Record a layer',()=>{state.layers=addLayer(state.layers,{id,seconds:samples.length/rate});name=state.layers.at(-1).name});status('Recorded '+name+' as a track of its own. Choose what to transcribe it into, or mute it, in its lane.')}
@@ -756,12 +756,15 @@ $('finish').onclick=()=>{finishTake().catch(e=>status('Recording failed: '+e.mes
 // The take the song uses (`audio`, the "original" recording) is the comp of the takes: the take itself when it is the whole of
 // one, else rendered by takes.js renderComp. Undo and redo bring the comp's recording back with what was made from it
 // (separated, polished, tuned, its pitch line), kept by comp in compCache; the vocal targets come back with the edit.
-// FIX.4: recordings taken to a count-in, a click or the song, with the tempo they were sung to (a comp of such takes too).
-const timedTakes=new WeakMap();
+// FIX.4: recordings taken to a count-in, a click or the song, with the tempo they were sung to (a comp of such takes too),
+// by recording id, kept on the device under takes.js TIMED_KEY so a reload or a restored version keeps them.
+let timedTempos={};
+async function markTimed(blob,bpm){const id=await recordingId(blob);timedTempos=withTimed(timedTempos,id,bpm);if(!kv)return;try{await kv.update(TIMED_KEY,v=>{const next=withTimed(v,id,bpm);return[next,next]})}catch(e){status('Could not keep the tempo the take was sung to on this device: '+e.message)}}
+async function tempoSungTo(blob){return blob?timedTempos[await recordingId(blob)]??null:null}
 const takeName=id=>state.takes?.list.find(t=>t.id===id)?.name??'a take';
 async function compBlob(t){const whole=wholeTake(t);if(whole){const b=generated.get(whole);if(!b)throw Error('the recording of '+takeName(whole)+' is not on this device');return b}
  const sources={};let rate=0;for(const id of usedTakes(t)){const b=generated.get(id);if(!b)throw Error('the recording of '+takeName(id)+' is not on this device');const buf=await decoded(b);rate=buf.sampleRate;sources[id]=monoSamples(buf)}
- const blob=wavBlob(renderComp(t,sources,rate),rate),at=[...usedTakes(t)].map(id=>timedTakes.get(generated.get(id)));if(at.length&&at.every(x=>x!==undefined&&x===at[0]))timedTakes.set(blob,at[0]);return blob}
+ const blob=wavBlob(renderComp(t,sources,rate),rate),sung=compTempo(await Promise.all([...usedTakes(t)].map(id=>tempoSungTo(generated.get(id)))));if(sung!==null)await markTimed(blob,sung);return blob}
 async function showComp(){const t=state.takes,sig=compSig(t);if(sig===shownComp||!audio)return;let c=compCache.get(sig);if(!c){if(!t)return;c={original:await compBlob(t)}}if(compSig(state.takes)!==sig)return;
  compCache.set(shownComp,{original:audio,polished,tuned,vocal,accompaniment,contour:vocalContour});shownComp=sig;
  restoringAudio=true;try{await loadAudio(c.original,{keep:true});restoreDerived(c,'for this take');vocalContour=c.contour??null;renderVocalNotes()}finally{restoringAudio=false}
@@ -1048,7 +1051,7 @@ $('chatform').onsubmit=async e=>{e.preventDefault();const text=$('prompt').value
 // Input is ignored until the stored draft is read, so an edit made meanwhile is not overwritten by it.
 document.body.inert=true;
 const useDraft=d=>{if(d&&typeof d==='object'&&Array.isArray(d.notes)&&Array.isArray(d.drums)){let band=null,timbre=null,voice2_sung=null;try{checkBand(d.band);band=bandPart(d).band}catch{}try{checkTimbre(d.timbre);timbre=timbrePart(d).timbre}catch{}try{checkSung(d.voice2_sung);voice2_sung=sungPart(d).voice2_sung}catch{}let mix={},layers=[],sections=[],lyrics='',genre=null;try{mix=cleanMix(d.mix)}catch{}try{genre=cleanGenre(d.genre)}catch{}try{lyrics=cleanLyrics(d.lyrics)}catch{}try{layers=cleanLayers(d.layers)}catch{}try{sections=cleanSections(d.sections)}catch{}Object.assign(state,d,harmonyPart(d),{band,timbre,voice2_sung,mix,layers,sections,lyrics,genre})}};
-try{const db=await openKV(window.indexedDB);const moved=await migrateLegacy(db,localStorage);versions=createVersionStore(db);ideas=createIdeaStore(db);practiceStore=createPracticeStore(db);refreshPractice();useDraft(await db.get(DRAFT_KEY));kv=db;$('songname').value=String(await db.get(SONG_KEY)??'');if(moved.problems.length)status(moved.problems.join(' '))}
+try{const db=await openKV(window.indexedDB);const moved=await migrateLegacy(db,localStorage);versions=createVersionStore(db);ideas=createIdeaStore(db);practiceStore=createPracticeStore(db);refreshPractice();useDraft(await db.get(DRAFT_KEY));timedTempos={...cleanTimed(await db.get(TIMED_KEY)),...timedTempos};kv=db;$('songname').value=String(await db.get(SONG_KEY)??'');if(moved.problems.length)status(moved.problems.join(' '))}
 catch(e){versions=null;storageProblem='Saving on this device is unavailable: '+e.message;status(storageProblem);try{useDraft(JSON.parse(localStorage.getItem(LEGACY_DRAFT_KEY)||'null'))}catch{}}
 // The draft's recordings are restored while input is still ignored, so a recording made meanwhile is not replaced.
 if(kv){try{recordings=await openRecordings(navigator.storage,{locks:navigator.locks||null})}catch(e){recordingProblem=e.message;status(recordingProblem)}}

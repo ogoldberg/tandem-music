@@ -197,3 +197,30 @@ test("Separate drops the vocal targets only from the snapshots of the comp in us
   // With no takes, the one recording is the comp: its snapshots lose their targets.
   assert.equal(JSON.parse(dropCompVocal(compSig(null))(before)).vocal, null);
 });
+
+import { TIMED_KEY, MAX_TIMED, cleanTimed, withTimed, compTempo } from "../takes.js";
+
+test("FIX.4: timed takes are kept by recording id with their tempo, the newest MAX_TIMED", () => {
+  const id = n => n.toString(16).padStart(64, "0");
+  assert.equal(TIMED_KEY, "timed-takes");
+  assert.deepEqual(cleanTimed(null), {});
+  assert.deepEqual(cleanTimed([1]), {});
+  assert.deepEqual(cleanTimed({ [id(1)]: 90, [id(2)]: 300, "x": 90, [id(3)]: "90", [id(4)]: 45 }), { [id(1)]: 90, [id(4)]: 45 });
+  let m = withTimed({}, id(1), 90);
+  m = withTimed(m, id(2), 100);
+  m = withTimed(m, id(1), 92);
+  assert.deepEqual(Object.entries(m), [[id(2), 100], [id(1), 92]], "a re-marked recording is the newest");
+  let big = {};
+  for (let i = 1; i <= MAX_TIMED + 3; i++) big = withTimed(big, id(i), 100);
+  assert.equal(Object.keys(big).length, MAX_TIMED);
+  assert.ok(!(id(1) in big) && !(id(3) in big) && id(4) in big && id(MAX_TIMED + 3) in big);
+  assert.throws(() => withTimed({}, "abc", 90), /recording id/);
+  assert.throws(() => withTimed({}, id(1), 30), /45\.\.220/);
+});
+
+test("FIX.4: a comp is timed only when every take in it was sung to the same tempo", () => {
+  assert.equal(compTempo([90, 90]), 90);
+  assert.equal(compTempo([90, 100]), null);
+  assert.equal(compTempo([90, undefined]), null);
+  assert.equal(compTempo([]), null);
+});
