@@ -73,3 +73,13 @@ def test_quantize_moves_the_chords_and_the_harmony_voice_with_the_melody(studio,
     page.click("#undo")
     assert starts(page, "harmonyroll") == [0.03, 2.38]
     assert starts(page, "voice2roll")[1] == 0.625
+
+
+def test_quantize_lines_up_a_song_that_has_only_chords(studio, tmp_path):
+    page = studio
+    open_song(page, tmp_path, notes=[], harmony=[{"m": m, "t": t, "d": 2.2} for t in (0.03, 2.38) for m in (48, 52, 55)])
+    show_part(page, "melody")
+    page.select_option("#grid", "2")
+    page.click("#quantize")
+    expect(page.locator("#status")).to_have_text(f"Quantize to 1/8 at {BPM} bpm")
+    assert starts(page, "harmonyroll") == [0, 2.4]

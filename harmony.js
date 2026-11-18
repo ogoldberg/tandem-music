@@ -202,10 +202,13 @@ export function generateHarmony(project, { style = "chords", key = null, feel = 
   const scalePcs = SCALE_STEPS[useKey.mode].map(x => (useKey.tonic + x) % 12);
   const beat = 60 / bpm, bar = beat * BEATS_PER_BAR;
   const grid = barOrigin({ bpm, notes: melody, drums: project?.drums || [] });
-  let origin = grid + Math.floor((melody[0].t - grid) / bar + 1e-6) * bar;
-  // A pickup (a first note in the second half of its bar) is left unaccompanied, and no chord starts before zero.
-  if (melody[0].t - origin >= bar / 2 - 1e-6 || origin < -1e-6) origin += bar;
   const end = Math.max(...melody.map(n => n.t + n.d));
+  const first = grid + Math.floor((melody[0].t - grid) / bar + 1e-6) * bar;
+  // A pickup (a first note in the second half of its bar) is left unaccompanied, and no chord starts before zero;
+  // but a melody that ends before the next bar line is accompanied in its own bar.
+  let origin = first;
+  if (melody[0].t - first >= bar / 2 - 1e-6 || first < -1e-6) origin += bar;
+  if (origin >= end - 1e-6) origin = Math.max(0, first);
   const bars = Math.max(1, Math.ceil((end - origin) / bar - 1e-6));
 
   const picked = [];

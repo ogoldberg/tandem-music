@@ -108,7 +108,10 @@ const ZERO_FIT_SIGMA_SECONDS = 0.05;
 export function barOrigin(project) {
   const bpm = Number(project?.bpm);
   if (!Number.isFinite(bpm) || bpm <= 0) throw new Error("Set a tempo first.");
-  const times = [...(project.notes || []), ...(project.drums || [])].map(e => Number(e.t)).filter(Number.isFinite);
+  // With no melody or drums, the chords part and the harmony voice give the grid.
+  const onsets = list => list.map(e => Number(e.t)).filter(Number.isFinite);
+  let times = onsets([...(project.notes || []), ...(project.drums || [])]);
+  if (!times.length) times = onsets([...(project.harmony || []), ...(project.voice2 || [])]);
   if (!times.length) return 0;
   const beat = 60 / bpm, bar = beat * BEATS_PER_BAR;
   const fitAt = phase => times.reduce((sum, t) => {
@@ -136,7 +139,7 @@ export function quantizeProject(project, { division, swing = 0, strength = 1 }) 
   if (!(strength > 0 && strength <= 1)) throw new Error("Quantize strength must be above 0 and at most 1.");
   const notes = project.notes || [], drums = project.drums || [];
   const harmony = project.harmony || [], voice2 = project.voice2 || [];
-  if (!notes.length && !drums.length) return { notes: [], drums: [], harmony: harmony.map(n => ({ ...n })), voice2: voice2.map(n => ({ ...n })) };
+  if (!notes.length && !drums.length && !harmony.length && !voice2.length) return { notes: [], drums: [], harmony: harmony.map(n => ({ ...n })), voice2: voice2.map(n => ({ ...n })) };
   const beat = 60 / bpm;
   const origin = barOrigin(project);
   const step = beat / division;

@@ -284,3 +284,17 @@ test("no chord starts before zero: a bar that would begin before the song starts
   assert.deepEqual(h.chords.map(c => c.t), [2.0, 4.4]);
   assert.ok(h.notes.every(n => n.t >= 0));
 });
+
+test("a melody all in the second half of its bar is accompanied in that bar, not by a chord after it ends", () => {
+  const notes = [1.2, 1.5, 1.8].map((t, i) => ({ m: 60 + 2 * i, t, d: 0.2 }));
+  const h = generateHarmony({ bpm: 100, notes }, { key: { tonic: 0, mode: "major" } });
+  assert.deepEqual(h.chords.map(c => c.t), [0]);
+});
+
+test("quantize lines up the chords and the harmony voice when they are the only parts", () => {
+  const out = quantizeProject({ bpm: 100, notes: [], drums: [], harmony: [{ m: 48, t: 0.03, d: 2 }, { m: 52, t: 2.38, d: 2 }], voice2: [{ m: 64, t: 0.62, d: 0.5 }] },
+    { division: 4, swing: 0, strength: 1 });
+  assert.deepEqual(out.harmony.map(n => n.t), [0, 2.4]);
+  assert.deepEqual(out.voice2.map(n => n.t), [0.6]);
+  assert.equal(barOrigin({ bpm: 100, notes: [], drums: [], harmony: [{ m: 48, t: 1.37, d: 1 }, { m: 48, t: 3.77, d: 1 }] }), 1.37);
+});
