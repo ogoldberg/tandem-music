@@ -999,10 +999,11 @@ async function request(path,opts={},absolute=false){const url=absolute?path:apiU
 $('connect').onclick=async()=>{try{const x=await(await request('/api/config')).json();$('provider').textContent=x.ai_ready?x.provider+' / '+x.model:(x.ai_problem||'Server online, AI model not configured');localStorage.setItem('tandem-api',$('api').value.trim());tabToken.set($('token').value.trim());status('Backend connection succeeded')}catch(e){status(e.message)}};
 // The drum hits in a recording, read on the device from the samples the server would have been sent.
 function beatsOnDevice(buf){const ch=[];for(let c=0;c<buf.numberOfChannels;c++)ch.push(buf.getChannelData(c));return readBeats(uploadSamples(ch),buf.sampleRate)}
-// FIX.5: the take goes to the server as mono at ANALYZE_RATE, so a minute is about 2.6 MB, under Vercel's 4.5 MB request cap.
+// FIX.5: a melody take goes to the server as mono at ANALYZE_RATE, so a minute is about 2.6 MB, under Vercel's 4.5 MB
+// request cap. A beat take keeps the context's rate: SEC.6's device reader must read it as the server does (`beatsOnDevice`).
 const ANALYZE_RATE=22050;
 async function atRate(buf,rate){if(buf.sampleRate===rate&&buf.numberOfChannels===1)return buf;const ac=new OfflineAudioContext(1,Math.max(1,Math.ceil(buf.duration*rate)),rate),src=ac.createBufferSource();src.buffer=buf;src.connect(ac.destination);src.start();return ac.startRendering()}
-async function audioRequest(path,mode,buffer){if(!audio)throw Error('Record a sound first');const wav=monoWav(await atRate(buffer??await decoded(take()),ANALYZE_RATE)),form=new FormData();form.append('file',wav,'capture.wav');return request(path+(mode?'?mode='+mode:''),{method:'POST',body:form})}
+async function audioRequest(path,mode,buffer){if(!audio)throw Error('Record a sound first');const whole=buffer??await decoded(take()),wav=monoWav(mode==='rhythm'?whole:await atRate(whole,ANALYZE_RATE)),form=new FormData();form.append('file',wav,'capture.wav');return request(path+(mode?'?mode='+mode:''),{method:'POST',body:form})}
 // FIX.5: a melody is transcribed from the take's first TRANSCRIBE_SECONDS (the project melody's limit), and a take in
 // which nothing is found leaves the part as it was. The outcome is kept for the guided helpers: done, empty or failed.
 const TRANSCRIBE_SECONDS=60;
@@ -1180,7 +1181,7 @@ function renderLayers(){$('reclayer').disabled=!audio;if(!audio)$('reclayer').ch
 async function transcribeLayer(id,into){const l=state.layers.find(x=>x.id===id),blob=layerBlob(id);if(!l||!blob)throw Error("that layer's recording is not on this device");if(!LAYER_TARGETS.includes(into))throw Error('unknown part');status('Transcribing '+l.name+'…');let notes=[],drums=[];
  if(into!=='drums'&&$('transcriber').value==='basic-pitch'){status('Loading Basic Pitch on this device…');const {transcribeWithBasicPitch,slowBackendNote}=await import('./transcription.js');notes=await transcribeWithBasicPitch(await decoded(blob),(p,b)=>status('Transcribing '+l.name+' on device: '+p+'%'+slowBackendNote(b,{server:true})))}
  else if(into==='drums'&&$('transcriber').value==='basic-pitch'){status('Reading the beat in '+l.name+' on this device…');drums=beatsOnDevice(await decoded(blob))}
- else{const form=new FormData();form.append('file',monoWav(await atRate(await decoded(blob),ANALYZE_RATE)),'layer.wav');const obj=await(await request('/api/analyze?mode='+(into==='drums'?'rhythm':'melody'),{method:'POST',body:form})).json();notes=obj.notes||[];drums=obj.drums||[]}
+ else{const form=new FormData();const buf=await decoded(blob);form.append('file',monoWav(into==='drums'?buf:await atRate(buf,ANALYZE_RATE)),'layer.wav');const obj=await(await request('/api/analyze?mode='+(into==='drums'?'rhythm':'melody'),{method:'POST',body:form})).json();notes=obj.notes||[];drums=obj.drums||[]}
  edit('Transcribe '+l.name+' into the '+INTO_NAMES[into],()=>{if(into==='drums')state.drums=drums;else if(into==='harmony')state.harmony=notes;else state.notes=notes;state.layers=setInto(state.layers,id,into)});
  const n=into==='drums'?state.drums.length:notes.length;status('Transcribed '+l.name+' into the '+INTO_NAMES[into]+': '+n+(into==='drums'?' drum hits':' notes')+'. What the part held before is kept in Undo.')}
 function renderBand(){
