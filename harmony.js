@@ -5,6 +5,7 @@
 
 import { KEY_NAMES } from "./contour.js";
 import { keyPitchClasses, nextInScale } from "./noteedit.js";
+import { barOrigin } from "./groove.js";
 
 export const MODES = Object.freeze(["major", "minor"]);
 export const STYLES = Object.freeze(["chords", "bass"]);
@@ -181,8 +182,10 @@ function bassBar(pattern, chord, next) {
 }
 
 // Generate an accompaniment for the melody, one chord per 4/4 bar at the project tempo.
-// Bars start at the melody's first note, so a melody that starts on a downbeat lines up; a pickup
-// shifts the bar lines. Each bar takes the chord of the key that best fits the melody notes it
+// The bars are groove.js barOrigin's (FIX.3), the grid the starter beat and quantize use: from zero
+// when the melody and drums sit on it, else from the first downbeat the onsets agree on; the first
+// bar is the one the first melody note falls in, so a pickup does not move the bar lines, and a pickup
+// (a first note in the second half of its bar) is left unaccompanied. Each bar takes the chord of the key that best fits the melody notes it
 // overlaps (see fit); a bar with no melody keeps the previous chord. style "chords" holds a
 // voiced triad for the bar; "bass" plays the root on beat 1 and the fifth on beat 3. key defaults to detectKey(notes).
 // feel (GENRE.1, genre.js harmonyStyle) is a genre's {prior, voicing, rhythm, bass}; null keeps all of the above.
@@ -198,7 +201,10 @@ export function generateHarmony(project, { style = "chords", key = null, feel = 
   const chords = chordsForKey(useKey);
   const scalePcs = SCALE_STEPS[useKey.mode].map(x => (useKey.tonic + x) % 12);
   const beat = 60 / bpm, bar = beat * BEATS_PER_BAR;
-  const origin = melody[0].t;
+  const grid = barOrigin({ bpm, notes: melody, drums: project?.drums || [] });
+  let origin = grid + Math.floor((melody[0].t - grid) / bar + 1e-6) * bar;
+  // A pickup (a first note in the second half of its bar) is left unaccompanied, and no chord starts before zero.
+  if (melody[0].t - origin >= bar / 2 - 1e-6 || origin < -1e-6) origin += bar;
   const end = Math.max(...melody.map(n => n.t + n.d));
   const bars = Math.max(1, Math.ceil((end - origin) / bar - 1e-6));
 

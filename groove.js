@@ -13,6 +13,8 @@ const FIT_SIGMA_SECONDS = 0.02;
 const TEMPO_STEP_BPM = 0.25;
 const ANCHORS = 4;
 const round6 = x => Math.round(x * 1e6) / 1e6;
+// 4/4, as beats.js and harmony.js.
+const BEATS_PER_BAR = 4;
 
 // Position of the swung offbeat within a pair of grid steps, as a fraction of the pair:
 // 0 swing = 0.5 (straight), 1 = 2/3 (triplet feel).
@@ -93,22 +95,50 @@ function beatOrigin(times, beat) {
   return anchor - Math.ceil((anchor - sorted[0]) / beat - 1e-9) * beat;
 }
 
+// FIX.3: the bar grid chords, the starter beat and quantize share. A time in [0, one bar) where a
+// bar starts; every bar line is that time plus whole bars. Zero (the song's own bar 1, where a take
+// recorded after the count-in or over the song starts, and where a starter beat starts) when the
+// onsets of the melody and drums sit on the beat grid from zero about as well as on any other;
+// otherwise the beat the onsets agree on (beatOrigin), with a bar starting at the earliest onset on
+// that beat, so a free-time recording keeps its first downbeat where it was sung. An empty project is 0.
+// The zero grid is compared with a wider window than beatOrigin's: a singer lands 30 ms or so either side of
+// the click, which the 20 ms window would count as off the grid, while a free-time take is off it by far more.
+export const ZERO_GRID_SHARE = 0.8;
+const ZERO_FIT_SIGMA_SECONDS = 0.05;
+export function barOrigin(project) {
+  const bpm = Number(project?.bpm);
+  if (!Number.isFinite(bpm) || bpm <= 0) throw new Error("Set a tempo first.");
+  const times = [...(project.notes || []), ...(project.drums || [])].map(e => Number(e.t)).filter(Number.isFinite);
+  if (!times.length) return 0;
+  const beat = 60 / bpm, bar = beat * BEATS_PER_BAR;
+  const fitAt = phase => times.reduce((sum, t) => {
+    const x = (t - phase) / beat, d = Math.abs(x - Math.round(x)) * beat;
+    return sum + Math.exp(-(d * d) / (2 * ZERO_FIT_SIGMA_SECONDS * ZERO_FIT_SIGMA_SECONDS));
+  }, 0);
+  const origin = beatOrigin(times, beat);
+  if (fitAt(0) >= ZERO_GRID_SHARE * fitAt(origin) - 1e-9) return 0;
+  const sorted = times.slice().sort((a, b) => a - b);
+  const anchor = sorted.find(t => { const x = (t - origin) / beat; return Math.abs(x - Math.round(x)) * beat <= 2 * FIT_SIGMA_SECONDS; }) ?? origin;
+  return round6(((anchor % bar) + bar) % bar);
+}
+
 // Snap note and drum start times to a (possibly swung) grid at the project tempo.
-// The grid follows the beat the onsets agree on (see beatOrigin), so leading silence is kept.
+// The grid is barOrigin's: zero when the onsets sit on it, else the beat they agree on (beatOrigin), so
+// leading silence is kept. The chords part and the harmony voice (FIX.3) move with the melody on the same grid.
 // A pickup stays a pickup only when more onsets fall on the downbeats than on the offbeats;
 // with a pickup into even eighths the pickup's phase has as many onsets or more and is taken as the beat.
 // Durations are kept. Events that land on the same grid point merge (same pitch: the
-// longer note wins; same drum: one hit). Returns new {notes, drums}; the input is unchanged.
+// longer note wins; same drum: one hit). Returns new {notes, drums, harmony, voice2}; the input is unchanged.
 export function quantizeProject(project, { division, swing = 0, strength = 1 }) {
   if (!Object.values(GRID_DIVISIONS).includes(division)) throw new Error(`Unsupported grid division: ${division}`);
   const bpm = Number(project.bpm);
   if (!Number.isFinite(bpm) || bpm <= 0) throw new Error("Set a tempo before quantizing.");
   if (!(strength > 0 && strength <= 1)) throw new Error("Quantize strength must be above 0 and at most 1.");
   const notes = project.notes || [], drums = project.drums || [];
-  const all = [...notes, ...drums].map(e => e.t);
-  if (!all.length) return { notes: [], drums: [] };
+  const harmony = project.harmony || [], voice2 = project.voice2 || [];
+  if (!notes.length && !drums.length) return { notes: [], drums: [], harmony: harmony.map(n => ({ ...n })), voice2: voice2.map(n => ({ ...n })) };
   const beat = 60 / bpm;
-  const origin = beatOrigin(all, beat);
+  const origin = barOrigin(project);
   const step = beat / division;
   const pair = 2 * step, off = pair * swungOffbeat(swing);
   const nearest = x => {
@@ -129,8 +159,11 @@ export function quantizeProject(project, { division, swing = 0, strength = 1 }) 
     }
     return [...byKey.values()].sort((a, b) => a.t - b.t);
   };
+  const snapNotes = list => merged(list.map(n => ({ ...n, t: snap(n.t) })), n => `${n.m}@${n.t}`, (a, b) => (b.d > a.d ? b : a));
   return {
-    notes: merged(notes.map(n => ({ ...n, t: snap(n.t) })), n => `${n.m}@${n.t}`, (a, b) => (b.d > a.d ? b : a)),
+    notes: snapNotes(notes),
+    harmony: snapNotes(harmony),
+    voice2: snapNotes(voice2),
     drums: merged(drums.map(h => ({ ...h, t: snap(h.t) })), h => `${h.k}@${h.t}`, a => a),
   };
 }
