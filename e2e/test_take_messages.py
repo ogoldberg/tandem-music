@@ -55,19 +55,18 @@ def test_a_silent_take_keeps_the_melody_and_says_nothing_was_heard(browser, serv
             "Nothing was heard in the take, so your notes are as they were. Sing closer to the microphone and record again.")
         assert notes(page) == 6
         assert plan(page) == [["Clean up the sound", "done"], ["Turn your tune into notes", "failed"],
-                              ["Find the speed", ""], ["Line the notes up with the beat", ""]]
+                              ["Find the speed", ""]]
 
 
 def test_a_two_note_take_skips_the_speed_and_says_why(browser, server_url, tmp_path):
     with guided_page(browser, server_url) as page:
         use_server_transcriber(page)
-        page.fill("#gbpm", "100")
         import_take(page, take_wav(tmp_path / "two.wav", [64, 67], seconds=2.5))
         expect(page.locator("#gstatus")).to_have_text(
             "Done. Check your notes next. Too short to find the speed: sing a little longer, or carry on.")
         assert notes(page) == 2
         assert plan(page) == [["Clean up the sound", "done"], ["Turn your tune into notes", "done"],
-                              ["Find the speed", "skipped"], ["Line the notes up with the beat", "done"]]
+                              ["Find the speed", "skipped"]]
 
 
 def test_a_take_over_a_minute_is_transcribed_for_its_first_minute(browser, server_url, tmp_path):
@@ -85,7 +84,9 @@ def test_a_take_over_a_minute_is_transcribed_for_its_first_minute(browser, serve
 def test_the_count_in_keeps_the_record_button_round_and_shows_the_count(browser, server_url):
     with guided_page(browser, server_url) as page:
         use_server_transcriber(page)
-        page.fill("#gbpm", "60")
+        # A slow tempo makes the four-beat count-in last four seconds, long enough to look at.
+        page.evaluate("() => { const b = document.getElementById('bpm'); b.value = '60'; b.onchange(); }")
+        expect(page.locator("#gspeed")).to_have_text("Speed: 60 beats a minute")
         page.click("#grecord")
         page.wait_for_function("/^[1-4]$/.test(document.getElementById('grecord').textContent)")
         shape = page.evaluate("getComputedStyle(document.getElementById('grecord')).borderRadius")
