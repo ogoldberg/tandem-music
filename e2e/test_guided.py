@@ -25,7 +25,7 @@ TAKES = ["compfrom", "compin", "comploop", "comptake", "compto"]
 # SONG.1: a section's tools are shown once a section is chosen in the Sections band.
 SECTION_TOOLS = ["sectionrepeat", "sectionearlier", "sectionlater", "sectiondelete", "sectionunmark"]
 # PRACTICE.1: Stop and Keep pass as a take, shown while practising or with a pass's marks on the roll.
-PRACTICE_BAR = ["practicekeep", "practicestop"]
+PRACTICE_BAR = ["practiceask", "practicekeep", "practicestop"]
 # PRACTICE.2: Forget range and progress, shown once a range or a stretch's progress is kept on the device.
 RANGE_BOX = ["practiceforget"]
 CONTROL = re.compile(r'<(button|input|select|textarea)\b[^>]*\bid="([^"]+)"')
