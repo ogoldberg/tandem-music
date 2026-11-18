@@ -18,7 +18,7 @@ test("no genre gives today's harmony and tempo byte for byte", () => {
       chords: generateHarmony({ bpm: 96, notes: NOTES }, { style: "chords", feel }),
       bass: generateHarmony({ bpm: 96, notes: NOTES }, { style: "bass", feel }),
       minor: generateHarmony({ bpm: 120, notes: NOTES.map(n => ({ ...n, m: n.m - 3 })) }, { style: "chords", key: { tonic: 9, mode: "minor" }, feel }),
-      tempo: [estimateTempo(NOTES.map(n => n.t), { range: tempoRange(null) }), estimateTempo(Array.from({ length: 16 }, (_, i) => i * 0.4), { range: tempoRange(null) })],
+      tempo: [estimateTempo(NOTES.map(n => n.t), { prefer: tempoRange(null) }), estimateTempo(Array.from({ length: 16 }, (_, i) => i * 0.4), { prefer: tempoRange(null) })],
     };
     assert.equal(JSON.stringify(out), JSON.stringify(fixture));
   }
@@ -125,15 +125,21 @@ test("a genre's prior changes which chord a bar leans to", () => {
   assert.equal(pick("electronic"), "Am");
 });
 
-test("Detect tempo looks in the genre's range", () => {
+test("FIX.4: Detect tempo prefers the genre's range on a near tie, never over a clearly better fit", () => {
+  // Notes every 0.4 s fit 150 and 75 bpm about as well: the genre's range picks between them.
   const eighths = Array.from({ length: 16 }, (_, i) => i * 0.4);
   assert.equal(estimateTempo(eighths), 150);
-  assert.equal(estimateTempo(eighths, { range: tempoRange("hiphop") }), 75);
+  assert.equal(estimateTempo(eighths, { prefer: tempoRange("hiphop") }), 75);
+  assert.equal(estimateTempo(eighths, { prefer: tempoRange("electronic") }), 150, "neither in 110..140: the better fit");
   for (const g of GENRES) {
-    const bpm = estimateTempo(eighths, { range: tempoRange(g.id) });
-    assert.ok(bpm >= g.tempo[0] && bpm <= g.tempo[1], `${g.id}: ${bpm}`);
+    const bpm = estimateTempo(eighths, { prefer: tempoRange(g.id) });
+    assert.ok(bpm === 75 || bpm === 150, `${g.id}: ${bpm}`);
+    if (bpm === 75) assert.ok(75 >= g.tempo[0] && 75 <= g.tempo[1], `${g.id} took 75 outside its range`);
   }
-  assert.throws(() => estimateTempo(eighths, { range: [30, 100] }), /45\.\.220/);
+  // Quarters at 150 bpm: 150 fits clearly better than anything in pop's 80..140, so it stays 150.
+  const quarters = [0, 1, 1.5, 2.5, 3, 4, 5, 6, 6.5, 7.5, 8].map(b => 0.3 + b * 0.4);
+  assert.equal(estimateTempo(quarters, { prefer: tempoRange("pop") }), 150);
+  assert.throws(() => estimateTempo(eighths, { prefer: [30, 100] }), /45\.\.220/);
 });
 
 test("a beat is lined up to the genre's grid and swing", () => {

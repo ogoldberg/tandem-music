@@ -4,12 +4,16 @@
 
 // Grid name -> subdivisions per beat.
 export const GRID_DIVISIONS = Object.freeze({ "1/4": 1, "1/8": 2, "1/16": 4 });
-// Tempo detection searches this range; the project itself allows 45..220.
-export const TEMPO_RANGE = Object.freeze([60, 180]);
+// Tempo detection searches the project's whole range (FIX.4).
+export const TEMPO_RANGE = Object.freeze([45, 220]);
 
 const MIN_ONSETS = 4;
 const ONSET_MERGE_SECONDS = 0.01;
-const FIT_SIGMA_SECONDS = 0.02;
+// How far an onset may sit from a grid line and still count, as a Gaussian's sigma. FIX.4: 40 ms, wide
+// enough for a singer's timing (about 30 ms either way), which a 20 ms window read as off the grid.
+const FIT_SIGMA_SECONDS = 0.04;
+// The window a beat phase (beatOrigin) and an anchor on it are found with: tighter, as a played grid.
+const PHASE_SIGMA_SECONDS = 0.02;
 const TEMPO_STEP_BPM = 0.25;
 const ANCHORS = 4;
 const round6 = x => Math.round(x * 1e6) / 1e6;
@@ -48,27 +52,68 @@ function gridFit(onsets, spacing) {
   return best;
 }
 
-// A tempo is scored on both its beat grid and its eighth-note grid. The chance term stops a
-// finer grid (double tempo) from winning on sloppy timing; the beat term stops half tempo
-// from winning when every onset is on the beat (its eighth grid would fit just as well).
+// A tempo is scored on both its beat grid and its eighth-note grid, weighted alike (FIX.4: the beat grid
+// counted half before; with the 40 ms width that tied quarter notes with half their tempo). The chance term
+// stops a finer grid (double tempo) from winning on sloppy timing; the beat term stops half tempo from
+// winning when every onset is on the beat (its eighth grid would fit just as well).
 function tempoFit(onsets, bpm) {
-  return 0.5 * gridFit(onsets, 60 / bpm) + gridFit(onsets, 30 / bpm);
+  return gridFit(onsets, 60 / bpm) + gridFit(onsets, 30 / bpm);
 }
 
-// Estimate the tempo (integer bpm) from onset times in seconds, or null when there are
-// too few distinct onsets to say. range (GENRE.1: a genre's likely tempos) is searched instead of
-// TEMPO_RANGE; it must lie inside the project's 45..220.
-export function estimateTempo(times, { range = TEMPO_RANGE } = {}) {
+// FIX.4: a tempo whose fit is at least this share of the best fit is a near tie.
+export const TEMPO_TIE = 0.9;
+// After a take timed by a count-in, a click or the song, only this far either side of the project tempo is searched.
+export const TIMED_WINDOW = 0.06;
+// The time between notes, in beats, that a sung melody mostly moves in (eighths to quarters): of tempos an
+// octave apart that fit about as well, the one whose median gap between onsets lies here is the melody's.
+const MELODY_GAP_BEATS = Object.freeze([0.45, 1.1]);
+const OCTAVE_PEAK = 0.03;
+
+function medianGapBeats(onsets, bpm) {
+  const gaps = [];
+  for (let i = 1; i < onsets.length; i++) gaps.push((onsets[i] - onsets[i - 1]) * bpm / 60);
+  gaps.sort((a, b) => a - b);
+  return gaps[Math.floor(gaps.length / 2)];
+}
+
+function checkRange(range, what) {
   const [lo, hi] = range;
-  if (!(Number.isFinite(lo) && Number.isFinite(hi) && lo >= 45 && hi <= 220 && lo < hi)) throw new Error("A tempo range lies inside 45..220 bpm.");
+  if (!(Number.isFinite(lo) && Number.isFinite(hi) && lo >= 45 && hi <= 220 && lo < hi)) throw new Error(`${what} lies inside 45..220 bpm.`);
+}
+
+// Estimate the tempo (integer bpm) from onset times in seconds, or null when there are too few distinct
+// onsets to say. FIX.4:
+// - timed (a take sung to a count-in, a click or the song at current): only current +-6% is searched, and
+//   current is kept unless a tempo there fits clearly better.
+// - otherwise the whole 45..220 is searched; current is kept when it fits about as well as the best (a near
+//   tie, TEMPO_TIE); else the answer is folded by octaves: of the best tempo and its doubles and halves that
+//   fit about as well (never a 3:2 neighbour), the one the melody mostly moves in eighths to quarters at wins,
+//   then one inside prefer (GENRE.1: a genre's likely tempos, a soft preference), then the best fit.
+export function estimateTempo(times, { prefer = null, current = null, timed = false } = {}) {
+  if (prefer !== null) checkRange(prefer, "A preferred tempo range");
+  const now = current === null ? null : Number(current);
+  if (now !== null && !(Number.isFinite(now) && now >= 45 && now <= 220)) throw new Error("The current tempo lies inside 45..220 bpm.");
+  if (timed && now === null) throw new Error("A timed take needs the tempo it was sung to.");
   const onsets = onsetTimes(times);
   if (onsets.length < MIN_ONSETS) return null;
-  let bestBpm = null, bestScore = -Infinity;
-  for (let bpm = lo; bpm <= hi + 1e-9; bpm += TEMPO_STEP_BPM) {
-    const score = tempoFit(onsets, bpm);
-    if (score > bestScore + 1e-9) { bestScore = score; bestBpm = bpm; }
+  const lo = timed ? Math.max(45, now * (1 - TIMED_WINDOW)) : TEMPO_RANGE[0];
+  const hi = timed ? Math.min(220, now * (1 + TIMED_WINDOW)) : TEMPO_RANGE[1];
+  const scored = [];
+  for (let bpm = lo; bpm <= hi + 1e-9; bpm += TEMPO_STEP_BPM) scored.push({ bpm, score: tempoFit(onsets, bpm) });
+  const best = scored.reduce((a, b) => (b.score > a.score + 1e-9 ? b : a));
+  if (now !== null && tempoFit(onsets, now) >= TEMPO_TIE * best.score) return Math.round(now);
+  if (timed) return Math.round(best.bpm);
+  const candidates = [];
+  for (const k of [-2, -1, 0, 1, 2]) {
+    const target = best.bpm * 2 ** k;
+    let peak = null;
+    for (const s of scored) if (Math.abs(s.bpm / target - 1) <= OCTAVE_PEAK && (!peak || s.score > peak.score)) peak = s;
+    if (peak && peak.score >= TEMPO_TIE * best.score) candidates.push(peak);
   }
-  return Math.round(bestBpm);
+  const melodic = c => { const g = medianGapBeats(onsets, c.bpm); return g >= MELODY_GAP_BEATS[0] && g <= MELODY_GAP_BEATS[1]; };
+  const preferred = c => prefer !== null && c.bpm >= prefer[0] && c.bpm <= prefer[1];
+  candidates.sort((a, b) => (melodic(b) - melodic(a)) || (preferred(b) - preferred(a)) || (b.score - a.score));
+  return Math.round(candidates[0].bpm);
 }
 
 // Where the beat grid sits: the onset phase (within one beat) that the most onsets agree with,
@@ -82,14 +127,14 @@ function beatOrigin(times, beat) {
     for (const t of sorted) {
       const x = (t - candidate) / beat;
       const d = Math.abs(x - Math.round(x)) * beat;
-      score += Math.exp(-(d * d) / (2 * FIT_SIGMA_SECONDS * FIT_SIGMA_SECONDS));
+      score += Math.exp(-(d * d) / (2 * PHASE_SIGMA_SECONDS * PHASE_SIGMA_SECONDS));
     }
     if (score > bestScore + 1e-9) { bestScore = score; bestPhase = candidate; }
   }
   // Anchor on the earliest onset in that phase, so the first downbeat stays where it was played.
   const onPhase = t => {
     const x = (t - bestPhase) / beat;
-    return Math.abs(x - Math.round(x)) * beat <= 2 * FIT_SIGMA_SECONDS;
+    return Math.abs(x - Math.round(x)) * beat <= 2 * PHASE_SIGMA_SECONDS;
   };
   const anchor = sorted.find(onPhase);
   return anchor - Math.ceil((anchor - sorted[0]) / beat - 1e-9) * beat;
@@ -121,7 +166,7 @@ export function barOrigin(project) {
   const origin = beatOrigin(times, beat);
   if (fitAt(0) >= ZERO_GRID_SHARE * fitAt(origin) - 1e-9) return 0;
   const sorted = times.slice().sort((a, b) => a - b);
-  const anchor = sorted.find(t => { const x = (t - origin) / beat; return Math.abs(x - Math.round(x)) * beat <= 2 * FIT_SIGMA_SECONDS; }) ?? origin;
+  const anchor = sorted.find(t => { const x = (t - origin) / beat; return Math.abs(x - Math.round(x)) * beat <= 2 * PHASE_SIGMA_SECONDS; }) ?? origin;
   return round6(((anchor % bar) + bar) % bar);
 }
 

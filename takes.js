@@ -214,3 +214,32 @@ export function renderComp(takes, sources, rate, fade = COMP_FADE) {
   });
   return out;
 }
+
+// FIX.4: the recordings sung to a count-in, a click or the song, with the tempo they were sung to, by
+// recordings.js recordingId (the SHA-256 the recording is stored under), so Detect tempo keeps that tempo
+// after a reload or a restored version too. Kept on the device under TIMED_KEY, never in the project;
+// the newest MAX_TIMED are kept.
+export const TIMED_KEY = "timed-takes";
+export const MAX_TIMED = 500;
+const RECORDING_ID = /^[0-9a-f]{64}$/;
+const tempoOk = bpm => typeof bpm === "number" && Number.isFinite(bpm) && bpm >= 45 && bpm <= 220;
+
+export function cleanTimed(value) {
+  const out = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+  for (const [id, bpm] of Object.entries(value)) if (RECORDING_ID.test(id) && tempoOk(bpm)) out[id] = bpm;
+  return out;
+}
+
+export function withTimed(map, id, bpm, limit = MAX_TIMED) {
+  if (!RECORDING_ID.test(id)) throw new Error("Not a recording id.");
+  if (!tempoOk(bpm)) throw new Error("A take's tempo lies inside 45..220 bpm.");
+  const entries = Object.entries(cleanTimed(map)).filter(([k]) => k !== id);
+  entries.push([id, bpm]);
+  return Object.fromEntries(entries.slice(-limit));
+}
+
+// The tempo a comp was sung to: its takes' tempos when they are all known and the same, else null.
+export function compTempo(tempos) {
+  return tempos.length && tempos.every(t => tempoOk(t) && t === tempos[0]) ? tempos[0] : null;
+}
