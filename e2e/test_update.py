@@ -10,6 +10,8 @@ import pytest
 from playwright.sync_api import expect
 
 from conftest import ALL_CONTROLS, ROOT, Server
+from test_midi import MOCK_MIDI
+from test_studio import tone_wav
 from test_capture import assert_server_down, ideas, open_capture, phone_page, wait_for_service_worker
 
 GROOVE_IMPORT = "import {estimateTempo,quantizeProject,barOrigin} from './groove.js';"
@@ -40,10 +42,12 @@ def copy_server(app_copy, tmp_path):
 
 
 @contextmanager
-def studio_on(browser, server):
+def studio_on(browser, server, script=None):
     """The studio, controlled by its service worker; fails the test on any page error or console error."""
     context = browser.new_context(base_url=server.url)
     context.add_init_script(ALL_CONTROLS)
+    if script:
+        context.add_init_script(script)
     page = context.new_page()
     problems = []
     page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
@@ -277,3 +281,81 @@ def test_update_waits_for_a_take_the_device_did_not_keep_to_be_downloaded(browse
         with page.expect_navigation():
             page.click("#swupdate")
         expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
+
+
+ACTIVATE_FROM_ANOTHER_TAB = """async () => { const reg = await navigator.serviceWorker.getRegistration();
+  const changed = new Promise(r => navigator.serviceWorker.addEventListener('controllerchange', r, {once: true}));
+  reg.waiting.postMessage('activate'); await changed; }"""
+
+
+def test_update_waits_for_a_take_when_another_tab_takes_the_update_first(browser, browser_name, app_copy,
+                                                                        copy_server):
+    with capture_with_update(browser, browser_name, app_copy, copy_server) as page:
+        page.evaluate(HOLD_RECORDINGS)
+        page.click("#record")
+        page.wait_for_timeout(800)
+        page.click("#record")
+        expect(page.locator("#status")).to_have_text("Keeping the idea…")
+        page.click("#swupdate")
+        # While this page waits for its write, another tab takes the update: the new worker controls this page,
+        # which still reloads only once the idea is kept.
+        other = page.context.new_page()
+        other.goto(copy_server.url + "/capture")
+        other.evaluate(ACTIVATE_FROM_ANOTHER_TAB)
+        page.wait_for_timeout(1500)
+        assert page.evaluate("window.fix6Page") == "before"
+        with page.expect_navigation():
+            page.evaluate("window.fix6Release()")
+        expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
+        expect(page.locator("#swupdate")).to_be_hidden()
+        assert len(ideas(page)) == 1
+
+
+def test_studio_update_waits_for_its_write_when_another_tab_takes_the_update_first(browser, app_copy, copy_server,
+                                                                                   tmp_path):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        expect(page.locator("#swupdate")).to_be_visible()
+        page.evaluate(HOLD_RECORDINGS)
+        page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
+        expect(page.locator("#status")).to_contain_text("Recorded")
+        page.click("#swupdate")
+        other = page.context.new_page()
+        other.goto("/")
+        other.wait_for_function(STARTED)
+        other.evaluate(ACTIVATE_FROM_ANOTHER_TAB)
+        page.wait_for_timeout(1500)
+        assert page.evaluate("window.fix6Page") == "before"
+        with page.expect_navigation():
+            page.evaluate("window.fix6Release()")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
+        # The recording reached the device before the reload: the draft links it.
+        assert page.evaluate("""async () => { const db = await new Promise((ok, no) => {
+          const r = indexedDB.open('tandem'); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+          const links = await new Promise((ok, no) => { const r = db.transaction('kv').objectStore('kv')
+            .get('draft-audio'); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+          db.close(); return !!links?.original; }""")
+
+
+def test_studio_update_waits_for_a_take_from_the_keyboard(browser, app_copy, copy_server):
+    with studio_on(browser, copy_server, MOCK_MIDI) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate("window.fix6Page = 'before'")
+        page.click("#midiconnect")
+        expect(page.locator("#midiinfo")).to_have_text("1 input, 1 output")
+        page.click("#midirecord")
+        expect(page.locator("#midirecord")).to_contain_text("Stop recording")
+        page.click("#swupdate")
+        expect(page.locator("#status")).to_have_text("Stop the recording first: Update reloads Tandem.")
+        page.wait_for_timeout(1000)
+        assert page.evaluate("window.fix6Page") == "before"
+        expect(page.locator("#midirecord")).to_contain_text("Stop recording")
+        page.click("#midirecord")
+        expect(page.locator("#midirecord")).to_contain_text("Record from keyboard")
+        with page.expect_navigation():
+            page.click("#swupdate")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
