@@ -3,6 +3,7 @@ the modules it imports are one set, installed whole by the new service worker an
 then, and whenever an update cannot be fetched whole, the studio opens as it was, online and offline.
 
 The server runs from a copy of the app, so the test deploys a new version by changing the copy's files."""
+import json
 import shutil
 import zipfile
 from contextlib import contextmanager
@@ -387,6 +388,118 @@ def test_studio_update_waits_for_a_recording_the_device_did_not_keep_to_be_downl
         assert saved.name.endswith(".tandem.zip")
         with zipfile.ZipFile(saved) as z:
             assert {"project.json", "original.wav"} <= set(z.namelist())
+        expect(page.locator("#audiorescue")).to_be_hidden()
+        with page.expect_navigation():
+            page.click("#swupdate")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
+
+
+# FIX.8: the draft's write is aborted while fix8FailDraft is set, as when the device's storage gives up mid-write.
+FAIL_DRAFT = """() => { window.fix8FailDraft = true; const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (value, key) { const req = put.call(this, value, key);
+    if (window.fix8FailDraft && key === 'draft') this.transaction.abort(); return req; }; }"""
+DRAFT_UNKEPT = "Download the project first: Update reloads Tandem, and your latest changes are not saved on this device."
+
+
+def change_tempo(page, bpm):
+    page.fill("#bpm", str(bpm))
+    page.dispatch_event("#bpm", "change")
+
+
+def draft_bpm(page):
+    return page.evaluate("""async () => { const db = await new Promise((ok, no) => {
+      const r = indexedDB.open('tandem'); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+      const draft = await new Promise((ok, no) => { const r = db.transaction('kv').objectStore('kv')
+        .get('draft'); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+      db.close(); return draft?.bpm; }""")
+
+
+def update_is_refused(page, message):
+    page.evaluate("window.fix6Page = 'before'")
+    page.click("#swupdate")
+    expect(page.locator("#status")).to_have_text(message)
+    page.wait_for_timeout(1000)
+    assert page.evaluate("window.fix6Page") == "before"
+
+
+def test_studio_update_waits_for_a_draft_the_device_did_not_keep_to_be_downloaded(browser, app_copy, copy_server,
+                                                                                  tmp_path):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate(FAIL_DRAFT)
+        change_tempo(page, 137)
+        expect(page.locator("#status")).to_contain_text("Could not save the draft on this device")
+        expect(page.locator("#audiorescue")).to_be_visible()
+        update_is_refused(page, DRAFT_UNKEPT)
+        with page.expect_download() as got:
+            page.click("#audiorescue")
+        saved = tmp_path / got.value.suggested_filename
+        got.value.save_as(saved)
+        with zipfile.ZipFile(saved) as z:
+            assert json.loads(z.read("project.json"))["bpm"] == 137
+        expect(page.locator("#audiorescue")).to_be_hidden()
+        with page.expect_navigation():
+            page.click("#swupdate")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
+
+
+def test_studio_update_goes_once_a_later_draft_write_is_kept(browser, app_copy, copy_server):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate(FAIL_DRAFT)
+        change_tempo(page, 137)
+        expect(page.locator("#audiorescue")).to_be_visible()
+        update_is_refused(page, DRAFT_UNKEPT)
+        page.evaluate("window.fix8FailDraft = false")
+        change_tempo(page, 141)
+        expect(page.locator("#audiorescue")).to_be_hidden()
+        assert draft_bpm(page) == 141
+        with page.expect_navigation():
+            page.click("#swupdate")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
+        expect(page.locator("#bpm")).to_have_value("141")
+
+
+def test_a_rescue_download_leaves_out_a_take_recorded_while_it_is_prepared_and_says_so(browser, app_copy, copy_server,
+                                                                                         tmp_path):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate("""() => { FileSystemWritableFileStream.prototype.write = function () {
+          return Promise.reject(new DOMException('full', 'QuotaExceededError')); }; }""")
+        page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
+        expect(page.locator("#status")).to_contain_text("Could not keep the recording on this device")
+        expect(page.locator("#audiorescue")).to_be_visible()
+        # The next recording read (the rescue's first) waits until fix8Release.
+        page.evaluate("""() => { const read = Blob.prototype.arrayBuffer; window.fix8Hold = true;
+          Blob.prototype.arrayBuffer = function () { if (!window.fix8Hold) return read.call(this);
+            window.fix8Hold = false; window.fix8Held = true;
+            return new Promise(go => { window.fix8Release = go; }).then(() => read.call(this)); }; }""")
+        with page.expect_download() as got:
+            page.click("#audiorescue")
+            page.wait_for_function("window.fix8Held === true")
+            page.set_input_files("#audiofile", str(tone_wav(tmp_path / "second.wav")))
+            expect(page.locator("#takes")).to_contain_text("Take 2")
+            page.evaluate("window.fix8Release()")
+        saved = tmp_path / got.value.suggested_filename
+        got.value.save_as(saved)
+        with zipfile.ZipFile(saved) as z:
+            assert len(json.loads(z.read("project.json")).get("takes", {}).get("list", [])) < 2
+        expect(page.locator("#status")).to_contain_text("changed while the file was prepared")
+        expect(page.locator("#audiorescue")).to_be_visible()
+        update_is_refused(page,
+            "Download the recording that was not kept first: Update reloads Tandem, and it is not saved on this device.")
+        with page.expect_download() as got:
+            page.click("#audiorescue")
+        saved = tmp_path / ("again-" + got.value.suggested_filename)
+        got.value.save_as(saved)
+        with zipfile.ZipFile(saved) as z:
+            assert len(json.loads(z.read("project.json"))["takes"]["list"]) == 2
         expect(page.locator("#audiorescue")).to_be_hidden()
         with page.expect_navigation():
             page.click("#swupdate")

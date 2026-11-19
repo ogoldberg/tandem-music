@@ -226,7 +226,10 @@ let kv=null,versions=null,ideas=null,practiceStore=null,storageProblem='',draftF
 // updating: Update has begun, so no recording may start. audioUnkept: the recordings could not be written to the device,
 // so Update waits until they are downloaded (#audiorescue) or a later write keeps them.
 let updating=false,audioUnkept=false;const saving=new Set(),held=p=>{saving.add(p);p.then(()=>saving.delete(p),()=>saving.delete(p));return p};
-function saveDraft(){if(!kv)return;held(kv.set(DRAFT_KEY,JSON.parse(JSON.stringify(state)))).then(()=>{draftFailed=false},e=>{if(!draftFailed)status('Could not save the draft on this device: '+e.message);draftFailed=true})}
+// FIX.8: a draft write that fails holds Update back as an unkept recording does, until a later write is kept or the
+// project is downloaded (#audiorescue). Only the newest write's outcome counts, so an older write cannot clear a newer failure.
+let draftSeq=0,draftSettled=0;
+function saveDraft(){if(!kv)return;const n=++draftSeq;held(kv.set(DRAFT_KEY,JSON.parse(JSON.stringify(state)))).then(()=>{if(n<draftSettled)return;draftSettled=n;draftUnkept(false)},e=>{if(n<draftSettled)return;draftSettled=n;if(!draftFailed)status('Could not save the draft on this device: '+(e?.message||'the write was cancelled'));draftUnkept(true)})}
 // STORE.2a: recordings are kept in the Origin Private File System by recordings.js; the draft's links to them live under
 // DRAFT_AUDIO_KEY (not in state: /api/chat's project schema has no room for them) and each version keeps its own links.
 let recordings=null,recordingProblem='';
@@ -252,7 +255,9 @@ const take=()=>vocal??audio;
 async function putAudio(blobs){const links={};for(const s of [...AUDIO_SLOTS,...Object.keys(blobs).filter(isExtraKey)])if(blobs[s])links[s]=await recordings.put(blobs[s]);return links}
 // Store the loaded recordings and link them from the draft. A save overtaken by newer audio writes nothing; the newer save links that.
 function saveDraftAudio(){return held(writeDraftAudio())}
-function unkept(on){audioUnkept=on;$('audiorescue').hidden=!on}
+function unkept(on){audioUnkept=on;rescueRefresh()}
+function draftUnkept(on){draftFailed=on;rescueRefresh()}
+function rescueRefresh(){const b=$('audiorescue');b.hidden=!(audioUnkept||draftFailed);b.textContent=audioUnkept?'Download the project with its recording':'Download the project';b.title=audioUnkept?'This recording could not be kept on this device: download it with the project as a Tandem file':'Your latest changes could not be saved on this device: download the project as a Tandem file'}
 async function writeDraftAudio(){const blobs=currentAudio(),any=Object.values(blobs).some(Boolean);if(!kv){unkept(any);return}if(!recordings){unkept(any);if(recordingProblem)status($('status').textContent+' '+recordingProblem);return}try{await recordings.hold(async()=>{const links=await putAudio(blobs),now=currentAudio();if(!sameAudio(now,blobs))return;await kv.set(DRAFT_AUDIO_KEY,links);unkept(false)})}catch(e){unkept(true);status('Could not keep the recording on this device: '+e.message)}}
 // Load stored recordings by their links. Returns the slots whose files are no longer on this device.
 async function restoreAudio(links,p=state){const got={},missing=[];for(const s of [...AUDIO_SLOTS,...Object.keys(links).filter(isExtraKey)])if(links[s]){got[s]=await recordings.get(links[s]);if(!got[s])missing.push(isLayerKey(s)?(p.layers||[]).find(l=>l.id===layerIdOf(s))?.name??'layer':isTakeKey(s)?p.takes?.list.find(t=>t.id===takeIdOf(s))?.name??'take':s)}for(const k of GEN_KEYS)if(got[k]&&p[k])generated.set(p[k].id,got[k]);for(const l of p.layers||[])if(got[layerKey(l.id)])generated.set(l.id,got[layerKey(l.id)]);for(const t of p.takes?.list||[])if(got[takeKey(t.id)])generated.set(t.id,got[takeKey(t.id)]);if(!got.original)return links.original||GEN_KEYS.some(k=>links[k])||Object.keys(links).some(isExtraKey)?missing:null;await useAudio(got,'kept on this device',p);return missing}
@@ -1123,11 +1128,16 @@ async function openBundle(b,fileName){
 let projectName='';
 async function folderRequest(path,opts={}){const r=await fetch(path,{...opts,headers:{...(opts.headers||{}),[launch.header]:launch.secret}});if(!r.ok)throw Error((await r.text()).slice(0,300)||'HTTP '+r.status);return r}
 if(launch){$('savefolder').hidden=$('openfolder').hidden=false}
-async function projectFile(){const blobs=currentAudio(),recs={};
-  for(const s of Object.keys(blobs))if(blobs[s])recs[s]=await toWav(blobs[s],b=>context().decodeAudioData(b));
-  return writeBundle({name:projectName,savedAt:Date.now(),project:projectFromState(state),recordings:recs})}
+// The project and its recordings as they are now, taken together before anything is converted (FIX.8).
+const projectSnapshot=()=>({name:projectName,project:JSON.parse(JSON.stringify(projectFromState(state))),blobs:currentAudio()});
+async function projectFile(snap=projectSnapshot()){const recs={};
+  for(const s of Object.keys(snap.blobs))if(snap.blobs[s])recs[s]=await toWav(snap.blobs[s],b=>context().decodeAudioData(b));
+  return writeBundle({name:snap.name,savedAt:Date.now(),project:snap.project,recordings:recs})}
 // FIX.6: a recording the device could not keep is downloaded with its project as a Tandem file (Open project reads it).
-$('audiorescue').onclick=async()=>{try{status('Preparing the Tandem file…');download(new Blob([await projectFile()],{type:BUNDLE_TYPE}),bundleFileName(projectName));unkept(false);status('Downloaded the project with its recording.')}catch(e){status('Could not prepare the Tandem file: '+e.message)}};
+// FIX.8: the warning is cleared only if the file still holds the project and every recording as they are when it is ready.
+$('audiorescue').onclick=async()=>{try{status('Preparing the Tandem file…');const snap=projectSnapshot(),file=await projectFile(snap);download(new Blob([file],{type:BUNDLE_TYPE}),bundleFileName(snap.name));
+  const now=projectSnapshot();if(!sameAudio(now.blobs,snap.blobs)||JSON.stringify(now.project)!==JSON.stringify(snap.project)){status('Downloaded the project, but it changed while the file was prepared: download it again to keep the latest.');return}
+  const recs=Object.values(snap.blobs).some(Boolean);unkept(false);draftUnkept(false);status(recs?'Downloaded the project with its recording.':'Downloaded the project.')}catch(e){status('Could not prepare the Tandem file: '+e.message)}};
 $('savefolder').onclick=async()=>{try{
   status('Preparing the project folder…');
   const body=await projectFile();
@@ -1353,6 +1363,6 @@ else if(!INSTRUMENTS.includes(state.voice2_instrument))status('The saved draft u
 update();renderVocalNotes();renderVersions();if(kv)showPersistence();
 // FIX.6: a new version waits, installed whole by the service worker, until Update activates it and reloads.
 // go: this page's Update has waited for its writes, so a new worker may reload it; another tab taking the update first only marks this one stale.
-if('serviceWorker'in navigator){const sw=navigator.serviceWorker;let taking=false,go=false,stale=false;const offer=reg=>{$('swupdate').hidden=!(stale||reg.waiting&&sw.controller)};sw.addEventListener('controllerchange',()=>{if(go)location.reload();else{stale=true;$('swupdate').hidden=false}});sw.register('./sw.js').then(reg=>{offer(reg);reg.addEventListener('updatefound',()=>reg.installing?.addEventListener('statechange',()=>offer(reg)));$('swupdate').onclick=async()=>{if(taking)return;const busy=()=>{if(takeRun||takeStarting||calibrating||practiceRun||practiceStarting||keyTake||keyStarting){status('Stop the recording first: Update reloads Tandem.');return true}if(audioUnkept){status('Download the recording that was not kept first: Update reloads Tandem, and it is not saved on this device.');return true}return false};if(busy())return;taking=updating=true;$('swupdate').disabled=true;while(saving.size)await Promise.allSettled([...saving]);if(busy()){taking=updating=false;$('swupdate').disabled=false;return}go=true;if(reg.waiting)reg.waiting.postMessage('activate');else location.reload()}}).catch(()=>{})}
+if('serviceWorker'in navigator){const sw=navigator.serviceWorker;let taking=false,go=false,stale=false;const offer=reg=>{$('swupdate').hidden=!(stale||reg.waiting&&sw.controller)};sw.addEventListener('controllerchange',()=>{if(go)location.reload();else{stale=true;$('swupdate').hidden=false}});sw.register('./sw.js').then(reg=>{offer(reg);reg.addEventListener('updatefound',()=>reg.installing?.addEventListener('statechange',()=>offer(reg)));$('swupdate').onclick=async()=>{if(taking)return;const busy=()=>{if(takeRun||takeStarting||calibrating||practiceRun||practiceStarting||keyTake||keyStarting){status('Stop the recording first: Update reloads Tandem.');return true}if(audioUnkept){status('Download the recording that was not kept first: Update reloads Tandem, and it is not saved on this device.');return true}if(draftFailed){status('Download the project first: Update reloads Tandem, and your latest changes are not saved on this device.');return true}return false};if(busy())return;taking=updating=true;$('swupdate').disabled=true;while(saving.size)await Promise.allSettled([...saving]);if(busy()){taking=updating=false;$('swupdate').disabled=false;return}go=true;if(reg.waiting)reg.waiting.postMessage('activate');else location.reload()}}).catch(()=>{})}
 
 </script></body></html>
