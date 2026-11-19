@@ -408,19 +408,26 @@ def change_tempo(page, bpm):
 
 
 def draft_bpm(page):
+    return stored_draft(page)["bpm"]
+
+
+def stored_draft(page):
     return page.evaluate("""async () => { const db = await new Promise((ok, no) => {
       const r = indexedDB.open('tandem'); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
       const draft = await new Promise((ok, no) => { const r = db.transaction('kv').objectStore('kv')
         .get('draft'); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
-      db.close(); return draft?.bpm; }""")
+      db.close(); return draft; }""")
 
 
-def update_is_refused(page, message):
+def update_is_refused(page, message, waiting=True):
     page.evaluate("window.fix6Page = 'before'")
     page.click("#swupdate")
     expect(page.locator("#status")).to_have_text(message)
     page.wait_for_timeout(1000)
     assert page.evaluate("window.fix6Page") == "before"
+    if waiting:
+        # Refused before the new version was told to take over: it is still waiting.
+        assert page.evaluate("navigator.serviceWorker.getRegistration().then(r => !!r.waiting)")
 
 
 def test_studio_update_waits_for_a_draft_the_device_did_not_keep_to_be_downloaded(browser, app_copy, copy_server,
@@ -567,7 +574,7 @@ def test_an_edit_not_kept_while_the_update_activates_stops_the_reload(browser, a
         page.wait_for_timeout(1000)
         assert page.evaluate("window.fix6Page") == "before"
         expect(page.locator("#bpm")).to_have_value("137")
-        update_is_refused(page, DRAFT_UNKEPT)
+        update_is_refused(page, DRAFT_UNKEPT, waiting=False)
         with page.expect_download() as got:
             page.click("#audiorescue")
         saved = tmp_path / got.value.suggested_filename
@@ -721,6 +728,57 @@ def test_a_project_edit_while_the_rescue_is_prepared_keeps_the_warning(browser, 
         got.value.save_as(saved)
         with zipfile.ZipFile(saved) as z:
             assert json.loads(z.read("project.json"))["bpm"] == 137
+        expect(page.locator("#status")).to_contain_text("changed while the file was prepared")
+        expect(page.locator("#audiorescue")).to_be_visible()
+        update_is_refused(page, AUDIO_UNKEPT)
+
+
+def test_words_typed_while_the_update_waits_for_a_write_are_kept(browser, app_copy, copy_server):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate(HOLD_WRITES)
+        press_update_with_activation_held(page)
+        page.evaluate("window.fix8HoldWrites = true")
+        change_tempo(page, 137)
+        page.evaluate("window.fix8HoldWrites = false")
+        page.evaluate("window.fix8Activate()")
+        page.wait_for_timeout(1000)
+        assert page.evaluate("window.fix6Page") == "before"
+        page.fill("#lyrics", "Twin-kle twin-kle")
+        with page.expect_navigation():
+            page.evaluate("window.fix8ReleaseWrites()")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
+        expect(page.locator("#bpm")).to_have_value("137")
+        expect(page.locator("#lyrics")).to_have_value("Twin-kle twin-kle")
+
+
+def test_a_recording_made_while_the_rescue_is_prepared_keeps_the_warning(browser, app_copy, copy_server, tmp_path):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate(FAIL_RECORDINGS)
+        page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
+        expect(page.locator("#status")).to_contain_text("Could not keep the recording on this device")
+        page.evaluate("""() => { const read = Blob.prototype.arrayBuffer; window.fix8Hold = true;
+          Blob.prototype.arrayBuffer = function () { if (!window.fix8Hold) return read.call(this);
+            window.fix8Hold = false; window.fix8Held = true;
+            return new Promise(go => { window.fix8Release = go; }).then(() => read.call(this)); }; }""")
+        with page.expect_download() as got:
+            page.click("#audiorescue")
+            page.wait_for_function("window.fix8Held === true")
+            project = stored_draft(page)
+            page.click("#polish")
+            expect(page.locator("#polished")).to_be_enabled(timeout=30000)
+            # Only a recording changed: the project is as it was.
+            page.wait_for_timeout(500)
+            assert stored_draft(page) == project
+            page.evaluate("window.fix8Release()")
+        saved = tmp_path / got.value.suggested_filename
+        got.value.save_as(saved)
+        with zipfile.ZipFile(saved) as z:
+            assert "polished.wav" not in z.namelist()
         expect(page.locator("#status")).to_contain_text("changed while the file was prepared")
         expect(page.locator("#audiorescue")).to_be_visible()
         update_is_refused(page, AUDIO_UNKEPT)
