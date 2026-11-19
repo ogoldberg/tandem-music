@@ -185,27 +185,95 @@ def test_a_tab_left_open_keeps_its_own_version_when_another_takes_the_update(bro
         assert second.evaluate("window.fix6Version") == "deploy 2"
 
 
-def test_update_waits_for_a_take_on_the_capture_page(browser, browser_name, app_copy, copy_server):
-    with phone_page(browser, browser_name, copy_server.url) as page:
-        open_capture(page)
-        wait_for_service_worker(page)
-        page.reload()
-        page.wait_for_function("!!navigator.serviceWorker.controller")
-        expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
+def test_a_module_the_next_version_drops_still_comes_from_an_open_tabs_version(browser, app_copy, copy_server):
+    with studio_on(browser, copy_server) as first:
+        second = first.context.new_page()
+        second.goto("/")
+        second.wait_for_function(STARTED)
         deploy(app_copy)
-        assert update_settled(page)["waiting"]
-        expect(page.locator("#swupdate")).to_be_visible()
+        # The next version no longer has polish.js in its shell, and the server now sends a different one.
+        worker = app_copy / "sw.js"
+        source = worker.read_text()
+        assert source.count("'./polish.js',") == 1
+        worker.write_text(source.replace("'./polish.js',", ""))
+        with open(app_copy / "polish.js", "a") as f:
+            f.write(FIX6_MODULE)
+        assert update_settled(first)["waiting"]
+        with first.expect_navigation():
+            first.click("#swupdate")
+        first.wait_for_function(STARTED)
+        assert first.evaluate("window.fix6Version") == "deploy 2"
+        # The tab left open is still on its own version, which has polish.js: it gets that one, with Polish's export.
+        assert second.evaluate("async () => { const m = await import('./polish.js'); "
+                               "return [m.fix6Module ?? null, typeof m.polishSamples]; }") == [None, "function"]
+
+
+HOLD_RECORDINGS = """() => new Promise(held => navigator.locks.request('tandem-recordings', {mode: 'exclusive'},
+  () => new Promise(release => { window.fix6Release = release; window.fix6Page = 'before'; held(); })))"""
+
+
+@contextmanager
+def capture_with_update(browser, browser_name, app_copy, copy_server):
+    """The capture page, controlled by its worker, with a new version waiting and Update offered."""
+    with phone_page(browser, browser_name, copy_server.url) as page:
+        yield offer_update(page, app_copy)
+
+
+def offer_update(page, app_copy):
+    open_capture(page)
+    wait_for_service_worker(page)
+    page.reload()
+    page.wait_for_function("!!navigator.serviceWorker.controller")
+    expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
+    deploy(app_copy)
+    assert update_settled(page)["waiting"]
+    expect(page.locator("#swupdate")).to_be_visible()
+    return page
+
+
+def test_update_waits_for_a_take_on_the_capture_page(browser, browser_name, app_copy, copy_server):
+    with capture_with_update(browser, browser_name, app_copy, copy_server) as page:
         page.click("#record")
         expect(page.locator("#record")).to_have_attribute("aria-pressed", "true")
         page.wait_for_timeout(1200)
         page.click("#swupdate")
         expect(page.locator("#status")).to_have_text("Stop the recording first: Update reloads Tandem.")
-        # Still recording on the same page; the take is then kept, and Update goes ahead.
+        # Still recording on the same page. The take is stopped while its write cannot finish yet (as when another
+        # tab holds the recordings), and Update is taken while it is being kept.
         expect(page.locator("#record")).to_have_attribute("aria-pressed", "true")
+        page.evaluate(HOLD_RECORDINGS)
         page.click("#record")
-        expect(page.locator("#status")).to_contain_text("Kept a 0:0")
+        expect(page.locator("#status")).to_have_text("Keeping the idea…")
+        page.click("#swupdate")
+        # No new take starts once Update has begun, and the page waits for the write.
+        page.evaluate("document.getElementById('record').onclick()")
+        page.wait_for_timeout(1500)
+        assert page.evaluate("window.fix6Page") == "before"
+        expect(page.locator("#record")).to_have_attribute("aria-pressed", "false")
         with page.expect_navigation():
-            page.click("#swupdate")
+            page.evaluate("window.fix6Release()")
         expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
         expect(page.locator("#swupdate")).to_be_hidden()
         assert len(ideas(page)) == 1
+
+
+def test_update_waits_for_a_take_the_device_did_not_keep_to_be_downloaded(browser, browser_name, app_copy,
+                                                                          copy_server):
+    with capture_with_update(browser, browser_name, app_copy, copy_server) as page:
+        page.evaluate("""() => { FileSystemWritableFileStream.prototype.write = function () {
+          return Promise.reject(new DOMException('full', 'QuotaExceededError')); }; }""")
+        page.click("#record")
+        page.wait_for_timeout(800)
+        page.click("#record")
+        expect(page.locator("#status")).to_contain_text("Could not keep the idea on this device")
+        page.evaluate("window.fix6Page = 'before'")
+        page.click("#swupdate")
+        expect(page.locator("#status")).to_have_text(
+            "Download the recording that was not kept first: Update reloads Tandem, and it is not saved on this device.")
+        assert page.evaluate("window.fix6Page") == "before"
+        expect(page.locator("#rescue")).to_be_visible()
+        with page.expect_download():
+            page.click("#rescue")
+        with page.expect_navigation():
+            page.click("#swupdate")
+        expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")

@@ -67,7 +67,7 @@ python tools/gm-samples/build.py          # renders the samples into vendor/gm-s
 python tools/gm-samples/build.py --check  # rebuilds in a temp directory and diffs against the committed files
 ```
 
-The script downloads the SoundFont package and checks its SHA-256 before use. The files are served as immutable, so a changed sample set must move to a new versioned directory such as `gm-samples-2` (the build `dest`, the vendor route, `samples.js` and the tests), or browsers will mix old and new files. Bump the `CACHE` name in `sw.js` too, and the `VENDOR` cache name, so browsers drop the old directory's cached files. See [SECURITY.md](SECURITY.md) for the license and hashes.
+The script downloads the SoundFont package and checks its SHA-256 before use. The files are served as immutable, so a changed sample set must move to a new versioned directory such as `gm-samples-2` (the build `dest`, the vendor route, `samples.js` and the tests), or browsers will mix old and new files. Bump the `VENDOR` cache name in `sw.js` too, so browsers drop the old directory's cached files. The shell cache's name needs no bump: the server writes a hash of the shell into it (FIX.6), so leave its `@SHELL_HASH@` mark as it is. See [SECURITY.md](SECURITY.md) for the license and hashes.
 
 The app icons (MOB.2) are drawn in `icons/icon.svg` (rounded, for manifest purpose "any") and `icons/icon-maskable.svg` (full bleed, notes inside the maskable safe zone). After changing either, render the PNGs with headless Chromium and commit them:
 

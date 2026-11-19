@@ -55,16 +55,19 @@ self.addEventListener('fetch',e=>{
   // header the precache request did not, which would miss every precached module offline.
   // A page opened with a query string (the studio's ?idea=) is the same cached page.
   // The shell from this worker's own set, never from the network: a deploy arrives whole as a new worker.
-  // A page opens on this worker's version; a module or a worker it loads gets the page's version.
-  if(SHELL.has(new URL(req.url).pathname)){
-    e.respondWith((async()=>{
-      const own=req.mode==='navigate'?null:await versionOf(e.clientId),name=own&&await caches.has(own)?own:CACHE;
-      if(req.mode==='navigate'||req.destination==='worker'||req.destination==='sharedworker')e.waitUntil(remember(e.resultingClientId,name));
-      const hit=await (await caches.open(name)).match(req,{ignoreSearch:req.mode==='navigate',ignoreVary:true});
+  // A page opens on this worker's version; a module or a worker it loads gets the page's version, looked up
+  // in that version first, so a file this worker's version no longer has still comes from the page's.
+  const path=new URL(req.url).pathname,nav=req.mode==='navigate',starts=req.destination==='worker'||req.destination==='sharedworker';
+  e.respondWith((async()=>{
+    const own=nav?null:await versionOf(e.clientId),pinned=own&&own!==CACHE&&await caches.has(own)?own:null;
+    if(pinned){const hit=await (await caches.open(pinned)).match(req,{ignoreVary:true});if(hit){if(starts)e.waitUntil(remember(e.resultingClientId,pinned));return hit}}
+    if(SHELL.has(path)){
+      const name=pinned??CACHE;
+      if(nav||starts)e.waitUntil(remember(e.resultingClientId,name));
+      const hit=await (await caches.open(name)).match(req,{ignoreSearch:nav,ignoreVary:true});
       return hit||fetch(req);
-    })());
-    return;
-  }
-  // Anything else network first; offline, the cached copy.
-  e.respondWith(fetch(req).then(r=>keep(CACHE,req,r)).catch(()=>caches.match(req,{ignoreSearch:req.mode==='navigate',ignoreVary:true}).then(hit=>hit||Response.error())));
+    }
+    // Anything else network first; offline, the cached copy.
+    return fetch(req).then(r=>keep(CACHE,req,r)).catch(()=>caches.match(req,{ignoreSearch:nav,ignoreVary:true}).then(hit=>hit||Response.error()));
+  })());
 });
