@@ -1476,3 +1476,42 @@ def test_practice_pass_is_validated(client):
          {**PASS,"notes":[PASS["notes"][0]]*(server.PRACTICE_MAX_NOTES+1)}]
     for p in bad:
         assert run(client("POST","/api/chat",json={"message":"How was it?","practice":p})).status_code==422
+
+def test_service_worker_cache_is_named_after_every_shell_file(client, tmp_path):
+    # FIX.6: any change to sw.js, a page or a module it precaches is a new worker, so a deploy is installed whole.
+    import re, shutil
+    from pathlib import Path
+    sw=run(client("GET","/sw.js"))
+    assert sw.status_code==200 and "javascript" in sw.headers["content-type"]
+    assert sw.headers["cache-control"]=="no-cache"
+    assert re.search(r"const CACHE='tandem-shell-[0-9a-f]{16}'",sw.text)
+    assert "@SHELL_HASH@" not in sw.text
+    # Every module a page imports, now or later (Transcribe's and Polish's too), is in the one set.
+    for name in ("transcription.js","polish.js","groove.js","tuning.js"):
+        assert f"'./{name}'" in sw.text
+    root=Path(server.__file__).resolve().parent
+    assets=re.findall(r"'\./([^']*)'",re.search(r"const ASSETS=\[([^\]]*)\]",(root/"sw.js").read_text()).group(1))
+    copy=tmp_path/"app"
+    for name in ["sw.js",*[server.SHELL_PAGES.get(a,a) for a in assets]]:
+        (copy/name).parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy(root/name,copy/name)
+    import hashlib, json
+    built=lambda: server.service_worker_source(copy)
+    name=lambda: re.search(r"const CACHE='([^']*)'",built()).group(1)
+    sums=lambda: json.loads(re.search(r"const SUMS=(\{[^}]*\});",built()).group(1))
+    assert name()==re.search(r"const CACHE='([^']*)'",sw.text).group(1)
+    # The worker keeps a file only when its SHA-256 is the one named here, so each sum must be the file's own.
+    assert sums()==json.loads(re.search(r"const SUMS=(\{[^}]*\});",sw.text).group(1))
+    assert set(sums())=={"./"+a for a in assets}
+    for a in assets:
+        assert sums()["./"+a]==hashlib.sha256((copy/server.SHELL_PAGES.get(a,a)).read_bytes()).hexdigest(), a
+    # Each file on its own, compared with the build just before it changed: an edit, then removing it.
+    for a in [*assets,"sw.js"]:
+        path=copy/server.SHELL_PAGES.get(a,a)
+        before=name()
+        with open(path,"ab") as f: f.write(b"\n")
+        assert name()!=before, a
+        if a!="sw.js":
+            before=name()
+            path.unlink()
+            assert name()!=before and sums()["./"+a]=="missing", a

@@ -8,7 +8,7 @@ from playwright.sync_api import expect
 
 from test_genre import beat_wav
 from test_pitchguide import open_page
-from test_studio import wait_until
+from test_studio import IDB_GET, wait_until
 
 HITS = [0.3 + i for i in range(12)]
 
@@ -131,6 +131,7 @@ def test_a_comp_of_takes_after_the_count_in_keeps_the_tempo(hits_studio):
     comp_second_take_in(page)
     transcribe(page)
     expect(detect(page)).to_have_text("Tempo is already 90 bpm (the take was sung to it)")
+    expect(page.locator("#detecttempo")).to_have_attribute("data-sung", "90")
 
 
 def test_a_comp_with_a_take_recorded_with_nothing_heard_is_read_freely(hits_studio):
@@ -139,7 +140,30 @@ def test_a_comp_with_a_take_recorded_with_nothing_heard_is_read_freely(hits_stud
     record_take(page, count_in=True)
     comp_second_take_in(page)
     transcribe(page)
-    expect(detect(page)).to_have_text("Detected tempo: 60 bpm")
+    # The comp is read freely: no tempo it was sung to. Which tempo the hits then give depends on where take 2's
+    # hits fall after the 2 s seam, which moves with how long the count-in and the start took, so the expected
+    # answer is worked out from the song's own hits, read freely and read as timed (always different here: the
+    # timed reading stays within 6% of 90 bpm, the free one finds the hits' 60).
+    free, timed = page.evaluate(READINGS, song_times(page))
+    assert free != timed
+    status = detect(page)
+    expect(page.locator("#detecttempo")).to_have_attribute("data-sung", "")
+    expect(status).to_have_text("Detected tempo: %d bpm" % free if free != 90 else "Tempo is already 90 bpm")
+
+
+READINGS = """async times => { const {estimateTempo} = await import('./groove.js'), {tempoRange} = await import('./genre.js');
+  return [false, true].map(timed => estimateTempo(times, {prefer: tempoRange(), current: 90, timed})); }"""
+
+
+def song_times(page):
+    """The note and drum onsets Detect tempo reads, from the draft kept on the device once it has the hits."""
+    hits = int(page.locator("#hitcount").text_content().split()[0])
+    for _ in range(50):
+        draft = page.evaluate(IDB_GET, "draft") or {}
+        if len(draft.get("drums", [])) == hits:
+            return [n["t"] for n in draft.get("notes", [])] + [h["t"] for h in draft.get("drums", [])]
+        page.wait_for_timeout(100)
+    raise AssertionError("the draft never held the transcribed hits")
 
 
 def set_bpm(page, bpm):

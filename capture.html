@@ -21,7 +21,7 @@ button.danger{background:#7a2530;border-color:#d9434e}.hide{display:none}
 .guideopts{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px 14px;font-size:.9rem}.guideopts label{display:flex;align-items:center;gap:6px}.guideopts input{min-height:0;width:20px;height:20px;accent-color:#8ce6cf}
 details.takeopts{width:100%;border:1px solid #33465f;border-radius:12px;padding:6px 12px}details.takeopts summary{cursor:pointer;min-height:36px;display:flex;align-items:center;color:#8ce6cf}.optrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:8px 0;font-size:.9rem}.optrow label{display:flex;align-items:center;gap:6px}.optrow input[type=checkbox]{min-height:0;width:20px;height:20px;accent-color:#8ce6cf}#bpm{width:5.5em}
 select{font:inherit;border:1px solid #455c78;background:#263950;color:white;border-radius:10px;padding:8px 10px;min-height:44px}
-</style></head><body><main>
+.swupdate{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:100;box-shadow:0 2px 12px #0008}.swupdate[hidden]{display:none}</style></head><body><button id="swupdate" class="swupdate" hidden title="A new version of Tandem is downloaded: open it now (your work is kept)">Update Tandem</button><main>
 <header><h1>♫ Tandem Capture</h1><a href="./">Open studio →</a></header>
 <section class="recorder" aria-label="Recorder"><button id="record" aria-pressed="false">Record</button><div id="time" aria-hidden="true"></div><div id="pitchguide" class="pitchguide hide"><canvas id="pitchstrip" aria-hidden="true"></canvas><div id="pitchnow" role="status"></div></div><div class="guideopts"><label><input type="checkbox" id="showpitch" checked> Show my pitch</label><label>Against <select id="pitchkey"></select></label></div><details class="takeopts" id="takeopts"><summary>Beat and count-in</summary><div class="optrow"><label>Beat <select id="beat"></select></label><label>Speed <input id="bpm" type="number" min="45" max="220" step="1" inputmode="numeric" aria-label="Speed in beats a minute"> bpm</label></div><div class="optrow"><label><input type="checkbox" id="countin"> Count in one bar first</label></div><p id="beatnote" class="muted">Use headphones with a beat: through the speaker it gets into the take. With Bluetooth headphones the phone's own microphone records you.</p><div class="optrow"><span id="latencyinfo" class="muted">Takes are lined up with the beat by the delay of your microphone and headphones.</span><button id="calibrate">Measure the delay</button></div></details></section>
 <div id="status" class="status" role="status" aria-live="polite">Opening storage…</div>
@@ -46,11 +46,13 @@ import {synthDrum} from './voices.js';
 import {startPitchGuide,guideReading,hzToMidi,drawPitchStrip} from './pitch.js';
 import {KEY_NAMES,scalePitchClasses} from './contour.js';
 const $=id=>document.getElementById(id);
-let kv=null,recordings=null,ideas=null,take=null,starting=false,ticker=null,unsaved=null,player=null,playingId=null,askedToPersist=false;
+let kv=null,recordings=null,ideas=null,take=null,starting=false,ticker=null,unsaved=null,downloaded=null,updating=false,player=null,playingId=null,askedToPersist=false;
 // Whether the browser promised to keep this site's storage. Asked for once per visit, when an idea is
 // first kept (browsers grant it more readily once the site holds something, and some ask the user).
 const showPersistence=(request=false)=>persistence(navigator.storage,{request}).then(s=>{$('storageinfo').textContent=PERSISTENCE_TEXT[s]},()=>{});
 const status=s=>{$('status').textContent=s};
+// FIX.6: an idea still being kept, which Update waits for before it reloads.
+const saving=new Set(),held=p=>{saving.add(p);p.then(()=>saving.delete(p),()=>saving.delete(p));return p};
 const when=ms=>new Date(ms).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
 
 function setRecording(on){
@@ -77,7 +79,7 @@ function showBeat(){const id=$('beat').value;$('beatnote').classList.toggle('hid
 {const p=takePrefs();$('beat').value=p.beat;$('bpm').value=p.bpm;$('countin').checked=p.countIn;if(p.beat||p.countIn)$('takeopts').open=true;showBeat()}
 $('beat').onchange=()=>{saveTakePrefs();showBeat()};$('countin').onchange=saveTakePrefs;$('bpm').onchange=()=>{if(tempo())saveTakePrefs()};
 async function start(){
-  if(!ideas||!recordings||take||starting)return;
+  if(!ideas||!recordings||take||starting||updating)return;
   const bpm=tempo();if(!bpm){status('Set a speed from '+MIN_BPM+' to '+MAX_BPM+' beats a minute.');return}
   const beat=$('beat').value?cleanBeat({id:$('beat').value,bpm}):null;
   starting=true;stopPlayback();let stream=null,rc=null;
@@ -157,13 +159,13 @@ async function keep(blob,duration,beat){
   }
   await render();
 }
-$('record').onclick=()=>{if(take)stop().catch(e=>status('Recording failed: '+e.message));else start()};
+$('record').onclick=()=>{if(take)held(stop()).catch(e=>status('Recording failed: '+e.message));else start()};
 // A web app on a phone loses the microphone when it leaves the screen: end the take there and keep it.
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&take){stop().then(()=>{if(!unsaved)status($('status').textContent+' Recording stopped when Tandem left the screen.')},e=>status('Recording failed: '+e.message))}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&take){held(stop()).then(()=>{if(!unsaved)status($('status').textContent+' Recording stopped when Tandem left the screen.')},e=>status('Recording failed: '+e.message))}});
 // REC.3: measure the round trip for this microphone and output: six clicks played and recorded back (latency.js).
 let calibrating=false;
 $('calibrate').onclick=async()=>{
-  if(take||starting||calibrating)return;calibrating=true;$('calibrate').disabled=true;$('record').disabled=true;stopPlayback();let rc=null,stream=null;
+  if(take||starting||calibrating||updating)return;calibrating=true;$('calibrate').disabled=true;$('record').disabled=true;stopPlayback();let rc=null,stream=null;
   try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});rc=new AudioContext();await rc.resume();
     const key=await deviceKeyFor(rc,stream,navigator.mediaDevices);status('Measuring the delay: six clicks. Keep quiet; with headphones, hold them to the microphone.');
     const r=await measureLatency(rc,rc.createMediaStreamSource(stream));saveLatency(latencyStore,key,r.seconds);showLatency({seconds:r.seconds,measured:true});
@@ -171,7 +173,7 @@ $('calibrate').onclick=async()=>{
   catch(e){status('Could not measure the delay: '+e.message)}
   finally{stream?.getTracks().forEach(x=>x.stop());rc?.close().catch(()=>{});calibrating=false;$('calibrate').disabled=false;$('record').disabled=!ideas||!recordings}
 };
-$('rescue').onclick=()=>{if(!unsaved)return;const ext=/wav/.test(unsaved.type)?'wav':/mp4|aac/.test(unsaved.type)?'m4a':/ogg/.test(unsaved.type)?'ogg':'webm';const u=URL.createObjectURL(unsaved),a=document.createElement('a');a.href=u;a.download='tandem-idea.'+ext;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
+$('rescue').onclick=()=>{if(!unsaved)return;const ext=/wav/.test(unsaved.type)?'wav':/mp4|aac/.test(unsaved.type)?'m4a':/ogg/.test(unsaved.type)?'ogg':'webm';const u=URL.createObjectURL(unsaved),a=document.createElement('a');a.href=u;a.download='tandem-idea.'+ext;a.click();downloaded=unsaved;setTimeout(()=>URL.revokeObjectURL(u),1000)};
 
 function stopPlayback(){if(player){player.pause();URL.revokeObjectURL(player.src);player=null}const was=playingId;playingId=null;if(was)for(const b of document.querySelectorAll('.idea .play'))b.textContent='Play'}
 async function play(idea,button){
@@ -267,5 +269,10 @@ try{
   await render();
 }catch(e){status(storageProblem(e));if(ideas)await render().catch(()=>{})}
 showPersistence();
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+// FIX.6: a new version waits, installed whole by the service worker, until Update activates it and reloads.
+// go: this page's Update has waited for its writes, so a new worker may reload it; another tab taking the update first only marks this one stale.
+// Update reloads the page: never while a take is being recorded or kept, or while a take the device would not keep
+// is only in this page (its download not yet offered to the person).
+function blocked(){if(take||starting||calibrating){status('Stop the recording first: Update reloads Tandem.');return true}if(unsaved&&downloaded!==unsaved){status('Download the recording that was not kept first: Update reloads Tandem, and it is not saved on this device.');return true}return false}
+if('serviceWorker'in navigator){const sw=navigator.serviceWorker;let taking=false,go=false,stale=false;const offer=reg=>{$('swupdate').hidden=!(stale||reg.waiting&&sw.controller)};sw.addEventListener('controllerchange',()=>{if(go)location.reload();else{stale=true;$('swupdate').hidden=false}});sw.register('./sw.js').then(reg=>{offer(reg);reg.addEventListener('updatefound',()=>reg.installing?.addEventListener('statechange',()=>offer(reg)));$('swupdate').onclick=async()=>{if(taking)return;if(blocked())return;const could=$('record').disabled;taking=updating=true;$('swupdate').disabled=$('record').disabled=true;while(saving.size)await Promise.allSettled([...saving]);if(blocked()){taking=updating=false;$('swupdate').disabled=false;$('record').disabled=could;return}go=true;if(reg.waiting)reg.waiting.postMessage('activate');else location.reload()}}).catch(()=>{})}
 </script></body></html>
