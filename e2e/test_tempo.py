@@ -142,17 +142,17 @@ def test_a_comp_with_a_take_recorded_with_nothing_heard_is_read_freely(hits_stud
     transcribe(page)
     # The comp is read freely: no tempo it was sung to. Which tempo the hits then give depends on where take 2's
     # hits fall after the 2 s seam, which moves with how long the count-in and the start took, so the expected
-    # answer is worked out from the song's own hits, read freely and read as timed (always different here: the
-    # timed reading stays within 6% of 90 bpm, the free one finds the hits' 60).
-    free, timed = page.evaluate(READINGS, song_times(page))
-    assert free != timed
+    # answer is worked out from the song's own hits read freely. That reading can be 90 too (FIX.7: hits at 0.19,
+    # 1.19, then 2.5, 3.51, ... after the seam read 90 both ways), so the test tells a free reading from a timed one
+    # by what a timed one adds: the take's tempo in data-sung and "(the take was sung to it)" in the status.
+    free = page.evaluate(FREE_READING, song_times(page))
     status = detect(page)
     expect(page.locator("#detecttempo")).to_have_attribute("data-sung", "")
     expect(status).to_have_text("Detected tempo: %d bpm" % free if free != 90 else "Tempo is already 90 bpm")
 
 
-READINGS = """async times => { const {estimateTempo} = await import('./groove.js'), {tempoRange} = await import('./genre.js');
-  return [false, true].map(timed => estimateTempo(times, {prefer: tempoRange(), current: 90, timed})); }"""
+FREE_READING = """async times => { const {estimateTempo} = await import('./groove.js'), {tempoRange} = await import('./genre.js');
+  return estimateTempo(times, {prefer: tempoRange(), current: 90, timed: false}); }"""
 
 
 def song_times(page):
