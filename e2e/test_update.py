@@ -4,6 +4,7 @@ then, and whenever an update cannot be fetched whole, the studio opens as it was
 
 The server runs from a copy of the app, so the test deploys a new version by changing the copy's files."""
 import shutil
+import zipfile
 from contextlib import contextmanager
 
 import pytest
@@ -267,6 +268,7 @@ def test_update_waits_for_a_take_the_device_did_not_keep_to_be_downloaded(browse
         page.evaluate("""() => { FileSystemWritableFileStream.prototype.write = function () {
           return Promise.reject(new DOMException('full', 'QuotaExceededError')); }; }""")
         page.click("#record")
+        expect(page.locator("#status")).to_contain_text("Recording…")
         page.wait_for_timeout(800)
         page.click("#record")
         expect(page.locator("#status")).to_contain_text("Could not keep the idea on this device")
@@ -293,6 +295,7 @@ def test_update_waits_for_a_take_when_another_tab_takes_the_update_first(browser
     with capture_with_update(browser, browser_name, app_copy, copy_server) as page:
         page.evaluate(HOLD_RECORDINGS)
         page.click("#record")
+        expect(page.locator("#status")).to_contain_text("Recording…")
         page.wait_for_timeout(800)
         page.click("#record")
         expect(page.locator("#status")).to_have_text("Keeping the idea…")
@@ -355,6 +358,36 @@ def test_studio_update_waits_for_a_take_from_the_keyboard(browser, app_copy, cop
         expect(page.locator("#midirecord")).to_contain_text("Stop recording")
         page.click("#midirecord")
         expect(page.locator("#midirecord")).to_contain_text("Record from keyboard")
+        with page.expect_navigation():
+            page.click("#swupdate")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
+
+
+def test_studio_update_waits_for_a_recording_the_device_did_not_keep_to_be_downloaded(browser, app_copy, copy_server,
+                                                                                       tmp_path):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate("""() => { FileSystemWritableFileStream.prototype.write = function () {
+          return Promise.reject(new DOMException('full', 'QuotaExceededError')); }; }""")
+        page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
+        expect(page.locator("#status")).to_contain_text("Could not keep the recording on this device")
+        page.evaluate("window.fix6Page = 'before'")
+        page.click("#swupdate")
+        expect(page.locator("#status")).to_have_text(
+            "Download the recording that was not kept first: Update reloads Tandem, and it is not saved on this device.")
+        page.wait_for_timeout(1000)
+        assert page.evaluate("window.fix6Page") == "before"
+        expect(page.locator("#audiorescue")).to_be_visible()
+        with page.expect_download() as got:
+            page.click("#audiorescue")
+        saved = tmp_path / got.value.suggested_filename
+        got.value.save_as(saved)
+        assert saved.name.endswith(".tandem.zip")
+        with zipfile.ZipFile(saved) as z:
+            assert {"project.json", "original.wav"} <= set(z.namelist())
+        expect(page.locator("#audiorescue")).to_be_hidden()
         with page.expect_navigation():
             page.click("#swupdate")
         page.wait_for_function(STARTED)
