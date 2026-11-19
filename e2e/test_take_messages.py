@@ -155,6 +155,24 @@ def test_a_multichannel_take_goes_up_as_the_average_of_its_channels(browser, ser
         assert len(draft_notes(page)) == 4
 
 
+def test_a_long_take_is_mixed_over_its_whole_length_before_the_first_minute_is_cut(browser, server_url, tmp_path):
+    """The channels kept are those live over the whole take, as before the cut: a channel heard only after the first
+    minute still halves the voice in the upload, rather than the cut minute choosing its own channels."""
+    with guided_page(browser, server_url) as page:
+        use_server_transcriber(page)
+        record_analyze_uploads(page)
+        voice = tones([60, 62, 64, 65], seconds=70)
+        late = tones([67], seconds=70, start=65)
+        import_take(page, write_wav(tmp_path / "late-side.wav", np.stack([voice, late], axis=1)))
+        level = page.evaluate("""async () => { const bytes = await window.analyzeWavs.at(-1).arrayBuffer(), h = new DataView(bytes);
+          const buf = await new OfflineAudioContext(1, 1, 22050).decodeAudioData(bytes.slice(0));
+          const x = buf.getChannelData(0); let peak = 0; for (const v of x) peak = Math.max(peak, Math.abs(v));
+          return {channels: h.getUint16(22, true), seconds: x.length / 22050, peak}; }""")
+        # The voice's peak is 0.4: the average of the two channels is 0.2, the voice's channel alone 0.4.
+        assert level["channels"] == 1 and abs(level["seconds"] - 60) < 0.01, level
+        assert 0.15 < level["peak"] < 0.25, level
+
+
 def test_transcribe_uses_the_listener_chosen_when_it_started(browser, server_url, tmp_path):
     """Changing the transcriber while the take is still being decoded does not move the running job to the server."""
     with guided_page(browser, server_url) as page:
