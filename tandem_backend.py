@@ -75,9 +75,32 @@ def page_response(name: str, request: Request) -> Response:
 def homepage(request: Request):
     return page_response("index.html", request)
 
+# FIX.6: the service worker's cache is named after a hash of itself and every file it precaches (its ASSETS), so a
+# deploy that changes any of them is a new worker, which installs the whole set before it is used. Each file's
+# SHA-256 goes in too (SUMS), and the worker keeps only those exact files, so a stale copy fails the install.
+SHELL_HASH_MARK = "@SHELL_HASH@"
+SHELL_SUMS_MARK = "@SHELL_SUMS@"
+SHELL_PAGES = {"": "index.html", "capture": "capture.html"}
+
+
+def service_worker_source(root: Path) -> str:
+    source = (root / "sw.js").read_text()
+    assets = re.search(r"const ASSETS=\[([^\]]*)\]", source)
+    if not assets or source.count(SHELL_HASH_MARK) != 1 or source.count(SHELL_SUMS_MARK) != 1:
+        raise RuntimeError("sw.js needs one ASSETS list, one " + SHELL_HASH_MARK + " and one " + SHELL_SUMS_MARK)
+    sums = {}
+    for asset in re.findall(r"'([^']*)'", assets.group(1)):
+        path = root / SHELL_PAGES.get(asset.removeprefix("./"), asset.removeprefix("./"))
+        # A file that is missing has no sum the install can match, so the install fails and the old version stays.
+        sums[asset] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "missing"
+    digest = hashlib.sha256(source.encode() + b"\0" + json.dumps(sums, sort_keys=True).encode())
+    return source.replace(SHELL_HASH_MARK, digest.hexdigest()[:16]).replace(SHELL_SUMS_MARK, json.dumps(sums))
+
+
 @app.get("/sw.js", include_in_schema=False)
 def service_worker():
-    return FileResponse(Path(__file__).resolve().parent / "sw.js", media_type="text/javascript")
+    return Response(service_worker_source(Path(__file__).resolve().parent), media_type="text/javascript",
+                    headers={"Cache-Control": "no-cache"})
 
 @app.get("/history.js", include_in_schema=False)
 def history_js():

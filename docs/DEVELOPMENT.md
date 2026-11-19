@@ -18,6 +18,8 @@ uvicorn tandem_backend:app --reload --host 127.0.0.1 --port 8000
 
 Open http://localhost:8000. The FastAPI server serves the browser interface and API **on the same origin**; there is no need for a second frontend development server. Browser microphone requires permission; localhost is treated as a secure context. The built-in transcription module loads the Basic Pitch bundle and model from this same server (`vendor/basic-pitch-1.0.1-2/`); no CDN is involved. Rebuild them with `bash tools/basic-pitch/build.sh` (needs Node and network access to the npm registry); `--check` verifies the committed files are reproducible.
 
+Once the service worker controls the page, an edit to the page or a module it imports does not show on a reload: the open version stays until the new one is installed whole, then **Update Tandem** at the top of the page switches to it (FIX.6). Open the page in a private window, or with the service worker bypassed in the browser's developer tools, to see each edit at once.
+
 **Dependencies are locked (SEC.9).** Edit the `requirements*.in` files, never the `.txt` ones: `sh tools/locks/compile.sh` (needs [uv](https://docs.astral.sh/uv/); 0.13.8 was used) compiles each into its hashed lock, keeping locked versions the sources still allow (`--upgrade` takes the newest). Every install command above and below reads a lock, and pip checks each downloaded file against its SHA-256, so a changed file on the index fails the install. `requirements.txt` is what Vercel installs; the dev, e2e and desktop locks are compiled against it, so they get its versions; the models lock is for the Mac app on Apple silicon with macOS 14 or later (torch has no Intel macOS wheel and MLX is Apple silicon only) and resolves on its own because magenta-rt needs numpy below 2.4. uv ignores the upper bound of a package's `Requires-Python` when compiling, but pip does not, so a release that is only for older Pythons needs a bound in the `.in` file (as `backports.strenum<1.3` in `requirements-models.in`). CI's `audit` job runs `pip-audit` over every lock and fails on a package with a known vulnerability; `tests/test_locks.py` checks every lock still satisfies its source and carries hashes, and that every CI action is pinned to a commit SHA.
 
 If a PyWorld wheel is unsupported on your workstation's OS/architecture, investigate compatible binaries instead of silently removing tuning or calling the feature verified. On Vercel Python 3.12 the earlier `pyworld` package failed to resolve; `pyworld-prebuilt==0.3.6.post1` allowed a READY build. This is a packaging result, not proof of natural sounding correction.
@@ -65,7 +67,7 @@ python tools/gm-samples/build.py          # renders the samples into vendor/gm-s
 python tools/gm-samples/build.py --check  # rebuilds in a temp directory and diffs against the committed files
 ```
 
-The script downloads the SoundFont package and checks its SHA-256 before use. The files are served as immutable, so a changed sample set must move to a new versioned directory such as `gm-samples-2` (the build `dest`, the vendor route, `samples.js` and the tests), or browsers will mix old and new files. Bump the `CACHE` name in `sw.js` too, and the `VENDOR` cache name, so browsers drop the old directory's cached files. See [SECURITY.md](SECURITY.md) for the license and hashes.
+The script downloads the SoundFont package and checks its SHA-256 before use. The files are served as immutable, so a changed sample set must move to a new versioned directory such as `gm-samples-2` (the build `dest`, the vendor route, `samples.js` and the tests), or browsers will mix old and new files. Bump the `VENDOR` cache name in `sw.js` too, so browsers drop the old directory's cached files. The shell cache's name needs no bump: the server writes a hash of the shell into it (FIX.6), so leave its `@SHELL_HASH@` mark as it is. See [SECURITY.md](SECURITY.md) for the license and hashes.
 
 The app icons (MOB.2) are drawn in `icons/icon.svg` (rounded, for manifest purpose "any") and `icons/icon-maskable.svg` (full bleed, notes inside the maskable safe zone). After changing either, render the PNGs with headless Chromium and commit them:
 
@@ -73,7 +75,7 @@ The app icons (MOB.2) are drawn in `icons/icon.svg` (rounded, for manifest purpo
 python tools/icons/build.py   # needs requirements-e2e.txt and `python -m playwright install chromium`
 ```
 
-It writes `icons/icon-192.png`, `icons/icon-512.png`, `icons/icon-maskable-512.png` and `icons/apple-touch-icon.png`. A new icon file also needs adding to `ICON_FILES` in `tandem_backend.py` and to the precache list in `sw.js` (bump `CACHE`).
+It writes `icons/icon-192.png`, `icons/icon-512.png`, `icons/icon-maskable-512.png` and `icons/apple-touch-icon.png`. A new icon file also needs adding to `ICON_FILES` in `tandem_backend.py` and to the precache list in `sw.js`.
 
 ## Production deployment
 
