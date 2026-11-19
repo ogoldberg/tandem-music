@@ -625,3 +625,102 @@ def test_an_older_draft_write_settling_late_does_not_overrule_a_newer_one(browse
                 page.click("#swupdate")
             page.wait_for_function(STARTED)
             assert page.evaluate("window.fix6Version") == "deploy 2"
+
+
+AUDIO_UNKEPT = "Download the recording that was not kept first: Update reloads Tandem, and it is not saved on this device."
+FAIL_RECORDINGS = """() => { FileSystemWritableFileStream.prototype.write = function () {
+  return Promise.reject(new DOMException('full', 'QuotaExceededError')); }; }"""
+
+
+def press_update_with_activation_held(page):
+    page.evaluate(HOLD_ACTIVATION)
+    page.evaluate("window.fix6Page = 'before'")
+    page.click("#swupdate")
+    page.wait_for_function("window.fix8ActivationHeld === true")
+
+
+def test_words_still_being_typed_when_the_update_activates_are_kept(browser, app_copy, copy_server):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        press_update_with_activation_held(page)
+        page.fill("#lyrics", "Twin-kle twin-kle")
+        assert page.evaluate("document.activeElement.id") == "lyrics"
+        with page.expect_navigation():
+            page.evaluate("window.fix8Activate()")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
+        expect(page.locator("#lyrics")).to_have_value("Twin-kle twin-kle")
+
+
+def test_a_draft_write_still_pending_when_the_update_activates_is_waited_for(browser, app_copy, copy_server):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate(HOLD_WRITES)
+        press_update_with_activation_held(page)
+        page.evaluate(FAIL_DRAFT)
+        page.evaluate("window.fix8HoldWrites = true")
+        change_tempo(page, 137)
+        page.evaluate("window.fix8HoldWrites = false")
+        expect(page.locator("#audiorescue")).to_be_hidden()
+        page.evaluate("window.fix8Activate()")
+        page.wait_for_timeout(1000)
+        assert page.evaluate("window.fix6Page") == "before"
+        page.evaluate("window.fix8ReleaseWrites()")
+        expect(page.locator("#status")).to_have_text(DRAFT_UNKEPT)
+        expect(page.locator("#audiorescue")).to_be_visible()
+        page.wait_for_timeout(500)
+        assert page.evaluate("window.fix6Page") == "before"
+
+
+def test_a_recording_not_kept_while_the_update_activates_stops_the_reload(browser, app_copy, copy_server, tmp_path):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate(FAIL_RECORDINGS)
+        press_update_with_activation_held(page)
+        page.evaluate(HOLD_RECORDINGS)
+        page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
+        expect(page.locator("#status")).to_contain_text("Recorded")
+        page.evaluate("window.fix8Activate()")
+        page.wait_for_timeout(1000)
+        assert page.evaluate("window.fix6Page") == "before"
+        page.evaluate("window.fix6Release()")
+        expect(page.locator("#status")).to_have_text(AUDIO_UNKEPT)
+        expect(page.locator("#audiorescue")).to_be_visible()
+        page.wait_for_timeout(500)
+        assert page.evaluate("window.fix6Page") == "before"
+        with page.expect_download():
+            page.click("#audiorescue")
+        expect(page.locator("#audiorescue")).to_be_hidden()
+        with page.expect_navigation():
+            page.click("#swupdate")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
+
+
+def test_a_project_edit_while_the_rescue_is_prepared_keeps_the_warning(browser, app_copy, copy_server, tmp_path):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate(FAIL_RECORDINGS)
+        page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
+        expect(page.locator("#status")).to_contain_text("Could not keep the recording on this device")
+        change_tempo(page, 137)
+        page.evaluate("""() => { const read = Blob.prototype.arrayBuffer; window.fix8Hold = true;
+          Blob.prototype.arrayBuffer = function () { if (!window.fix8Hold) return read.call(this);
+            window.fix8Hold = false; window.fix8Held = true;
+            return new Promise(go => { window.fix8Release = go; }).then(() => read.call(this)); }; }""")
+        with page.expect_download() as got:
+            page.click("#audiorescue")
+            page.wait_for_function("window.fix8Held === true")
+            change_tempo(page, 141)
+            page.evaluate("window.fix8Release()")
+        saved = tmp_path / got.value.suggested_filename
+        got.value.save_as(saved)
+        with zipfile.ZipFile(saved) as z:
+            assert json.loads(z.read("project.json"))["bpm"] == 137
+        expect(page.locator("#status")).to_contain_text("changed while the file was prepared")
+        expect(page.locator("#audiorescue")).to_be_visible()
+        update_is_refused(page, AUDIO_UNKEPT)
