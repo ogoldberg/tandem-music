@@ -144,14 +144,29 @@ def test_a_multichannel_take_goes_up_as_the_average_of_its_channels(browser, ser
         hum = 0.004 * np.sin(2 * np.pi * 50 * np.arange(len(voice)) / rate)
         six = np.stack([hum, hum, hum, voice, hum, hum], axis=1)
         import_take(page, write_wav(tmp_path / "six.wav", six, rate=rate))
-        level = page.evaluate("""async () => { const blob = window.analyzeWavs.at(-1);
-          const buf = await new OfflineAudioContext(1, 1, 22050).decodeAudioData(await blob.arrayBuffer());
+        # The channel count and rate are read from the uploaded WAV's own header: decoding resamples to its context.
+        level = page.evaluate("""async () => { const bytes = await window.analyzeWavs.at(-1).arrayBuffer(), h = new DataView(bytes);
+          const buf = await new OfflineAudioContext(1, 1, 22050).decodeAudioData(bytes.slice(0));
           const x = buf.getChannelData(0); let peak = 0; for (const v of x) peak = Math.max(peak, Math.abs(v));
-          return {channels: buf.numberOfChannels, rate: buf.sampleRate, peak}; }""")
+          return {channels: h.getUint16(22, true), rate: h.getUint32(24, true), peak}; }""")
         # The voice's peak is 0.4, so a sixth of it is about 0.067; the speaker mix drops it and leaves the hum (< 0.01).
         assert level["channels"] == 1 and level["rate"] == 22050, level
         assert 0.05 < level["peak"] < 0.09, level
         assert len(draft_notes(page)) == 4
+
+
+def test_transcribe_uses_the_listener_chosen_when_it_started(browser, server_url, tmp_path):
+    """Changing the transcriber while the take is still being decoded does not move the running job to the server."""
+    with guided_page(browser, server_url) as page:
+        use_server_transcriber(page)
+        import_take(page, take_wav(tmp_path / "tune.wav", [60, 62, 64, 65], seconds=4.5))
+        record_analyze_uploads(page)
+        page.evaluate("""async () => { const t = document.getElementById('transcriber');
+          document.getElementById('mode').value = 'melody'; t.value = 'basic-pitch';
+          const run = document.getElementById('analyze').onclick(); t.value = 'heuristic'; await run; }""")
+        assert page.evaluate("window.analyzeBytes.length") == 0
+        expect(page.locator("#status")).to_have_text("Transcription complete")
+        assert len(draft_notes(page)) >= 3
 
 
 def test_the_count_in_keeps_the_record_button_round_and_shows_the_count(browser, server_url):

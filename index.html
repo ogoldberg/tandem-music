@@ -1012,16 +1012,16 @@ const TRANSCRIBE_SECONDS=60;
 let transcribed={state:null,note:'',times:[]};
 function firstSeconds(buf,seconds){const length=Math.min(buf.length,Math.round(seconds*buf.sampleRate));if(length>=buf.length)return buf;const out=new AudioBuffer({length,numberOfChannels:buf.numberOfChannels,sampleRate:buf.sampleRate});for(let c=0;c<buf.numberOfChannels;c++)out.copyToChannel(buf.getChannelData(c).subarray(0,length),c);return out}
 $('analyze').onclick=async()=>{transcribed={state:'failed',note:'',times:[]};try{
- status('Transcribing…');const mode=$('mode').value==='rhythm'?'rhythm':'melody';
+ status('Transcribing…');const mode=$('mode').value==='rhythm'?'rhythm':'melody',onDevice=$('transcriber').value==='basic-pitch';
  let obj,note='';
  const whole=mode==='melody'?await decoded(take()):null,buffer=whole&&firstSeconds(whole,TRANSCRIBE_SECONDS);
  if(whole&&buffer!==whole)note='The take is '+Math.round(whole.duration)+' seconds long, so the notes are from its first '+TRANSCRIBE_SECONDS+' seconds.';
- if(mode==='melody' && $('transcriber').value==='basic-pitch'){
+ if(mode==='melody' && onDevice){
    status('Loading Basic Pitch on this device…');
    const {transcribeWithBasicPitch,slowBackendNote}=await import('./transcription.js');
    const notes=await transcribeWithBasicPitch(buffer,(p,b)=>status('Transcribing on device: '+p+'%'+slowBackendNote(b,{server:true})));
    obj={notes,drums:[]};
- }else if(mode==='rhythm' && $('transcriber').value==='basic-pitch'){
+ }else if(mode==='rhythm' && onDevice){
    // SEC.6: with the device chosen a beat take never leaves it; beatbox.js reads it as the server would.
    status('Reading the beat on this device…');
    obj={notes:[],drums:beatsOnDevice(await decoded(take()))};
