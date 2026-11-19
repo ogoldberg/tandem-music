@@ -28,9 +28,24 @@ def hits_browser(playwright, hits_wav):
     browser.close()
 
 
-@pytest.fixture
-def hits_studio(hits_browser, server_url):
+@pytest.fixture(scope="module")
+def warm_hits_browser(hits_browser, server_url):
+    """FIX.7: the fake microphone plays the hits from when the stream opens, not in time with the count-in, so where
+    a take's hits fall against its zero depends on how long recording took to start. In a fresh browser the first
+    take starts at a different point in the hits than the next, so two takes' hits sit on different grids and a comp joining them reads 88 bpm
+    about half the time; a singer's takes after one count-in share its grid. One take recorded first warms the
+    browser, so every test's takes start alike."""
     page, problems = open_page(hits_browser, server_url + "/")
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    record_take(page, count_in=True)
+    page.context.close()
+    assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+    return hits_browser
+
+
+@pytest.fixture
+def hits_studio(warm_hits_browser, server_url):
+    page, problems = open_page(warm_hits_browser, server_url + "/")
     page.wait_for_function("document.getElementById('notecount').textContent !== ''")
     page.fill("#bpm", "90")
     page.press("#bpm", "Tab")
@@ -127,17 +142,17 @@ def test_a_comp_with_a_take_recorded_with_nothing_heard_is_read_freely(hits_stud
     transcribe(page)
     # The comp is read freely: no tempo it was sung to. Which tempo the hits then give depends on where take 2's
     # hits fall after the 2 s seam, which moves with how long the count-in and the start took, so the expected
-    # answer is worked out from the song's own hits, read freely and read as timed (always different here: the
-    # timed reading stays within 6% of 90 bpm, the free one finds the hits' 60).
-    free, timed = page.evaluate(READINGS, song_times(page))
-    assert free != timed
+    # answer is worked out from the song's own hits read freely. That reading can be 90 too (FIX.7: hits at 0.19,
+    # 1.19, then 2.5, 3.51, ... after the seam read 90 both ways), so the test tells a free reading from a timed one
+    # by what a timed one adds: the take's tempo in data-sung and "(the take was sung to it)" in the status.
+    free = page.evaluate(FREE_READING, song_times(page))
     status = detect(page)
     expect(page.locator("#detecttempo")).to_have_attribute("data-sung", "")
     expect(status).to_have_text("Detected tempo: %d bpm" % free if free != 90 else "Tempo is already 90 bpm")
 
 
-READINGS = """async times => { const {estimateTempo} = await import('./groove.js'), {tempoRange} = await import('./genre.js');
-  return [false, true].map(timed => estimateTempo(times, {prefer: tempoRange(), current: 90, timed})); }"""
+FREE_READING = """async times => { const {estimateTempo} = await import('./groove.js'), {tempoRange} = await import('./genre.js');
+  return estimateTempo(times, {prefer: tempoRange(), current: 90, timed: false}); }"""
 
 
 def song_times(page):
