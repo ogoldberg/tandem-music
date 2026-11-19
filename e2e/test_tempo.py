@@ -1,6 +1,8 @@
 """FIX.4: Find the speed keeps the tempo a take was sung to. Chromium's fake microphone plays a hit every second: at the
 project's 90 bpm that is a dotted quarter, which fits 60 bpm better than 90 (the 3:2 trap). Recorded after the count-in,
 Detect tempo keeps 90; the same hits imported, or recorded with nothing heard, read as 60."""
+import re
+
 import pytest
 from playwright.sync_api import expect
 
@@ -102,6 +104,9 @@ def comp_second_take_in(page):
     page.select_option("#comptake", ids[1])
     page.click("#compin")
     expect(page.locator("#takesinfo")).to_contain_text("The song uses a comp", timeout=15000)
+    # The comp's recording is rendered and loaded after the list says so; its last step is this status, which would
+    # otherwise land on top of the next action's.
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Using Take 1 .*, Take 2 "), timeout=15000)
 
 
 def test_a_comp_of_takes_after_the_count_in_keeps_the_tempo(hits_studio):
