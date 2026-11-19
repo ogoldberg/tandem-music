@@ -543,3 +543,85 @@ def test_studio_update_waits_for_a_draft_that_never_reached_the_device(browser, 
             page.click("#swupdate")
         page.wait_for_function(STARTED)
         assert page.evaluate("window.fix6Version") == "deploy 2"
+
+
+# FIX.8: the activation message the Update button sends waits until fix8Activate().
+HOLD_ACTIVATION = """() => { const post = ServiceWorker.prototype.postMessage;
+  ServiceWorker.prototype.postMessage = function (msg) { if (msg !== 'activate') return post.call(this, msg);
+    window.fix8ActivationHeld = true; window.fix8Activate = () => post.call(this, msg); }; }"""
+
+
+def test_an_edit_not_kept_while_the_update_activates_stops_the_reload(browser, app_copy, copy_server, tmp_path):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate(HOLD_ACTIVATION)
+        page.evaluate("window.fix6Page = 'before'")
+        page.click("#swupdate")
+        page.wait_for_function("window.fix8ActivationHeld === true")
+        page.evaluate(FAIL_DRAFT)
+        change_tempo(page, 137)
+        expect(page.locator("#audiorescue")).to_be_visible()
+        page.evaluate("window.fix8Activate()")
+        expect(page.locator("#status")).to_have_text(DRAFT_UNKEPT)
+        page.wait_for_timeout(1000)
+        assert page.evaluate("window.fix6Page") == "before"
+        expect(page.locator("#bpm")).to_have_value("137")
+        update_is_refused(page, DRAFT_UNKEPT)
+        with page.expect_download() as got:
+            page.click("#audiorescue")
+        saved = tmp_path / got.value.suggested_filename
+        got.value.save_as(saved)
+        with zipfile.ZipFile(saved) as z:
+            assert json.loads(z.read("project.json"))["bpm"] == 137
+        with page.expect_navigation():
+            page.click("#swupdate")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
+
+
+# FIX.8: the outcome of every IndexedDB transaction started while fix8HoldWrites is set waits until fix8ReleaseWrites().
+HOLD_WRITES = """() => { let release; const held = new Promise(go => { release = go; }); window.fix8ReleaseWrites = release;
+  for (const name of ['oncomplete', 'onerror', 'onabort']) {
+    const d = Object.getOwnPropertyDescriptor(IDBTransaction.prototype, name);
+    Object.defineProperty(IDBTransaction.prototype, name, { configurable: true, get: d.get, set(fn) {
+      d.set.call(this, fn && window.fix8HoldWrites ? e => { held.then(() => fn.call(this, e)); } : fn); } });
+  } }"""
+
+
+@pytest.mark.parametrize("older", ["kept", "failed"])
+def test_an_older_draft_write_settling_late_does_not_overrule_a_newer_one(browser, app_copy, copy_server, older):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate(HOLD_WRITES)
+        if older == "failed":
+            page.evaluate(FAIL_DRAFT)
+        page.evaluate("window.fix8HoldWrites = true")
+        change_tempo(page, 120)
+        page.evaluate("window.fix8HoldWrites = false")
+        if older == "kept":
+            page.evaluate(THROW_ON_WRITE)
+        else:
+            page.evaluate("window.fix8FailDraft = false")
+        change_tempo(page, 130)
+        # The newer write has settled: thrown (warning up) or kept (no warning).
+        if older == "kept":
+            expect(page.locator("#audiorescue")).to_be_visible()
+        else:
+            page.wait_for_function("""async () => { const db = await new Promise(ok => {
+              const r = indexedDB.open('tandem'); r.onsuccess = () => ok(r.result); });
+              const d = await new Promise(ok => { const r = db.transaction('kv').objectStore('kv').get('draft');
+                r.onsuccess = () => ok(r.result); }); db.close(); return d?.bpm === 130; }""")
+            page.wait_for_timeout(300)
+        page.evaluate("window.fix8ReleaseWrites()")
+        page.wait_for_timeout(500)
+        if older == "kept":
+            expect(page.locator("#audiorescue")).to_be_visible()
+            update_is_refused(page, DRAFT_UNKEPT)
+        else:
+            expect(page.locator("#audiorescue")).to_be_hidden()
+            with page.expect_navigation():
+                page.click("#swupdate")
+            page.wait_for_function(STARTED)
+            assert page.evaluate("window.fix6Version") == "deploy 2"
