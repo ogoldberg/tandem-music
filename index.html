@@ -228,8 +228,9 @@ let kv=null,versions=null,ideas=null,practiceStore=null,storageProblem='',draftF
 let updating=false,audioUnkept=false;const saving=new Set(),held=p=>{saving.add(p);p.then(()=>saving.delete(p),()=>saving.delete(p));return p};
 // FIX.8: a draft write that fails holds Update back as an unkept recording does, until a later write is kept or the
 // project is downloaded (#audiorescue). Only the newest write's outcome counts, so an older write cannot clear a newer failure.
-let draftSeq=0,draftSettled=0;
-function saveDraft(){if(!kv)return;const n=++draftSeq;held(kv.set(DRAFT_KEY,JSON.parse(JSON.stringify(state)))).then(()=>{if(n<draftSettled)return;draftSettled=n;draftUnkept(false)},e=>{if(n<draftSettled)return;draftSettled=n;if(!draftFailed)status('Could not save the draft on this device: '+(e?.message||'the write was cancelled'));draftUnkept(true)})}
+// With no storage at all (storageProblem), the project is unkept once it differs from what start-up loaded (keptDraft).
+let draftSeq=0,draftSettled=0,keptDraft=null;
+function saveDraft(){if(!kv){if(storageProblem&&keptDraft!==null)draftUnkept(JSON.stringify(state)!==keptDraft);return}const n=++draftSeq;let write;try{write=kv.set(DRAFT_KEY,JSON.parse(JSON.stringify(state)))}catch(e){write=Promise.reject(e)}held(write).then(()=>{if(n<draftSettled)return;draftSettled=n;draftUnkept(false)},e=>{if(n<draftSettled)return;draftSettled=n;if(!draftFailed)status('Could not save the draft on this device: '+(e?.message||'the write was cancelled'));draftUnkept(true)})}
 // STORE.2a: recordings are kept in the Origin Private File System by recordings.js; the draft's links to them live under
 // DRAFT_AUDIO_KEY (not in state: /api/chat's project schema has no room for them) and each version keeps its own links.
 let recordings=null,recordingProblem='';
@@ -1088,7 +1089,7 @@ $('chatform').onsubmit=async e=>{e.preventDefault();const text=$('prompt').value
 document.body.inert=true;
 const useDraft=d=>{if(d&&typeof d==='object'&&Array.isArray(d.notes)&&Array.isArray(d.drums)){let band=null,timbre=null,voice2_sung=null;try{checkBand(d.band);band=bandPart(d).band}catch{}try{checkTimbre(d.timbre);timbre=timbrePart(d).timbre}catch{}try{checkSung(d.voice2_sung);voice2_sung=sungPart(d).voice2_sung}catch{}let mix={},layers=[],sections=[],lyrics='',genre=null;try{mix=cleanMix(d.mix)}catch{}try{genre=cleanGenre(d.genre)}catch{}try{lyrics=cleanLyrics(d.lyrics)}catch{}try{layers=cleanLayers(d.layers)}catch{}try{sections=cleanSections(d.sections)}catch{}Object.assign(state,d,harmonyPart(d),{band,timbre,voice2_sung,mix,layers,sections,lyrics,genre})}};
 try{const db=await openKV(window.indexedDB);const moved=await migrateLegacy(db,localStorage);versions=createVersionStore(db);ideas=createIdeaStore(db);practiceStore=createPracticeStore(db);refreshPractice();useDraft(await db.get(DRAFT_KEY));timedTempos={...cleanTimed(await db.get(TIMED_KEY)),...timedTempos};kv=db;$('songname').value=String(await db.get(SONG_KEY)??'');if(moved.problems.length)status(moved.problems.join(' '))}
-catch(e){versions=null;storageProblem='Saving on this device is unavailable: '+e.message;status(storageProblem);try{useDraft(JSON.parse(localStorage.getItem(LEGACY_DRAFT_KEY)||'null'))}catch{}}
+catch(e){versions=null;storageProblem='Saving on this device is unavailable: '+e.message;status(storageProblem);try{useDraft(JSON.parse(localStorage.getItem(LEGACY_DRAFT_KEY)||'null'))}catch{}keptDraft=JSON.stringify(state)}
 // The draft's recordings are restored while input is still ignored, so a recording made meanwhile is not replaced.
 if(kv){try{recordings=await openRecordings(navigator.storage,{locks:navigator.locks||null})}catch(e){recordingProblem=e.message;status(recordingProblem)}}
 if(recordings){try{const missing=await restoreAudio(cleanLinks(await kv.get(DRAFT_AUDIO_KEY)));if(missing)status(missing.length?'Restored the draft. '+missingText(missing):'Restored the draft and its recording.')}catch(e){status('Could not restore the recording: '+e.message)}collectRecordings()}

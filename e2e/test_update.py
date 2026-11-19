@@ -490,6 +490,7 @@ def test_a_rescue_download_leaves_out_a_take_recorded_while_it_is_prepared_and_s
         got.value.save_as(saved)
         with zipfile.ZipFile(saved) as z:
             assert len(json.loads(z.read("project.json")).get("takes", {}).get("list", [])) < 2
+            first = set(z.namelist())
         expect(page.locator("#status")).to_contain_text("changed while the file was prepared")
         expect(page.locator("#audiorescue")).to_be_visible()
         update_is_refused(page,
@@ -499,7 +500,44 @@ def test_a_rescue_download_leaves_out_a_take_recorded_while_it_is_prepared_and_s
         saved = tmp_path / ("again-" + got.value.suggested_filename)
         got.value.save_as(saved)
         with zipfile.ZipFile(saved) as z:
-            assert len(json.loads(z.read("project.json"))["takes"]["list"]) == 2
+            takes = json.loads(z.read("project.json"))["takes"]["list"]
+            assert len(takes) == 2
+            # Every take's audio is in the second file; the take imported while the first was prepared is not in the first.
+            assert {f"take-{t['id']}.wav" for t in takes} <= set(z.namelist())
+            assert f"take-{takes[1]['id']}.wav" not in first
+        expect(page.locator("#audiorescue")).to_be_hidden()
+        with page.expect_navigation():
+            page.click("#swupdate")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
+
+
+NO_STORAGE = "Object.defineProperty(window, 'indexedDB', {value: undefined, configurable: true})"
+THROW_ON_WRITE = """() => { const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (value, key) {
+    if (key === 'draft') throw new DOMException('The database connection is closing.', 'InvalidStateError');
+    return put.call(this, value, key); }; }"""
+
+
+@pytest.mark.parametrize("failure", ["no storage", "write throws"])
+def test_studio_update_waits_for_a_draft_that_never_reached_the_device(browser, app_copy, copy_server, tmp_path,
+                                                                       failure):
+    with studio_on(browser, copy_server, NO_STORAGE if failure == "no storage" else None) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        if failure == "write throws":
+            page.evaluate(THROW_ON_WRITE)
+        # Nothing changed yet: nothing to download.
+        expect(page.locator("#audiorescue")).to_be_hidden()
+        change_tempo(page, 137)
+        expect(page.locator("#audiorescue")).to_be_visible()
+        update_is_refused(page, DRAFT_UNKEPT)
+        with page.expect_download() as got:
+            page.click("#audiorescue")
+        saved = tmp_path / got.value.suggested_filename
+        got.value.save_as(saved)
+        with zipfile.ZipFile(saved) as z:
+            assert json.loads(z.read("project.json"))["bpm"] == 137
         expect(page.locator("#audiorescue")).to_be_hidden()
         with page.expect_navigation():
             page.click("#swupdate")
