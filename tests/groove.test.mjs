@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { estimateTempo, quantizeProject, swungOffbeat, GRID_DIVISIONS, TEMPO_RANGE } from "../groove.js";
 
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
@@ -368,4 +369,25 @@ test("FIX.4: a timed take searches only near the tempo it was sung to", () => {
   assert.equal(estimateTempo(syncopatedTune(104, 2, 0.01), { current: 100, timed: true }), 104);
   assert.throws(() => estimateTempo([0, 1, 2, 3], { timed: true }), /sung to/);
   assert.throws(() => estimateTempo([0, 1, 2, 3], { current: 300 }), /45\.\.220/);
+});
+
+test('FIX.5: a speed can be found only from four distinct onsets', () => {
+  assert.equal(estimateTempo([]), null);
+  assert.equal(estimateTempo([0.5, 1.1, 1.7]), null);
+  assert.equal(estimateTempo([0.5, 0.505, 1.1, 1.7]), null);
+  assert.notEqual(estimateTempo([0.5, 1.1, 1.7, 2.3]), null);
+});
+
+// The exports of the groove.js the tandem-v60 service worker caches. A page fetched during an update while the
+// worker still serves v60 (FIX.6) gets that groove.js, and a module script fails to link on a missing export,
+// so the studio would not start: the studio imports only these until FIX.6 makes such a pair impossible.
+const V60_GROOVE_EXPORTS = ["barOrigin", "estimateTempo", "GRID_DIVISIONS", "quantizeProject", "swungOffbeat",
+  "TEMPO_RANGE", "TEMPO_TIE", "TIMED_WINDOW", "ZERO_GRID_SHARE"];
+
+test("FIX.5: the studio's groove imports link against the groove.js the v60 worker caches", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const line = html.split("\n").find(l => /^import .* from '\.\/groove\.js'/.test(l));
+  const names = line.match(/\{([^}]*)\}/)[1].split(",").map(n => n.trim().split(/\s+as\s+/)[0]);
+  assert.ok(names.length > 0);
+  for (const name of names) assert.ok(V60_GROOVE_EXPORTS.includes(name), `${name} is not in the v60 groove.js`);
 });
