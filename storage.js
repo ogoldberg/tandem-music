@@ -18,7 +18,8 @@ const done = req => new Promise((resolve, reject) => {
 const finished = tx => new Promise((resolve, reject) => {
   tx.oncomplete = () => resolve();
   tx.onabort = () => reject(tx.error ?? Error("The storage transaction was aborted."));
-  tx.onerror = () => reject(tx.error);
+  // A request's error bubbles here before the abort; after an explicit abort() tx.error is null, the request's is not.
+  tx.onerror = e => reject(tx.error ?? e.target?.error ?? Error("The storage transaction was aborted."));
 });
 
 const isQuota = err => err?.name === "QuotaExceededError" || /quota/i.test(err?.message ?? "");

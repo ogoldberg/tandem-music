@@ -155,3 +155,29 @@ test("openKV closes a connection that opens after it gave up on a blocked open (
   factory.release();
   assert.equal(factory.db.closed, true);
 });
+
+// FIX.8: a transaction aborted by abort() has no error of its own (tx.error is null); the failed request's error
+// bubbles to the transaction first. A write that fails this way rejects with that error, never with null.
+function abortingFactory() {
+  const requestError = Object.assign(new Error("The transaction was aborted, so the request cannot be fulfilled."), { name: "AbortError" });
+  const db = {
+    objectStoreNames: { contains: () => true },
+    transaction() {
+      const tx = { error: null };
+      tx.objectStore = () => ({
+        put() {
+          const req = { error: requestError };
+          setTimeout(() => { tx.onerror?.({ target: req }); tx.onabort?.({ target: tx }); }, 0);
+          return req;
+        },
+      });
+      return tx;
+    },
+  };
+  return { open() { const req = { result: db }; setTimeout(() => req.onsuccess?.({ target: req }), 0); return req; } };
+}
+
+test("a write whose transaction is aborted rejects with the request's error, not null (FIX.8)", async () => {
+  const kv = await openKV(abortingFactory());
+  await assert.rejects(kv.set(DRAFT_KEY, draft), e => e?.name === "AbortError" && /aborted/.test(e.message));
+});
