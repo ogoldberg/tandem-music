@@ -222,7 +222,9 @@ function update(){normalize();$('bpm').value=state.bpm;renderGenre();$('instrume
 // writes land in order and anything that reads the database afterwards sees the latest one. kv stays null until the
 // stored draft has been read at start-up, so the default project never overwrites it.
 let kv=null,versions=null,ideas=null,practiceStore=null,storageProblem='',draftFailed=false;
-function saveDraft(){if(!kv)return;kv.set(DRAFT_KEY,JSON.parse(JSON.stringify(state))).then(()=>{draftFailed=false},e=>{if(!draftFailed)status('Could not save the draft on this device: '+e.message);draftFailed=true})}
+// FIX.6: writes to the device still under way, which Update waits for before it reloads.
+const saving=new Set(),held=p=>{saving.add(p);p.then(()=>saving.delete(p),()=>saving.delete(p));return p};
+function saveDraft(){if(!kv)return;held(kv.set(DRAFT_KEY,JSON.parse(JSON.stringify(state)))).then(()=>{draftFailed=false},e=>{if(!draftFailed)status('Could not save the draft on this device: '+e.message);draftFailed=true})}
 // STORE.2a: recordings are kept in the Origin Private File System by recordings.js; the draft's links to them live under
 // DRAFT_AUDIO_KEY (not in state: /api/chat's project schema has no room for them) and each version keeps its own links.
 let recordings=null,recordingProblem='';
@@ -247,7 +249,8 @@ const partsNow=()=>[...GEN_KEYS.map(partBlob),...state.layers.map(l=>layerBlob(l
 const take=()=>vocal??audio;
 async function putAudio(blobs){const links={};for(const s of [...AUDIO_SLOTS,...Object.keys(blobs).filter(isExtraKey)])if(blobs[s])links[s]=await recordings.put(blobs[s]);return links}
 // Store the loaded recordings and link them from the draft. A save overtaken by newer audio writes nothing; the newer save links that.
-async function saveDraftAudio(){if(!kv)return;if(!recordings){if(recordingProblem)status($('status').textContent+' '+recordingProblem);return}const blobs=currentAudio();try{await recordings.hold(async()=>{const links=await putAudio(blobs),now=currentAudio();if(!sameAudio(now,blobs))return;await kv.set(DRAFT_AUDIO_KEY,links)})}catch(e){status('Could not keep the recording on this device: '+e.message)}}
+function saveDraftAudio(){return held(writeDraftAudio())}
+async function writeDraftAudio(){if(!kv)return;if(!recordings){if(recordingProblem)status($('status').textContent+' '+recordingProblem);return}const blobs=currentAudio();try{await recordings.hold(async()=>{const links=await putAudio(blobs),now=currentAudio();if(!sameAudio(now,blobs))return;await kv.set(DRAFT_AUDIO_KEY,links)})}catch(e){status('Could not keep the recording on this device: '+e.message)}}
 // Load stored recordings by their links. Returns the slots whose files are no longer on this device.
 async function restoreAudio(links,p=state){const got={},missing=[];for(const s of [...AUDIO_SLOTS,...Object.keys(links).filter(isExtraKey)])if(links[s]){got[s]=await recordings.get(links[s]);if(!got[s])missing.push(isLayerKey(s)?(p.layers||[]).find(l=>l.id===layerIdOf(s))?.name??'layer':isTakeKey(s)?p.takes?.list.find(t=>t.id===takeIdOf(s))?.name??'take':s)}for(const k of GEN_KEYS)if(got[k]&&p[k])generated.set(p[k].id,got[k]);for(const l of p.layers||[])if(got[layerKey(l.id)])generated.set(l.id,got[layerKey(l.id)]);for(const t of p.takes?.list||[])if(got[takeKey(t.id)])generated.set(t.id,got[takeKey(t.id)]);if(!got.original)return links.original||GEN_KEYS.some(k=>links[k])||Object.keys(links).some(isExtraKey)?missing:null;await useAudio(got,'kept on this device',p);return missing}
 // Load an original recording with the polished and tuned ones made from it.
@@ -356,7 +359,7 @@ $('bpm').onchange=()=>edit('Change tempo',()=>{state.bpm=Number($('bpm').value)}
 $('swing').oninput=()=>{$('swingvalue').textContent=$('swing').value+'%'};
 // FIX.4: a take sung to a count-in, a click or the song keeps the tempo it was sung to, unless a tempo near it fits clearly better.
 const tempoTimes=()=>[...state.notes.map(n=>n.t),...state.drums.map(h=>h.t)];
-$('detecttempo').onclick=async()=>{const sung=await tempoSungTo(audio),timed=sung===state.bpm,bpm=estimateTempo(tempoTimes(),{prefer:tempoRange(state.genre),current:state.bpm,timed});if(bpm===null){status('Detect tempo needs at least four notes or drum hits.');return}if(bpm===state.bpm){status('Tempo is already '+bpm+' bpm'+(timed?' (the take was sung to it)':''));return}edit('Detect tempo',()=>{state.bpm=bpm});status('Detected tempo: '+bpm+' bpm')};
+$('detecttempo').onclick=async()=>{const sung=await tempoSungTo(audio),timed=sung===state.bpm,bpm=estimateTempo(tempoTimes(),{prefer:tempoRange(state.genre),current:state.bpm,timed});$('detecttempo').dataset.sung=sung??'';if(bpm===null){status('Detect tempo needs at least four notes or drum hits.');return}if(bpm===state.bpm){status('Tempo is already '+bpm+' bpm'+(timed?' (the take was sung to it)':''));return}edit('Detect tempo',()=>{state.bpm=bpm});status('Detected tempo: '+bpm+' bpm')};
 $('quantize').onclick=()=>{if(!state.notes.length&&!state.drums.length&&!state.harmony.length&&!state.voice2.length){status('Nothing to quantize yet.');return}try{const division=Number($('grid').value),swing=Number($('swing').value)/100,strength=Number($('qstrength').value),grid=$('grid').selectedOptions[0].textContent;const q=quantizeProject(state,{division,swing,strength});const label='Quantize to '+grid+(division>1&&swing?' with '+Math.round(swing*100)+'% swing':'');if(edit(label,()=>{state.notes=q.notes;state.drums=q.drums;state.harmony=q.harmony;state.voice2=q.voice2}))status(label+' at '+state.bpm+' bpm');else status('Already on the '+grid+' grid')}catch(e){status(e.message)}};
 $('instrument').onchange=()=>edit('Change instrument',()=>{state.instrument=$('instrument').value});
 $('addnote').onclick=()=>edit('Add note',()=>{state.notes.push({m:60,t:Math.round((Math.max(0,...state.notes.map(n=>n.t+n.d))+.1)*100)/100,d:.4})});
@@ -757,7 +760,7 @@ async function finishTake(){const t=takeRun;if(!t)return;takeRun=null;clearInter
  if(!t.layer)keepTakeRange(samples,rate)}
 // TRACK.1: a take recorded as a layer is added to the song's layers as one edit, keeping the take and everything made from it.
 function addLayerTake(samples,rate){const id=newLayerId(),blob=wavBlob(samples,rate);let name='';generated.set(id,blob);edit('Record a layer',()=>{state.layers=addLayer(state.layers,{id,seconds:samples.length/rate});name=state.layers.at(-1).name});status('Recorded '+name+' as a track of its own. Choose what to transcribe it into, or mute it, in its lane.')}
-$('finish').onclick=()=>{finishTake().catch(e=>status('Recording failed: '+e.message))};
+$('finish').onclick=()=>{held(finishTake()).catch(e=>status('Recording failed: '+e.message))};
 // TAKE.1: every take is kept. A recording made (or imported) once there is a take is added to the project's takes as one edit
 // and becomes the take the song uses; Use picks another, Comp in puts a section of one in place of what the comp holds there.
 // The take the song uses (`audio`, the "original" recording) is the comp of the takes: the take itself when it is the whole of
@@ -1342,6 +1345,6 @@ else if(!INSTRUMENTS.includes(state.harmony_instrument))status('The saved draft 
 else if(!INSTRUMENTS.includes(state.voice2_instrument))status('The saved draft uses an unsupported harmony voice instrument ('+state.voice2_instrument+'). Choose one before playing.');
 update();renderVocalNotes();renderVersions();if(kv)showPersistence();
 // FIX.6: a new version waits, installed whole by the service worker, until Update activates it and reloads.
-if('serviceWorker'in navigator){const sw=navigator.serviceWorker,offer=reg=>{$('swupdate').hidden=!(reg.waiting&&sw.controller)};let taking=false;sw.addEventListener('controllerchange',()=>{if(taking)location.reload()});sw.register('./sw.js').then(reg=>{offer(reg);reg.addEventListener('updatefound',()=>reg.installing?.addEventListener('statechange',()=>offer(reg)));$('swupdate').onclick=()=>{if(!reg.waiting)return;taking=true;reg.waiting.postMessage('activate')}}).catch(()=>{})}
+if('serviceWorker'in navigator){const sw=navigator.serviceWorker;let taking=false,stale=false;const offer=reg=>{$('swupdate').hidden=!(stale||reg.waiting&&sw.controller)};sw.addEventListener('controllerchange',()=>{if(taking)location.reload();else{stale=true;$('swupdate').hidden=false}});sw.register('./sw.js').then(reg=>{offer(reg);reg.addEventListener('updatefound',()=>reg.installing?.addEventListener('statechange',()=>offer(reg)));$('swupdate').onclick=async()=>{if(taking)return;if(takeRun||takeStarting||calibrating||practiceRun||practiceStarting){status('Stop the recording first: Update reloads Tandem.');return}taking=true;$('swupdate').disabled=true;await Promise.allSettled([...saving]);if(reg.waiting)reg.waiting.postMessage('activate');else location.reload()}}).catch(()=>{})}
 
 </script></body></html>

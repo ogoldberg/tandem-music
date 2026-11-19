@@ -51,6 +51,8 @@ let kv=null,recordings=null,ideas=null,take=null,starting=false,ticker=null,unsa
 // first kept (browsers grant it more readily once the site holds something, and some ask the user).
 const showPersistence=(request=false)=>persistence(navigator.storage,{request}).then(s=>{$('storageinfo').textContent=PERSISTENCE_TEXT[s]},()=>{});
 const status=s=>{$('status').textContent=s};
+// FIX.6: an idea still being kept, which Update waits for before it reloads.
+const saving=new Set(),held=p=>{saving.add(p);p.then(()=>saving.delete(p),()=>saving.delete(p));return p};
 const when=ms=>new Date(ms).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
 
 function setRecording(on){
@@ -157,9 +159,9 @@ async function keep(blob,duration,beat){
   }
   await render();
 }
-$('record').onclick=()=>{if(take)stop().catch(e=>status('Recording failed: '+e.message));else start()};
+$('record').onclick=()=>{if(take)held(stop()).catch(e=>status('Recording failed: '+e.message));else start()};
 // A web app on a phone loses the microphone when it leaves the screen: end the take there and keep it.
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&take){stop().then(()=>{if(!unsaved)status($('status').textContent+' Recording stopped when Tandem left the screen.')},e=>status('Recording failed: '+e.message))}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&take){held(stop()).then(()=>{if(!unsaved)status($('status').textContent+' Recording stopped when Tandem left the screen.')},e=>status('Recording failed: '+e.message))}});
 // REC.3: measure the round trip for this microphone and output: six clicks played and recorded back (latency.js).
 let calibrating=false;
 $('calibrate').onclick=async()=>{
@@ -268,5 +270,5 @@ try{
 }catch(e){status(storageProblem(e));if(ideas)await render().catch(()=>{})}
 showPersistence();
 // FIX.6: a new version waits, installed whole by the service worker, until Update activates it and reloads.
-if('serviceWorker'in navigator){const sw=navigator.serviceWorker,offer=reg=>{$('swupdate').hidden=!(reg.waiting&&sw.controller)};let taking=false;sw.addEventListener('controllerchange',()=>{if(taking)location.reload()});sw.register('./sw.js').then(reg=>{offer(reg);reg.addEventListener('updatefound',()=>reg.installing?.addEventListener('statechange',()=>offer(reg)));$('swupdate').onclick=()=>{if(!reg.waiting)return;taking=true;reg.waiting.postMessage('activate')}}).catch(()=>{})}
+if('serviceWorker'in navigator){const sw=navigator.serviceWorker;let taking=false,stale=false;const offer=reg=>{$('swupdate').hidden=!(stale||reg.waiting&&sw.controller)};sw.addEventListener('controllerchange',()=>{if(taking)location.reload();else{stale=true;$('swupdate').hidden=false}});sw.register('./sw.js').then(reg=>{offer(reg);reg.addEventListener('updatefound',()=>reg.installing?.addEventListener('statechange',()=>offer(reg)));$('swupdate').onclick=async()=>{if(taking)return;if(take||starting){status('Stop the recording first: Update reloads Tandem.');return}taking=true;$('swupdate').disabled=true;await Promise.allSettled([...saving]);if(reg.waiting)reg.waiting.postMessage('activate');else location.reload()}}).catch(()=>{})}
 </script></body></html>

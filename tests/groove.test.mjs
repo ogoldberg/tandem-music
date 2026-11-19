@@ -386,11 +386,14 @@ const V61_GROOVE_EXPORTS = ["barOrigin", "estimateTempo", "GRID_DIVISIONS", "qua
 
 test("FIX.5: every groove import of the studio links against the groove.js the v60 and v61 workers cache", () => {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-  const lines = html.split("\n").flatMap(l => l.split(";")).filter(l => /^\s*import\b.*from\s*['"]\.\/groove\.js['"]/.test(l));
-  assert.ok(lines.length > 0);
-  for (const line of lines) {
-    assert.match(line, /\{[^}]*\}/, `not a named import: ${line}`);
-    const names = line.match(/\{([^}]*)\}/)[1].split(",").map(n => n.trim().split(/\s+as\s+/)[0]).filter(Boolean);
+  // Whole declarations, over any number of lines; every mention of groove.js must be one of them, so a default,
+  // namespace or dynamic import (whose names this cannot check) fails here too.
+  const declarations = [...html.matchAll(/\bimport\s*\{([^}]*)\}\s*from\s*['"]\.\/groove\.js['"]/g)];
+  const mentions = html.match(/['"]\.\/groove\.js['"]/g) ?? [];
+  assert.ok(declarations.length > 0);
+  assert.equal(declarations.length, mentions.length, "groove.js is loaded other than by a named import");
+  for (const [, list] of declarations) {
+    const names = list.split(",").map(n => n.trim().split(/\s+as\s+/)[0]).filter(Boolean);
     for (const name of names) assert.ok(V61_GROOVE_EXPORTS.includes(name), `${name} is not in the v61 groove.js`);
   }
 });

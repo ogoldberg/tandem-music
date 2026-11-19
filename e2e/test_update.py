@@ -10,7 +10,7 @@ import pytest
 from playwright.sync_api import expect
 
 from conftest import ALL_CONTROLS, ROOT, Server
-from test_capture import assert_server_down, wait_for_service_worker
+from test_capture import assert_server_down, ideas, open_capture, phone_page, wait_for_service_worker
 
 GROOVE_IMPORT = "import {estimateTempo,quantizeProject,barOrigin} from './groove.js';"
 STARTED = "document.getElementById('notecount').textContent !== ''"
@@ -118,3 +118,94 @@ def test_an_update_fetched_whole_is_offered_and_opens_online_and_offline(browser
         page.reload()
         page.wait_for_function(STARTED)
         assert page.evaluate("window.fix6Version") == "deploy 2"
+
+
+def serve_stale_groove(root):
+    """The server sends the groove.js of the version before (as a cache in the way could), under the new worker."""
+    stale = root / "groove-stale.js"
+    shutil.copy2(root / "groove.js", stale)
+    backend = root / "tandem_backend.py"
+    source = backend.read_text()
+    route = 'Path(__file__).resolve().parent / "groove.js"'
+    assert source.count(route) == 1
+    backend.write_text(source.replace(route, 'Path(__file__).resolve().parent / "groove-stale.js"'))
+
+
+def test_an_update_that_meets_an_older_module_is_not_installed(browser, app_copy, tmp_path):
+    serve_stale_groove(app_copy)
+    server = Server(tmp_path / "stale.log", root=app_copy)
+    try:
+        with studio_on(browser, server) as page:
+            # The new worker names the new groove.js, but the server answers 200 with the old one.
+            deploy(app_copy)
+            assert update_settled(page) == {"installing": False, "waiting": False}
+            expect(page.locator("#swupdate")).to_be_hidden()
+            go_offline(server)
+            page.reload()
+            page.wait_for_function(STARTED)
+            assert page.evaluate("window.fix6Version") is None
+    finally:
+        server.stop()
+
+
+FIX6_MODULE = "\nexport const fix6Module = 'deploy 2';\n"
+# Posted by a worker that runs the new tuneworker.js, or the new worldtune.js it imports.
+FIX6_WORKER = "\nif (typeof WorkerGlobalScope !== 'undefined') postMessage('fix6 deploy 2');\n"
+WORKER_SAYS = """() => new Promise(done => { const w = new Worker('./tuneworker.js', {type: 'module'}), said = [];
+  w.onmessage = e => said.push(e.data); setTimeout(() => { w.terminate(); done(said.filter(m => typeof m === 'string')) }, 1500) })"""
+
+
+def test_a_tab_left_open_keeps_its_own_version_when_another_takes_the_update(browser, app_copy, copy_server):
+    with studio_on(browser, copy_server) as first:
+        second = first.context.new_page()
+        second.goto("/")
+        second.wait_for_function(STARTED)
+        deploy(app_copy)
+        with open(app_copy / "polish.js", "a") as f:
+            f.write(FIX6_MODULE)
+        for name in ("tuneworker.js", "worldtune.js"):
+            with open(app_copy / name, "a") as f:
+                f.write(FIX6_WORKER)
+        assert update_settled(first)["waiting"]
+        with first.expect_navigation():
+            first.click("#swupdate")
+        first.wait_for_function(STARTED)
+        assert first.evaluate("window.fix6Version") == "deploy 2"
+        assert first.evaluate("async () => (await import('./polish.js')).fix6Module") == "deploy 2"
+        assert first.evaluate(WORKER_SAYS) == ["fix6 deploy 2", "fix6 deploy 2"]
+        # The other tab still runs the version it opened with: what it loads now (a module Polish imports
+        # later, the tuning worker and what that worker imports) comes from that version, and it offers Update.
+        assert second.evaluate("window.fix6Version") is None
+        assert second.evaluate("async () => (await import('./polish.js')).fix6Module") is None
+        assert second.evaluate(WORKER_SAYS) == []
+        expect(second.locator("#swupdate")).to_be_visible()
+        with second.expect_navigation():
+            second.click("#swupdate")
+        second.wait_for_function(STARTED)
+        assert second.evaluate("window.fix6Version") == "deploy 2"
+
+
+def test_update_waits_for_a_take_on_the_capture_page(browser, browser_name, app_copy, copy_server):
+    with phone_page(browser, browser_name, copy_server.url) as page:
+        open_capture(page)
+        wait_for_service_worker(page)
+        page.reload()
+        page.wait_for_function("!!navigator.serviceWorker.controller")
+        expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        expect(page.locator("#swupdate")).to_be_visible()
+        page.click("#record")
+        expect(page.locator("#record")).to_have_attribute("aria-pressed", "true")
+        page.wait_for_timeout(1200)
+        page.click("#swupdate")
+        expect(page.locator("#status")).to_have_text("Stop the recording first: Update reloads Tandem.")
+        # Still recording on the same page; the take is then kept, and Update goes ahead.
+        expect(page.locator("#record")).to_have_attribute("aria-pressed", "true")
+        page.click("#record")
+        expect(page.locator("#status")).to_contain_text("Kept a 0:0")
+        with page.expect_navigation():
+            page.click("#swupdate")
+        expect(page.locator("#status")).to_have_text("Ready. Tap Record and sing.")
+        expect(page.locator("#swupdate")).to_be_hidden()
+        assert len(ideas(page)) == 1

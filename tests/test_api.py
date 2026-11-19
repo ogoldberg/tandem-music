@@ -1495,12 +1495,23 @@ def test_service_worker_cache_is_named_after_every_shell_file(client, tmp_path):
     for name in ["sw.js",*[server.SHELL_PAGES.get(a,a) for a in assets]]:
         (copy/name).parent.mkdir(parents=True,exist_ok=True)
         shutil.copy(root/name,copy/name)
-    name=lambda: re.search(r"const CACHE='([^']*)'",server.service_worker_source(copy)).group(1)
-    first=name()
-    assert first==re.search(r"const CACHE='([^']*)'",sw.text).group(1)
-    for changed in ("index.html","capture.html","groove.js","icons/icon-192.png","sw.js"):
+    import hashlib, json
+    built=lambda: server.service_worker_source(copy)
+    name=lambda: re.search(r"const CACHE='([^']*)'",built()).group(1)
+    sums=lambda: json.loads(re.search(r"const SUMS=(\{[^}]*\});",built()).group(1))
+    assert name()==re.search(r"const CACHE='([^']*)'",sw.text).group(1)
+    # The worker keeps a file only when its SHA-256 is the one named here, so each sum must be the file's own.
+    assert sums()==json.loads(re.search(r"const SUMS=(\{[^}]*\});",sw.text).group(1))
+    assert set(sums())=={"./"+a for a in assets}
+    for a in assets:
+        assert sums()["./"+a]==hashlib.sha256((copy/server.SHELL_PAGES.get(a,a)).read_bytes()).hexdigest(), a
+    # Each file on its own, compared with the build just before it changed: an edit, then removing it.
+    for a in [*assets,"sw.js"]:
+        path=copy/server.SHELL_PAGES.get(a,a)
         before=name()
-        with open(copy/changed,"ab") as f: f.write(b"\n")
-        assert name()!=before, changed
-    (copy/"polish.js").unlink()
-    assert name()!=first
+        with open(path,"ab") as f: f.write(b"\n")
+        assert name()!=before, a
+        if a!="sw.js":
+            before=name()
+            path.unlink()
+            assert name()!=before and sums()["./"+a]=="missing", a

@@ -116,6 +116,7 @@ def test_a_comp_of_takes_after_the_count_in_keeps_the_tempo(hits_studio):
     comp_second_take_in(page)
     transcribe(page)
     expect(detect(page)).to_have_text("Tempo is already 90 bpm (the take was sung to it)")
+    expect(page.locator("#detecttempo")).to_have_attribute("data-sung", "90")
 
 
 def test_a_comp_with_a_take_recorded_with_nothing_heard_is_read_freely(hits_studio):
@@ -124,10 +125,12 @@ def test_a_comp_with_a_take_recorded_with_nothing_heard_is_read_freely(hits_stud
     record_take(page, count_in=True)
     comp_second_take_in(page)
     transcribe(page)
-    # The comp is read freely, not kept as sung to 90. Which tempo the hits then give depends on where take 2's hits
-    # fall after the 2 s seam, which moves with how long the count-in and the start took, so only the free reading
-    # is checked here (the 3:2 reading itself is checked on whole takes above).
-    expect(detect(page)).to_have_text(re.compile(r"^(Detected tempo: \d+ bpm|Tempo is already 90 bpm)$"))
+    # The comp is read freely: no tempo it was sung to. Which tempo the hits then give depends on where take 2's
+    # hits fall after the 2 s seam, which moves with how long the count-in and the start took, so it is not checked
+    # here (the 3:2 reading itself is checked on whole takes above).
+    status = detect(page)
+    expect(page.locator("#detecttempo")).to_have_attribute("data-sung", "")
+    expect(status).not_to_contain_text("sung to it")
 
 
 def set_bpm(page, bpm):
