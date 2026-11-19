@@ -28,9 +28,24 @@ def hits_browser(playwright, hits_wav):
     browser.close()
 
 
-@pytest.fixture
-def hits_studio(hits_browser, server_url):
+@pytest.fixture(scope="module")
+def warm_hits_browser(hits_browser, server_url):
+    """FIX.7: the fake microphone plays the hits from when the stream opens, not in time with the count-in, so where
+    a take's hits fall against its zero depends on how long recording took to start. In a fresh browser the first
+    take starts at a different point in the hits than the next, so two takes' hits sit on different grids and a comp joining them reads 88 bpm
+    about half the time; a singer's takes after one count-in share its grid. One take recorded first warms the
+    browser, so every test's takes start alike."""
     page, problems = open_page(hits_browser, server_url + "/")
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    record_take(page, count_in=True)
+    page.context.close()
+    assert not problems, "Browser reported errors:\n" + "\n".join(problems)
+    return hits_browser
+
+
+@pytest.fixture
+def hits_studio(warm_hits_browser, server_url):
+    page, problems = open_page(warm_hits_browser, server_url + "/")
     page.wait_for_function("document.getElementById('notecount').textContent !== ''")
     page.fill("#bpm", "90")
     page.press("#bpm", "Tab")
