@@ -235,8 +235,8 @@ let updating=false,audioUnkept=false;const saving=new Set(),held=p=>{saving.add(
 // FIX.8: a draft write that fails holds Update back as an unkept recording does, until a later write is kept or the
 // project is downloaded (#audiorescue). Only the newest write's outcome counts, so an older write cannot clear a newer failure.
 // With no storage at all (storageProblem), the project is unkept once it differs from what start-up loaded (keptDraft).
-let draftSeq=0,draftSettled=0,keptDraft=null;
-function saveDraft(){if(!kv){if(storageProblem&&keptDraft!==null)draftUnkept(JSON.stringify(state)!==keptDraft);return}const n=++draftSeq;let write;try{write=kv.set(DRAFT_KEY,JSON.parse(JSON.stringify(state)))}catch(e){write=Promise.reject(e)}held(write).then(()=>{if(n<draftSettled)return;draftSettled=n;draftUnkept(false)},e=>{if(n<draftSettled)return;draftSettled=n;if(!draftFailed)status('Could not save the draft on this device: '+(e?.message||'the write was cancelled'));draftUnkept(true)})}
+let draftSeq=0,draftSettled=0,keptDraft=null,rescuedSeq=0;
+function saveDraft(){if(!kv){if(storageProblem&&keptDraft!==null)draftUnkept(JSON.stringify(state)!==keptDraft);return}const n=++draftSeq;let write;try{write=kv.set(DRAFT_KEY,JSON.parse(JSON.stringify(state)))}catch(e){write=Promise.reject(e)}held(write).then(()=>{if(n<draftSettled)return;draftSettled=n;draftUnkept(false)},e=>{if(n<draftSettled)return;draftSettled=n;if(n<=rescuedSeq)return;if(!draftFailed)status('Could not save the draft on this device: '+(e?.message||'the write was cancelled'));draftUnkept(true)})}
 // STORE.2a: recordings are kept in the Origin Private File System by recordings.js; the draft's links to them live under
 // DRAFT_AUDIO_KEY (not in state: /api/chat's project schema has no room for them) and each version keeps its own links.
 let recordings=null,recordingProblem='';
@@ -453,7 +453,7 @@ async function keepPass(){const m=practiceShown()?.last;if(!m)return;if(audio&&(
  try{if(audio)await addTakeRecording(blob);else{await loadAudio(blob);saveDraftAudio()}status('Kept the last pass as a take.')}catch(e){status(e.message)}}
 $('practice').onclick=()=>{if(practiceRun)stopPractice();else startPractice()};
 $('practicestop').onclick=()=>stopPractice();
-$('practicekeep').onclick=()=>keepPass();
+$('practicekeep').onclick=()=>held(keepPass());
 // PRACTICE.4: asks the chat about the pass marked on the roll; the chat sends its scores (see #chatform).
 $('practiceask').onclick=()=>{if(!practiceShown()?.pass)return;if(guide.view==='guided')showStep('song');else revealControl($('chat'));$('prompt').value='What patterns do you see in my last practice pass?';$('chatform').requestSubmit()};
 // PRACTICE.2: your range and your progress, kept on this device (practice.js, the IndexedDB key 'practice'), never in the
@@ -721,7 +721,8 @@ function monoWav(buf){const x=new Float32Array(buf.length);for(let ch=0;ch<buf.n
 function clearDerived(keep=false,{thisComp=false}={}){polished=null;tuned=null;vocalContour=null;selectedTarget=null;if(!keep){vocalNotes=null;originalVocalNotes=null;const sig=compSig(state.takes);edits.rewrite(thisComp?dropCompVocal(sig):s=>{const x=JSON.parse(s);x.vocal=null;return JSON.stringify(x)},snap())}renderVocalNotes();refreshHistory();$('playtuned').disabled=$('downloadtuned').disabled=true;$('tuneinfo').textContent='Ready to correct singing pitch. Best for one voice without background music'+(canSeparate?'; separate it from the music first.':'.');$('polishinfo').textContent='Vocal polish changes tone and dynamics, not singing pitch.';$('polished').disabled=$('downloadvocal').disabled=true}
 async function loadAudio(blob,{keep=false,comp=compSig(state.takes)}={}){audio=blob;if(!keep){compCache.clear();shownComp=comp}showSeparation(null,null);renderBand();renderLayers();clearDerived(keep);audioDuration=0;$('detectvocal').disabled=false;$('tune').disabled=false;for(const id of ['original','polish','analyze'])$(id).disabled=false;const buf=await decoded(blob),data=buf.getChannelData(0);audioDuration=buf.duration;renderVocalNotes();const c=$('wave'),g=c.getContext('2d');g.clearRect(0,0,c.width,c.height);g.fillStyle='#8fe3ce';const step=Math.max(1,Math.floor(data.length/c.width));for(let i=0;i<c.width;i++){let mx=0;for(let j=i*step;j<Math.min(data.length,(i+1)*step);j+=4)mx=Math.max(mx,Math.abs(data[j]));g.fillRect(i,c.height/2-mx*35,1,mx*70)}status('Recorded '+buf.duration.toFixed(1)+'s. Select Transcribe or Polish.');$('takes').dataset.comp=shownComp;$('takes').dataset.seconds=String(audioDuration)}
 $('import').onclick=()=>{guidedTake=false;$('audiofile').click()};
-$('audiofile').onchange=async e=>{if(audio&&state.takes?.list.length>=MAX_TAKES){e.target.value='';status('A song keeps at most '+MAX_TAKES+' takes: remove one under Takes before importing another.');return}try{if(audio)await addTakeRecording(e.target.files[0]);else{await loadAudio(e.target.files[0]);saveDraftAudio();voiceInSong()}guideTakeReady()}catch(err){guidedTake=false;status('Could not decode audio: '+err.message)}};
+$('audiofile').onchange=e=>held(importFile(e));
+async function importFile(e){if(audio&&state.takes?.list.length>=MAX_TAKES){e.target.value='';status('A song keeps at most '+MAX_TAKES+' takes: remove one under Takes before importing another.');return}try{if(audio)await addTakeRecording(e.target.files[0]);else{await loadAudio(e.target.files[0]);saveDraftAudio();voiceInSong()}guideTakeReady()}catch(err){guidedTake=false;status('Could not decode audio: '+err.message)}}
 // REC.2: a take is recorded in an AudioContext of its own (Stop closes Play's) through the capture worklet (take.js), so every
 // frame has a context time. With Count in on, one bar of the click at the project tempo plays first and the take's zero is the
 // end of the count-in; with Click while recording on, the click goes on at the tempo. The click plays to the speakers only and
@@ -1149,7 +1150,7 @@ async function projectFile(snap=projectSnapshot()){const recs={};
 // FIX.8: the warning is cleared only if the file still holds the project and every recording as they are when it is ready.
 $('audiorescue').onclick=async()=>{try{status('Preparing the Tandem file…');const snap=projectSnapshot(),file=await projectFile(snap);download(new Blob([file],{type:BUNDLE_TYPE}),bundleFileName(snap.name));
   const now=projectSnapshot();if(!sameAudio(now.blobs,snap.blobs)||JSON.stringify(now.project)!==JSON.stringify(snap.project)){status('Downloaded the project, but it changed while the file was prepared: download it again to keep the latest.');return}
-  const recs=Object.values(snap.blobs).some(Boolean);unkept(false);draftUnkept(false);status(recs?'Downloaded the project with its recording.':'Downloaded the project.')}catch(e){status('Could not prepare the Tandem file: '+e.message)}};
+  const recs=Object.values(snap.blobs).some(Boolean);rescuedSeq=draftSeq;unkept(false);draftUnkept(false);status(recs?'Downloaded the project with its recording.':'Downloaded the project.')}catch(e){status('Could not prepare the Tandem file: '+e.message)}};
 $('savefolder').onclick=async()=>{try{
   status('Preparing the project folder…');
   const body=await projectFile();
