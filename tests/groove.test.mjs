@@ -378,16 +378,19 @@ test('FIX.5: a speed can be found only from four distinct onsets', () => {
   assert.notEqual(estimateTempo([0.5, 1.1, 1.7, 2.3]), null);
 });
 
-// The exports of the groove.js the tandem-v60 service worker caches. A page fetched during an update while the
-// worker still serves v60 (FIX.6) gets that groove.js, and a module script fails to link on a missing export,
-// so the studio would not start: the studio imports only these until FIX.6 makes such a pair impossible.
-const V60_GROOVE_EXPORTS = ["barOrigin", "estimateTempo", "GRID_DIVISIONS", "quantizeProject", "swungOffbeat",
+// The exports of the groove.js the tandem-v60 and tandem-v61 service workers cache. Those workers fetch network
+// first, so until a client moves to the FIX.6 worker a page fetched just before the connection drops can meet
+// that groove.js, and a module script fails to link on a missing export: the studio imports only these.
+const V61_GROOVE_EXPORTS = ["barOrigin", "estimateTempo", "GRID_DIVISIONS", "quantizeProject", "swungOffbeat",
   "TEMPO_RANGE", "TEMPO_TIE", "TIMED_WINDOW", "ZERO_GRID_SHARE"];
 
-test("FIX.5: the studio's groove imports link against the groove.js the v60 worker caches", () => {
+test("FIX.5: every groove import of the studio links against the groove.js the v60 and v61 workers cache", () => {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-  const line = html.split("\n").find(l => /^import .* from '\.\/groove\.js'/.test(l));
-  const names = line.match(/\{([^}]*)\}/)[1].split(",").map(n => n.trim().split(/\s+as\s+/)[0]);
-  assert.ok(names.length > 0);
-  for (const name of names) assert.ok(V60_GROOVE_EXPORTS.includes(name), `${name} is not in the v60 groove.js`);
+  const lines = html.split("\n").flatMap(l => l.split(";")).filter(l => /^\s*import\b.*from\s*['"]\.\/groove\.js['"]/.test(l));
+  assert.ok(lines.length > 0);
+  for (const line of lines) {
+    assert.match(line, /\{[^}]*\}/, `not a named import: ${line}`);
+    const names = line.match(/\{([^}]*)\}/)[1].split(",").map(n => n.trim().split(/\s+as\s+/)[0]).filter(Boolean);
+    for (const name of names) assert.ok(V61_GROOVE_EXPORTS.includes(name), `${name} is not in the v61 groove.js`);
+  }
 });

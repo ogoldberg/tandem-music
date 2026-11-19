@@ -54,7 +54,7 @@ def _free_port():
 class Server:
     """A uvicorn process serving the app on a free port; stop() takes it down (a real network outage)."""
 
-    def __init__(self, log_path):
+    def __init__(self, log_path, root=ROOT):
         port = _free_port()
         self.log_path = log_path
         self.log = open(log_path, "wb")
@@ -62,7 +62,7 @@ class Server:
         env = {k: v for k, v in os.environ.items() if not k.startswith(("TANDEM_", "VERCEL", "UPSTASH_"))}
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "tandem_backend:app", "--host", "127.0.0.1", "--port", str(port)],
-            cwd=ROOT, env=env, stdout=self.log, stderr=subprocess.STDOUT,
+            cwd=root, env=env, stdout=self.log, stderr=subprocess.STDOUT,
         )
         self.url = f"http://127.0.0.1:{port}"
         deadline = time.monotonic() + 30

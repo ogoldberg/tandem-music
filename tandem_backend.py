@@ -75,9 +75,31 @@ def page_response(name: str, request: Request) -> Response:
 def homepage(request: Request):
     return page_response("index.html", request)
 
+# FIX.6: the service worker's cache is named after a hash of itself and every file it precaches (its ASSETS), so a
+# deploy that changes any of them is a new worker, which installs the whole set before it is used.
+SHELL_HASH_MARK = "@SHELL_HASH@"
+SHELL_PAGES = {"": "index.html", "capture": "capture.html"}
+
+
+def service_worker_source(root: Path) -> str:
+    source = (root / "sw.js").read_text()
+    assets = re.search(r"const ASSETS=\[([^\]]*)\]", source)
+    if not assets or source.count(SHELL_HASH_MARK) != 1:
+        raise RuntimeError("sw.js needs one ASSETS list and one " + SHELL_HASH_MARK)
+    digest = hashlib.sha256(source.encode())
+    for asset in re.findall(r"'([^']*)'", assets.group(1)):
+        name = asset.removeprefix("./")
+        digest.update(asset.encode() + b"\0")
+        path = root / SHELL_PAGES.get(name, name)
+        # A file that is missing changes the hash too; the worker's install then fails on it and the old one stays.
+        digest.update(path.read_bytes() if path.is_file() else b"\0missing\0")
+    return source.replace(SHELL_HASH_MARK, digest.hexdigest()[:16])
+
+
 @app.get("/sw.js", include_in_schema=False)
 def service_worker():
-    return FileResponse(Path(__file__).resolve().parent / "sw.js", media_type="text/javascript")
+    return Response(service_worker_source(Path(__file__).resolve().parent), media_type="text/javascript",
+                    headers={"Cache-Control": "no-cache"})
 
 @app.get("/history.js", include_in_schema=False)
 def history_js():

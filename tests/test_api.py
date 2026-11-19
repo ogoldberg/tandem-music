@@ -1476,3 +1476,31 @@ def test_practice_pass_is_validated(client):
          {**PASS,"notes":[PASS["notes"][0]]*(server.PRACTICE_MAX_NOTES+1)}]
     for p in bad:
         assert run(client("POST","/api/chat",json={"message":"How was it?","practice":p})).status_code==422
+
+def test_service_worker_cache_is_named_after_every_shell_file(client, tmp_path):
+    # FIX.6: any change to sw.js, a page or a module it precaches is a new worker, so a deploy is installed whole.
+    import re, shutil
+    from pathlib import Path
+    sw=run(client("GET","/sw.js"))
+    assert sw.status_code==200 and "javascript" in sw.headers["content-type"]
+    assert sw.headers["cache-control"]=="no-cache"
+    assert re.search(r"const CACHE='tandem-shell-[0-9a-f]{16}'",sw.text)
+    assert "@SHELL_HASH@" not in sw.text
+    # Every module a page imports, now or later (Transcribe's and Polish's too), is in the one set.
+    for name in ("transcription.js","polish.js","groove.js","tuning.js"):
+        assert f"'./{name}'" in sw.text
+    root=Path(server.__file__).resolve().parent
+    assets=re.findall(r"'\./([^']*)'",re.search(r"const ASSETS=\[([^\]]*)\]",(root/"sw.js").read_text()).group(1))
+    copy=tmp_path/"app"
+    for name in ["sw.js",*[server.SHELL_PAGES.get(a,a) for a in assets]]:
+        (copy/name).parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy(root/name,copy/name)
+    name=lambda: re.search(r"const CACHE='([^']*)'",server.service_worker_source(copy)).group(1)
+    first=name()
+    assert first==re.search(r"const CACHE='([^']*)'",sw.text).group(1)
+    for changed in ("index.html","capture.html","groove.js","icons/icon-192.png","sw.js"):
+        before=name()
+        with open(copy/changed,"ab") as f: f.write(b"\n")
+        assert name()!=before, changed
+    (copy/"polish.js").unlink()
+    assert name()!=first
