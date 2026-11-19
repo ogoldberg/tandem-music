@@ -782,3 +782,81 @@ def test_a_recording_made_while_the_rescue_is_prepared_keeps_the_warning(browser
         expect(page.locator("#status")).to_contain_text("changed while the file was prepared")
         expect(page.locator("#audiorescue")).to_be_visible()
         update_is_refused(page, AUDIO_UNKEPT)
+
+
+# FIX.9: the first read of a recording (decoding it) is held until fix9Release(), as on a slow device.
+HOLD_FIRST_READ = """() => { const read = Blob.prototype.arrayBuffer; window.fix9Hold = true;
+  Blob.prototype.arrayBuffer = function () { if (!window.fix9Hold) return read.call(this);
+    window.fix9Hold = false; window.fix9Held = true;
+    return new Promise(go => { window.fix9Release = go; }).then(() => read.call(this)); }; }"""
+
+
+def practise_one_pass(page):
+    page.click("#demo")
+    page.uncheck("#countin")
+    page.click("#practice")
+    page.wait_for_function("(document.getElementById('practiceinfo').dataset.passes | 0) >= 1", timeout=30000)
+    page.click("#practicestop")
+    expect(page.locator("#practicekeep")).to_be_enabled()
+
+
+@pytest.mark.parametrize("source", ["import", "keep pass"])
+def test_a_first_recording_still_being_read_when_the_update_activates_is_kept(browser, app_copy, copy_server, tmp_path,
+                                                                             source):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        if source == "keep pass":
+            practise_one_pass(page)
+        press_update_with_activation_held(page)
+        page.evaluate(HOLD_FIRST_READ)
+        if source == "import":
+            page.set_input_files("#audiofile", str(tone_wav(tmp_path / "tones.wav")))
+        else:
+            page.click("#practicekeep")
+        page.wait_for_function("window.fix9Held === true")
+        page.evaluate("window.fix8Activate()")
+        page.wait_for_timeout(1000)
+        assert page.evaluate("window.fix6Page") == "before"
+        with page.expect_navigation():
+            page.evaluate("window.fix9Release()")
+        page.wait_for_function(STARTED)
+        assert page.evaluate("window.fix6Version") == "deploy 2"
+        expect(page.locator("#original")).to_be_enabled(timeout=10000)
+
+
+@pytest.mark.parametrize("after", ["nothing", "an edit not kept"])
+def test_a_download_covering_a_draft_whose_failed_write_settles_later_lets_update_go(browser, app_copy, copy_server,
+                                                                                     tmp_path, after):
+    with studio_on(browser, copy_server) as page:
+        deploy(app_copy)
+        assert update_settled(page)["waiting"]
+        page.evaluate(HOLD_WRITES)
+        page.evaluate(FAIL_DRAFT)
+        change_tempo(page, 130)
+        expect(page.locator("#audiorescue")).to_be_visible()
+        # The next write fails too, but its outcome comes only after the download.
+        page.evaluate("window.fix8HoldWrites = true")
+        change_tempo(page, 137)
+        page.evaluate("document.activeElement.blur()")
+        page.evaluate("window.fix8HoldWrites = false")
+        with page.expect_download() as got:
+            page.click("#audiorescue")
+        saved = tmp_path / got.value.suggested_filename
+        got.value.save_as(saved)
+        with zipfile.ZipFile(saved) as z:
+            assert json.loads(z.read("project.json"))["bpm"] == 137
+        expect(page.locator("#audiorescue")).to_be_hidden()
+        page.evaluate("window.fix8ReleaseWrites()")
+        page.wait_for_timeout(500)
+        if after == "nothing":
+            # The failed write was for the draft the file holds: nothing is lost.
+            expect(page.locator("#audiorescue")).to_be_hidden()
+            with page.expect_navigation():
+                page.click("#swupdate")
+            page.wait_for_function(STARTED)
+            assert page.evaluate("window.fix6Version") == "deploy 2"
+        else:
+            change_tempo(page, 141)
+            expect(page.locator("#audiorescue")).to_be_visible()
+            update_is_refused(page, DRAFT_UNKEPT)
