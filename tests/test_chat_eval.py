@@ -6,6 +6,8 @@ import asyncio
 import importlib.util
 import json
 import pathlib
+import shutil
+import subprocess
 
 import pytest
 
@@ -30,6 +32,11 @@ GOOD = {
     "two-changes": [{"type": "set_tempo", "bpm": 72}, {"type": "set_instrument", "instrument": "strings"}],
     "follow-up": [{"type": "set_tempo", "bpm": 130}],
     "injection": [],
+    "add-chords": [{"type": "generate_harmony", "style": "chords"}],
+    "bass-line": [{"type": "generate_harmony", "style": "bass"}],
+    "jazz": [{"type": "set_genre", "genre": "jazz"}],
+    "chords-and-beat": [{"type": "generate_harmony", "style": "chords"}, {"type": "add_beat", "groove": "straight", "bars": 4}],
+    "to-g-major": [{"type": "transpose", "semitones": 7}],
 }
 
 
@@ -38,9 +45,9 @@ def case(cid):
 
 
 def scored(cid, raw):
-    cid, message, proj, history, check = case(cid)
-    req = server.ChatRequest(message=message, project=proj, history=history)
-    return ev.score(raw, req, check, req.project.model_dump())
+    c = case(cid)
+    req = ev.request(c)
+    return ev.score(raw, req, c[4], req.project.model_dump())
 
 
 def answer(actions):
@@ -56,8 +63,35 @@ def test_every_case_has_a_right_answer_that_scores_full_marks():
 
 
 def test_every_case_project_is_one_the_studio_could_send():
-    for cid, message, proj, history, check in ev.CASES:
-        server.ChatRequest(message=message, project=proj, history=history)
+    for c in ev.CASES:
+        ev.request(c)
+    assert set(ev.SONGS) <= {c[0] for c in ev.CASES}
+
+
+NODE = shutil.which("node")
+
+
+def node_json(script, arg):
+    done = subprocess.run([NODE, "--input-type=module", "-e", script, json.dumps(arg)], cwd=REPO, capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+def test_each_case_summary_is_the_one_the_studio_sends():
+    script = ("import {songSummary} from './actions.js';"
+              "process.stdout.write(JSON.stringify(JSON.parse(process.argv[1]).map(p => songSummary(p))))")
+    cases = [c for c in ev.CASES if c[0] in ev.SONGS]
+    assert len(cases) == 5
+    assert node_json(script, [c[2] for c in cases]) == [ev.SONGS[c[0]] for c in cases]
+
+
+def test_add_beats_hits_are_the_studios():
+    script = ("import {GROOVES, grooveHits} from './beats.js';"
+              "process.stdout.write(JSON.stringify(GROOVES.map(g => [g.id, grooveHits(g.id, {bpm: 100, bars: 3, from: 0})])))")
+    studio = node_json(script, None)
+    assert [g for g, _ in studio] == list(ev.GROOVE_BARS) == list(server.GROOVES)
+    for g, hits in studio:
+        assert ev.beat_hits(g, 3, 100) == hits, g
 
 
 @pytest.mark.parametrize("cid,actions", [
@@ -72,6 +106,17 @@ def test_every_case_project_is_one_the_studio_could_send():
     ("delete-last", [{"type": "replace_notes", "notes": ev.MELODY[1:]}]),
     ("two-changes", [{"type": "set_tempo", "bpm": 72}]),
     ("follow-up", [{"type": "set_tempo", "bpm": 110}]),
+    ("add-chords", [{"type": "generate_harmony", "style": "bass"}]),
+    ("add-chords", [{"type": "replace_drums", "drums": []}]),
+    ("bass-line", [{"type": "generate_harmony", "style": "chords"}]),
+    ("jazz", [{"type": "set_genre", "genre": "rock"}]),
+    ("jazz", [{"type": "set_instrument", "instrument": "organ"}]),
+    ("chords-and-beat", [{"type": "generate_harmony", "style": "chords"}]),
+    ("chords-and-beat", [{"type": "add_beat", "groove": "straight", "bars": 4}]),
+    ("chords-and-beat", [{"type": "generate_harmony", "style": "chords"}, {"type": "add_beat", "groove": "halftime", "bars": 1}]),
+    ("rock-beat", [{"type": "add_beat", "groove": "halftime", "bars": 1}]),
+    ("to-g-major", [{"type": "transpose", "semitones": 2}]),
+    ("to-g-major", [{"type": "set_genre", "genre": "pop"}]),
 ])
 def test_a_wrong_edit_is_not_what_was_asked(cid, actions):
     got = scored(cid, answer(actions))
@@ -129,6 +174,9 @@ def test_a_run_writes_one_row_a_case_and_the_report_adds_them_up(tmp_path, monke
     # The follow-up case sends its history before the request, as the studio does.
     follow = next(m for m in calls if m[-1]["content"].endswith("another 10 BPM."))
     assert [m["role"] for m in follow] == ["user", "assistant", "user"]
+    # AI.6's cases send the song summary the studio sends; the cases before it do not, so they compare with older runs.
+    summary = {m[-1]["content"].rsplit("Request: ", 1)[1] for m in calls if m[-1]["content"].startswith("Song summary")}
+    assert summary == {c[1] for c in ev.CASES if c[0] in ev.SONGS}
     assert all(r["did"] for r in rows if r["case"] != "slower")
     assert not any(r["json"] for r in rows if r["case"] == "slower")
     table = ev.report([str(out)])

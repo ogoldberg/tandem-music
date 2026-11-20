@@ -43,8 +43,22 @@ def hand_written_normalize(actions):
     return clean
 
 
-def test_the_prompt_and_the_lock_note_are_as_before():
-    assert server.SYSTEM == OLD_SYSTEM
+# AI.6 changed the prompt in exactly three places: the example reply and the action list gained its three
+# actions, and the sentence saying no action changes the harmony or the genre now names the actions that do.
+OLD_HARMONY_SENTENCE = 'Your actions edit two tracks: melody and rhythm. The project may also carry a harmony part (harmony notes in the note format, played on harmony_instrument) that the user generates in the studio, and a harmony voice (voice2, a copy of the melody shifted, played on voice2_instrument) that the user makes in the studio, and named song sections (sections: name, from and to in seconds, such as Verse or Chorus), and the genre the user chose for the song (genre, also given on a Genre line: suit your suggestions to it), and the lyrics'
+AI6_SENTENCE = 'Your actions edit the melody and the rhythm (the drums), and three of them run the studio\'s own tools: generate_harmony writes the chords part (harmony notes in the note format, played on harmony_instrument) from the melody, add_beat writes a starter beat, and set_genre chooses the song\'s genre (genre, also given on a Genre line: suit your suggestions to it). Never write harmony notes yourself: ask for generate_harmony. The project may also carry a harmony voice (voice2, a copy of the melody shifted, played on voice2_instrument) that the user makes in the studio, and named song sections (sections: name, from and to in seconds, such as Verse or Chorus), and the lyrics'
+AI6_EXAMPLE = ',{"type":"generate_harmony","style":"chords"},{"type":"add_beat","groove":"straight","bars":8},{"type":"set_genre","genre":"jazz"}]}'
+AI6_LIST = (", generate_harmony (style chords or bass: Tandem writes the chords part from the melody, in the song's key and genre), "
+            "add_beat (groove straight, halftime, shuffle, four, bars 1..64: replaces the drums with a starter beat from the song's first bar), "
+            "set_genre (none, pop, rock, folk, jazz, hiphop, electronic: also sets the melody and chords instruments).")
+
+
+def test_the_prompt_is_as_before_but_for_ai6_and_the_lock_note_is_unchanged():
+    want = (OLD_SYSTEM.replace('{"type":"remove_track","track":"rhythm"}]}', '{"type":"remove_track","track":"rhythm"}' + AI6_EXAMPLE, 1)
+            .replace("replace_drums (drums array).", "replace_drums (drums array)" + AI6_LIST, 1)
+            .replace(OLD_HARMONY_SENTENCE, AI6_SENTENCE, 1))
+    assert want != OLD_SYSTEM and want.count("generate_harmony") == 4
+    assert server.SYSTEM == want
     assert server.MELODY_LOCK_NOTE == OLD_LOCK_NOTE
 
 
@@ -53,7 +67,11 @@ def test_the_prompt_lists_every_registry_action_and_each_example_validates_to_it
     names = [a["name"] for a in registry["actions"]]
     assert list(server.ACTIONS) == names and len(set(names)) == len(names)
     listed = server.SYSTEM.split("Valid action types: ", 1)[1].split("\n", 1)[0]
-    assert listed == ", ".join(a["summary"] for a in registry["actions"]).replace("INSTRUMENT_NAMES", ", ".join(INSTRUMENTS)) + "."
+    names_of = {"INSTRUMENT_NAMES": INSTRUMENTS, "GROOVE_NAMES": server.GROOVES, "GENRE_NAMES": server.GENRE_IDS}
+    want = ", ".join(a["summary"] for a in registry["actions"])
+    for k, v in names_of.items():
+        want = want.replace(k, ", ".join(v))
+    assert listed == want + "."
     for a in registry["actions"]:
         if "example" in a:
             action = {"type": a["name"], **a["example"]}
@@ -71,8 +89,12 @@ def random_item(rng):
     return item if rng.random() > 0.05 else rng.choice([1, "a", None])
 
 
+# The eight actions the hand-written code knew (AI.6's are checked on their own below).
+OLD_TYPES = ["set_tempo", "set_instrument", "transpose", "add_note", "add_hit", "remove_track", "replace_notes", "replace_drums"]
+
+
 def random_action(rng):
-    action = {"type": rng.choice(list(server.ACTIONS) + ["bogus", None])}
+    action = {"type": rng.choice(OLD_TYPES + ["bogus", None])}
     for k in rng.sample(PARAMS, rng.randint(0, 6)):
         lists = k in ("notes", "drums") and rng.random() < 0.8
         action[k] = [random_item(rng) for _ in range(rng.randint(0, 4))] if lists else rng.choice(VALUES)
@@ -93,6 +115,35 @@ def test_validation_gives_what_the_hand_written_one_gave():
         assert repr(server.normalize_actions(actions)) == repr(before), actions
         compared += 1
     assert compared > 19000 and crashed > 0
+
+
+def test_ai6_actions_are_validated_from_the_registry():
+    assert server.GROOVES == ("straight", "halftime", "shuffle", "four")
+    ok = [{"type": "generate_harmony", "style": "chords"}, {"type": "generate_harmony", "style": "bass"},
+          {"type": "set_genre", "genre": "none"}] + [{"type": "set_genre", "genre": g} for g in server.GENRE_IDS] + \
+         [{"type": "add_beat", "groove": g, "bars": 4} for g in server.GROOVES]
+    assert server.normalize_actions(ok) == ok
+    # Clamped, extra fields dropped.
+    assert server.normalize_actions([{"type": "add_beat", "groove": "four", "bars": 500, "notes": [1]}, {"type": "add_beat", "groove": "four", "bars": 0},
+                                     {"type": "add_beat", "groove": "four", "bars": "8"}, {"type": "generate_harmony", "style": "chords", "notes": [{"m": 60}]}]) == [
+        {"type": "add_beat", "groove": "four", "bars": 64}, {"type": "add_beat", "groove": "four", "bars": 1},
+        {"type": "add_beat", "groove": "four", "bars": 8}, {"type": "generate_harmony", "style": "chords"}]
+    # Refused: an unknown style, groove or genre, a missing param, a genre given as its name.
+    for bad in ({"type": "generate_harmony", "style": "strings"}, {"type": "generate_harmony"}, {"type": "add_beat", "groove": "polka", "bars": 4},
+                {"type": "add_beat", "groove": "straight"}, {"type": "set_genre", "genre": "Jazz"}, {"type": "set_genre", "genre": None},
+                {"type": "set_genre", "genre": ["jazz"]}, {"type": "add_beat", "groove": {}, "bars": 4}):
+        assert server.normalize_actions([bad]) == [], bad
+
+
+def test_melody_lock_keeps_ai6_actions():
+    reply = json.dumps({"reply": "Chords, a beat and jazz.", "actions": [
+        {"type": "generate_harmony", "style": "chords"}, {"type": "add_beat", "groove": "shuffle", "bars": 8},
+        {"type": "set_genre", "genre": "jazz"}, {"type": "transpose", "semitones": 2}]})
+    req = server.ChatRequest(message="make it jazz", project={"melody_locked": True})
+    plan = server.chat_plan(reply, req)
+    assert [a["type"] for a in plan["actions"]] == ["generate_harmony", "add_beat", "set_genre"]
+    assert server.action_parts({"type": "set_genre", "genre": "jazz"}) == {"genre", "instrument", "harmony_instrument"}
+    assert server.action_parts({"type": "generate_harmony", "style": "bass"}) == {"harmony", "harmony_instrument"}
 
 
 def test_a_drum_hit_that_is_not_an_object_drops_the_action_instead_of_failing_the_request(client, monkeypatch):

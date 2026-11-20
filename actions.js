@@ -3,13 +3,18 @@
 // the validation and melody lock from that file, and this module runs each validated action on the
 // project. tests/actions.test.mjs checks HANDLERS has exactly the actions actions.json declares.
 // The read side (songSummary) gives the model what the studio reads from the notes but the project
-// does not store: the key and the chords part's chords.
-import { detectKey, readChords } from "./harmony.js";
+// does not store: the key and the chords part's chords. AI.6: generate_harmony, add_beat and set_genre
+// run the studio's own generators; the model never writes the harmony's notes.
+import { detectKey, readChords, generateHarmony } from "./harmony.js";
+import { grooveHits } from "./beats.js";
+import { barOrigin } from "./groove.js";
+import { genreChanges, harmonyStyle } from "./genre.js";
 
 const clampPitch = m => Math.max(36, Math.min(96, m));
 
-// One function per action, (project, action) => void, changing the project in place. The studio calls
-// applyActions inside one edit(), so a reply's actions are one undo step.
+// One function per action, (project, action, context) => void, changing the project in place. The studio calls
+// applyActions inside one edit(), so a reply's actions are one undo step. A handler that cannot run throws before
+// it changes anything (AI.6's generators work out the new part first and then assign it).
 export const HANDLERS = Object.freeze({
   set_tempo(p, a) { p.bpm = a.bpm; },
   set_instrument(p, a) { p.instrument = a.instrument; },
@@ -22,15 +27,30 @@ export const HANDLERS = Object.freeze({
   },
   replace_notes(p, a) { p.notes = a.notes; },
   replace_drums(p, a) { p.drums = a.drums; },
+  // AI.6: the studio's own generators, as Generate, Starter beat and the Genre menu run them.
+  generate_harmony(p, a, { key = null } = {}) {
+    // key: the key menu's choice, or null for the melody's key, read after the reply's earlier actions.
+    const h = generateHarmony(p, { style: a.style, key, feel: harmonyStyle(p.genre) });
+    if (!p.harmony?.length && a.style === "bass" && (p.harmony_instrument ?? "piano") === "piano") p.harmony_instrument = "bass";
+    p.harmony = h.notes;
+  },
+  add_beat(p, a) {
+    const from = barOrigin({ bpm: p.bpm, notes: p.notes, drums: [], harmony: p.harmony, voice2: p.voice2 });
+    p.drums = grooveHits(a.groove, { bpm: p.bpm, bars: a.bars, from });
+  },
+  set_genre(p, a) { Object.assign(p, genreChanges(a.genre === "none" ? null : a.genre)); },
 });
 
-// Runs the server's validated actions in order; an action this studio does not know is skipped.
+// Runs the server's validated actions in order; an action this studio does not know is skipped, and one that
+// cannot run on this song (chords without a melody) is skipped with its reason pushed to `problems`, leaving the
+// project as the earlier actions left it. context.key is the key the studio's key menu chose (null: the melody's).
 // Returns how many ran.
-export function applyActions(project, actions) {
+export function applyActions(project, actions, { key = null, problems = [] } = {}) {
   let ran = 0;
   for (const a of Array.isArray(actions) ? actions : []) {
     const run = a && Object.hasOwn(HANDLERS, a.type) ? HANDLERS[a.type] : null;
-    if (run) { run(project, a); ran++; }
+    if (!run) continue;
+    try { run(project, a, { key }); ran++; } catch (e) { problems.push({ type: a.type, message: e.message }); }
   }
   return ran;
 }

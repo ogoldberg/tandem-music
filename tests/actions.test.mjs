@@ -6,6 +6,8 @@ import { readFileSync } from "node:fs";
 import { HANDLERS, applyActions, songSummary, MAX_SUMMARY_CHORDS, chatBody, CHAT_BODY_MAX_BYTES } from "../actions.js";
 import { CHORD_QUALITIES, generateHarmony, readChords, chordName } from "../harmony.js";
 import { KEY_NAMES } from "../contour.js";
+import { GROOVES, grooveHits } from "../beats.js";
+import { GENRE_IDS, genreChanges, harmonyStyle } from "../genre.js";
 
 const registry = JSON.parse(readFileSync(new URL("../actions.json", import.meta.url), "utf8"));
 const backend = readFileSync(new URL("../tandem_backend.py", import.meta.url), "utf8");
@@ -93,4 +95,69 @@ test("chatBody sends the summary only when the request fits the server's limit",
   // Without a summary the body is the plain JSON, whatever its size.
   const plain = { message: "x".repeat(CHAT_BODY_MAX_BYTES), project: {} };
   assert.equal(chatBody(plain), JSON.stringify(plain));
+});
+
+// AI.6: the three actions that run the studio's own generators.
+const melody = [60, 64, 67, 69, 67, 64, 62, 60].map((m, i) => ({ m, t: i * 0.45, d: 0.4 }));
+const song = () => ({ bpm: 100, instrument: "piano", notes: melody.map(n => ({ ...n })), drums: [{ k: "kick", t: 0 }], harmony: [], harmony_instrument: "piano" });
+
+test("the server's groove and genre choices are the studio's", () => {
+  const grooves = backend.match(/^GROOVES=\(([^)]*)\)/m);
+  assert.ok(grooves, "GROOVES found in tandem_backend.py");
+  assert.deepEqual([...grooves[1].matchAll(/"([^"]*)"/g)].map(m => m[1]), GROOVES.map(g => g.id));
+  assert.match(backend, /"\$GENRE_CHOICES":\("none",\)\+GENRE_IDS/);
+  assert.ok(!GENRE_IDS.includes("none"));
+});
+
+test("generate_harmony writes what Generate writes, in the key given or the melody's, in the genre's feel", () => {
+  for (const style of ["chords", "bass"]) for (const genre of [null, "jazz"]) for (const key of [null, { tonic: 7, mode: "major" }]) {
+    const p = { ...song(), genre };
+    const want = generateHarmony(p, { style, key, feel: harmonyStyle(genre) }).notes;
+    assert.equal(applyActions(p, [{ type: "generate_harmony", style }], { key }), 1);
+    assert.deepEqual(p.harmony, want, `${style} ${genre} ${key && key.tonic}`);
+    assert.ok(want.length > 0);
+  }
+  // A bass line into an empty chords part on the default piano plays on bass, as Generate does; chords stay on piano.
+  const b = song(); applyActions(b, [{ type: "generate_harmony", style: "bass" }]);
+  assert.equal(b.harmony_instrument, "bass");
+  const c = song(); applyActions(c, [{ type: "generate_harmony", style: "chords" }]);
+  assert.equal(c.harmony_instrument, "piano");
+  // Read after the reply's earlier actions: a transpose first moves the key the chords are in.
+  const t = song(), up = song();
+  applyActions(t, [{ type: "transpose", semitones: 2 }, { type: "generate_harmony", style: "chords" }]);
+  up.notes = up.notes.map(n => ({ ...n, m: n.m + 2 }));
+  assert.deepEqual(t.harmony, generateHarmony(up, { style: "chords" }).notes);
+});
+
+test("add_beat replaces the drums with the starter beat from the song's bar grid", () => {
+  for (const g of GROOVES) {
+    const p = song();
+    applyActions(p, [{ type: "add_beat", groove: g.id, bars: 4 }]);
+    assert.deepEqual(p.drums, grooveHits(g.id, { bpm: 100, bars: 4, from: 0 }), g.id);
+  }
+  // Sung in free time, the melody's first bar line is the grid, as Starter beat uses (groove.js barOrigin).
+  const free = song(); free.notes = free.notes.map(n => ({ ...n, t: n.t + 0.7 }));
+  applyActions(free, [{ type: "add_beat", groove: "straight", bars: 2 }]);
+  assert.ok(free.drums[0].t > 0 && free.drums[0].t < 2.4, free.drums[0].t);
+});
+
+test("set_genre changes what the Genre menu changes; none clears the genre and keeps the instruments", () => {
+  const p = song();
+  applyActions(p, [{ type: "set_genre", genre: "jazz" }]);
+  assert.deepEqual({ genre: p.genre, instrument: p.instrument, harmony_instrument: p.harmony_instrument }, genreChanges("jazz"));
+  applyActions(p, [{ type: "set_genre", genre: "none" }]);
+  assert.equal(p.genre, null);
+  assert.equal(p.instrument, genreChanges("jazz").instrument);
+});
+
+test("an action that cannot run on this song is skipped with its reason and changes nothing", () => {
+  const p = song(); p.notes = [];
+  const before = structuredClone(p), problems = [];
+  assert.equal(applyActions(p, [{ type: "generate_harmony", style: "chords" }, { type: "set_tempo", bpm: 90 }], { problems }), 1);
+  assert.deepEqual(problems, [{ type: "generate_harmony", message: "Add or transcribe a melody before generating harmony." }]);
+  assert.deepEqual({ ...p, bpm: 100 }, before);
+  const q = song(); q.bpm = 0;
+  applyActions(q, [{ type: "add_beat", groove: "straight", bars: 4 }], { problems });
+  assert.equal(problems.length, 2);
+  assert.deepEqual(q.drums, [{ k: "kick", t: 0 }]);
 });

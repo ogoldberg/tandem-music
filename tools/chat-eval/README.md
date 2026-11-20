@@ -1,7 +1,9 @@
 # Chat model evaluation (AI.5)
 
-`chat_eval.py` asks a model the 13 fixed cases in `CASES` through the studio's own chat path in
-`tandem_backend.py`: `chat_messages` (the project JSON, genre line and history the studio sends),
+`chat_eval.py` asks a model the 18 fixed cases in `CASES` through the studio's own chat path in
+`tandem_backend.py`: `chat_messages` (the project JSON, genre line and history the studio sends, and
+for AI.6's five cases the song summary in `SONGS`, the one `actions.js` `songSummary` gives; the 13 cases
+before AI.6 go without it so their scores compare with earlier runs),
 `invoke_llm` (the system prompt, provider adapter and temperature 0.5) and `chat_plan` (JSON parse,
 action allowlist and clamps, melody lock). Every answer is scored on:
 
@@ -12,7 +14,8 @@ action allowlist and clamps, melody lock). Every answer is scored on:
   no answer (an error or timeout) is not scored on it.
 - **Did what was asked**: the actions the studio would apply do what the request asked (each case's
   own check, such as a tempo of 125-135 for "about 130 BPM", or the melody's first seven notes
-  unchanged for "delete the last note").
+  unchanged for "delete the last note"). AI.6's `add_beat` is read as the studio plays it: the
+  starter beat's hits (`GROOVE_BARS`, checked against `beats.js`), so "add a beat" passes with it.
 
 plus seconds to answer and tokens in and out.
 

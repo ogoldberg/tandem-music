@@ -1,5 +1,5 @@
 {
-  "about": "AI.7: the studio actions the chat's model may ask for, each declared once. tandem_backend.py builds the system prompt's action list, the validation (normalize_actions) and melody lock from it; actions.js runs each one in the studio. A Node test and a pytest check all three agree with this file. Param kinds: int and number are clamped to min..max; choice must be one of values (\"$INSTRUMENTS\" is voices.js INSTRUMENTS, \"$DRUMS\" kick, snare, hat) or the action is dropped; list keeps at most max items, each an object of item fields, an item whose choice field is not allowed is left out, and any other bad value drops the action. parts are the project parts an action changes; an object maps one param's value to its parts. Melody lock (ADR-004) drops every action that changes the melody part.",
+  "about": "AI.7: the studio actions the chat's model may ask for, each declared once. tandem_backend.py builds the system prompt's action list, the validation (normalize_actions) and melody lock from it; actions.js runs each one in the studio. A Node test and a pytest check all three agree with this file. Param kinds: int and number are clamped to min..max; choice must be one of values (\"$INSTRUMENTS\" is voices.js INSTRUMENTS, \"$DRUMS\" kick, snare, hat, \"$GROOVES\" beats.js GROOVES ids, \"$GENRE_CHOICES\" none and genre.js GENRES ids) or the action is dropped; list keeps at most max items, each an object of item fields, an item whose choice field is not allowed is left out, and any other bad value drops the action. parts are the project parts an action changes; an object maps one param's value to its parts. Melody lock (ADR-004) drops every action that changes the melody part.",
   "locked_parts": ["melody"],
   "actions": [
     {
@@ -81,6 +81,33 @@
         }}
       },
       "parts": ["drums"]
+    },
+    {
+      "name": "generate_harmony",
+      "summary": "generate_harmony (style chords or bass: Tandem writes the chords part from the melody, in the song's key and genre)",
+      "description": "Write the chords part from the melody with the studio's own generator (harmony.js generateHarmony), as Generate does: chords or a bass line, in the key the studio's key menu chose (else the melody's key), in the genre's feel. The model never writes the harmony's notes.",
+      "params": {"style": {"kind": "choice", "values": ["chords", "bass"]}},
+      "parts": ["harmony", "harmony_instrument"],
+      "example": {"style": "chords"}
+    },
+    {
+      "name": "add_beat",
+      "summary": "add_beat (groove GROOVE_NAMES, bars 1..64: replaces the drums with a starter beat from the song's first bar)",
+      "description": "Replace the drums with a starter beat (beats.js grooveHits) for that many 4/4 bars, from the song's bar grid, as Starter beat does.",
+      "params": {
+        "groove": {"kind": "choice", "values": "$GROOVES"},
+        "bars": {"kind": "int", "min": 1, "max": 64}
+      },
+      "parts": ["drums"],
+      "example": {"groove": "straight", "bars": 8}
+    },
+    {
+      "name": "set_genre",
+      "summary": "set_genre (none, GENRE_NAMES: also sets the melody and chords instruments)",
+      "description": "Choose the song's genre (genre.js genreChanges), as the Genre menu does: the genre and its melody and chords instruments; none clears the genre and keeps the instruments.",
+      "params": {"genre": {"kind": "choice", "values": "$GENRE_CHOICES"}},
+      "parts": ["genre", "instrument", "harmony_instrument"],
+      "example": {"genre": "jazz"}
     }
   ]
 }
