@@ -93,6 +93,10 @@ def test_try_an_example_replaces_every_part_of_the_song_before(studio, tmp_path)
     page.click("#demo")
     expect(page.locator("#status")).to_have_text("Example loaded — press Play")
     assert [v["name"] for v in page.evaluate(IDB_GET, "versions")] == ["Before the example"]
+    # Nor by New song: the unchanged example can be had again with one tap.
+    page.click("#newsong")
+    expect(page.locator("#status")).to_have_text("New song: sing, play or type to start.")
+    assert [v["name"] for v in page.evaluate(IDB_GET, "versions")] == ["Before the example"]
 
 
 def seed_versions(page, count):
@@ -150,6 +154,9 @@ def test_the_oldest_version_is_kept_until_its_removal_is_confirmed(studio):
 def test_the_guided_view_starts_a_new_song_and_asks_before_the_oldest_version_goes(browser, server_url):
     with guided_page(browser, server_url) as page:
         page.click("#gdemo")
+        page.locator("#lyrics").fill("la la la")
+        page.locator("#lyrics").blur()
+        wait_until(page, f"async () => (await ({IDB_GET})('draft'))?.lyrics === 'la la la'", "the words are kept")
         page.click('#steps [data-step="sing"]')
         page.click("#gnewsong")
         expect(page.locator("#gstatus")).to_contain_text('Your previous draft was saved as the version "Before a new song".')
@@ -166,3 +173,21 @@ def test_the_guided_view_starts_a_new_song_and_asks_before_the_oldest_version_go
         expect(page.locator("#gversionname")).to_have_value("")
         names = [v["name"] for v in page.evaluate(IDB_GET, "versions")]
         assert names[0] == "One more" and "Old 1" not in names and len(names) == 51
+
+
+def test_new_song_and_the_example_wait_until_the_take_being_recorded_is_stopped(studio):
+    # Review of #147: a take stopped after New song would land in the new, empty song.
+    page = studio
+    page.uncheck("#countin")
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording…", timeout=8000)
+    for button in ["#newsong", "#demo"]:
+        page.click(button)
+        expect(page.locator("#status")).to_have_text("Stop recording first: the take belongs to the song you are recording it into.")
+    expect(page.locator("#notecount")).not_to_have_text("8 notes")
+    page.click("#finish")
+    expect(page.locator("#original")).to_be_enabled()
+    assert page.evaluate(IDB_GET, "versions") is None, "nothing was kept, because nothing was replaced"
+    page.click("#newsong")
+    expect(page.locator("#status")).to_contain_text("New song: sing, play or type to start.")
+    expect(page.locator("#original")).to_be_disabled()

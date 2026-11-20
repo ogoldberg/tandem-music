@@ -371,10 +371,11 @@ $('clearvoice2').onclick=()=>{if(state.voice2.length)edit('Clear harmony voice',
 // SONG.2: New song and Try an example start from an empty song: a draft with anything in it is first kept as an automatic
 // version with its recordings (keepDraft), then the recording goes and every part, the words, the sections and the mix are
 // reset in one edit, so nothing of the old song is left under the new one.
-const EMPTY_SONG={bpm:100,instrument:'piano',notes:[],drums:[]};let startingSong=false;
-// A draft that already is the song being started (the example, unchanged) is not kept again.
-async function startSong(title,label,fields={}){if(startingSong)return null;startingSong=true;try{const next=projectFields({...EMPTY_SONG,...fields}),same=!audio&&JSON.stringify(projectFromState(state))===JSON.stringify(projectFromState(next));const kept=same?'':await keepDraft(title);if(audio)await unloadAudio();newProject();edit(label,()=>Object.assign(state,next));projectName='';setSongName('');return kept}finally{startingSong=false}}
-async function demo(){try{const kept=await startSong('the example','Load example',{bpm:100,instrument:'marimba',notes:[60,64,67,69,67,64,62,60].map((m,i)=>({m,t:i*.45,d:.36})),drums:Array.from({length:16},(_,i)=>({k:i%4===0?'kick':i%4===2?'snare':'hat',t:i*.225}))});if(kept==null)return null;status('Example loaded — press Play'+(kept?'.'+kept:''));return kept}catch(e){status(e.message);return null}}
+const EMPTY_SONG={bpm:100,instrument:'piano',notes:[],drums:[]},EXAMPLE_SONG={bpm:100,instrument:'marimba',notes:[60,64,67,69,67,64,62,60].map((m,i)=>({m,t:i*.45,d:.36})),drums:Array.from({length:16},(_,i)=>({k:i%4===0?'kick':i%4===2?'snare':'hat',t:i*.225}))};let startingSong=false;
+// A draft that is empty or the example, unchanged, is not kept: it can be had again with one tap.
+// A take being recorded belongs to the song it started in, so the song cannot be replaced until it is stopped (review of #147).
+async function startSong(title,label,fields={}){if(startingSong)return null;if(takeRun||takeStarting)throw Error('Stop recording first: the take belongs to the song you are recording it into.');startingSong=true;try{const next=projectFields({...EMPTY_SONG,...fields}),now=JSON.stringify(projectFromState(state)),same=!audio&&[next,projectFields({...EMPTY_SONG,...EXAMPLE_SONG})].some(p=>now===JSON.stringify(projectFromState(p)));const kept=same?'':await keepDraft(title);if(audio)await unloadAudio();newProject();edit(label,()=>Object.assign(state,next));projectName='';setSongName('');return kept}finally{startingSong=false}}
+async function demo(){try{const kept=await startSong('the example','Load example',EXAMPLE_SONG);if(kept==null)return null;status('Example loaded — press Play'+(kept?'.'+kept:''));return kept}catch(e){status(e.message);return null}}
 $('newsong').onclick=async()=>{try{const kept=await startSong('a new song','New song');if(kept!=null)status('New song: sing, play or type to start.'+kept)}catch(e){status(e.message)}};
 $('demo').onclick=demo;
 $('melodylock').onchange=()=>edit($('melodylock').checked?'Protect melody':'Unprotect melody',()=>{state.melody_locked=$('melodylock').checked});
