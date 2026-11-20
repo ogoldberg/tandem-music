@@ -175,20 +175,42 @@ def studio_summary(project):
     return json.loads(done.stdout)
 
 
-@pytest.mark.parametrize("harmony", [
-    [{"m": m, "t": 599.5, "d": 2} for m in (60, 64, 67)],      # held into the bar after 600 s
-    [{"m": m, "t": 600, "d": 600} for m in (60, 64, 67)],      # the latest and longest chords notes a project can hold
+@pytest.mark.parametrize("bpm,harmony,last", [
+    (220, [{"m": m, "t": 599.5, "d": 2} for m in (60, 64, 67)], 600.5),    # held into the bar after 600 s
+    # The latest and longest chords notes a project can hold, at the slowest tempo: its chords (fewer than the
+    # summary's cap) are read up to just under 1200 s, the bound SongChord must allow.
+    (45, [{"m": m, "t": 600, "d": 600} for m in (60, 64, 67)], 1197),
 ])
-def test_the_summary_the_studio_reads_from_any_valid_project_is_accepted(client, monkeypatch, harmony):
-    project = {"bpm": 220, "notes": [], "drums": [], "harmony": harmony}
+def test_the_summary_the_studio_reads_from_any_valid_project_is_accepted(client, monkeypatch, bpm, harmony, last):
+    project = {"bpm": bpm, "notes": [], "drums": [], "harmony": harmony}
     song = studio_summary(project)
-    assert song["chords"] and max(c["t"] for c in song["chords"]) > 600, song
+    assert len(song["chords"]) < server.SUMMARY_MAX_CHORDS and max(c["t"] for c in song["chords"]) > last, song
     async def fake(messages, config=None):
         return json.dumps({"reply": "ok", "actions": []})
     monkeypatch.setattr(server, "invoke_llm", fake)
     monkeypatch.setenv("TANDEM_ALLOW_OPEN_CHAT", "1")
     r = run(client("POST", "/api/chat", json={"message": "hi", "project": project, "song": song}))
     assert r.status_code == 200, r.text
+
+
+def test_the_chat_body_limit_counts_the_summary(client, monkeypatch):
+    # actions.js chatBody leaves the summary out over this limit (tests/actions.test.mjs); here the server's side:
+    # a request at the limit is read, one byte over is refused before the model is asked.
+    from request_guards import CHAT_BODY_MAX_BYTES
+    async def fake(messages, config=None):
+        return json.dumps({"reply": "ok", "actions": []})
+    monkeypatch.setattr(server, "invoke_llm", fake)
+    monkeypatch.setenv("TANDEM_ALLOW_OPEN_CHAT", "1")
+    song = {"key": {"tonic": 0, "mode": "major"}, "chords": [{"t": 0, "d": 2.4, "root": 0, "quality": "major"}]}
+    def body(pad):
+        return json.dumps({"message": "hi", "project": {}, "song": song, "history": [], "pad": ""}).replace('"pad": ""', '"pad": "' + "x" * pad + '"').encode()
+    # The extra pad key is refused by the model (422) once read, so 413 versus 422 tells where the request stopped.
+    fit = CHAT_BODY_MAX_BYTES - len(body(0))
+    at, over = body(fit), body(fit + 1)
+    assert len(at) == CHAT_BODY_MAX_BYTES and len(over) == CHAT_BODY_MAX_BYTES + 1
+    headers = {"content-type": "application/json"}
+    assert run(client("POST", "/api/chat", content=at, headers=headers)).status_code == 422
+    assert run(client("POST", "/api/chat", content=over, headers=headers)).status_code == 413
 
 
 def test_actions_js_is_served_and_precached(client):

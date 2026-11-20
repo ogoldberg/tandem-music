@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { HANDLERS, applyActions, songSummary, MAX_SUMMARY_CHORDS } from "../actions.js";
+import { HANDLERS, applyActions, songSummary, MAX_SUMMARY_CHORDS, chatBody, CHAT_BODY_MAX_BYTES } from "../actions.js";
 import { CHORD_QUALITIES, generateHarmony, readChords, chordName } from "../harmony.js";
 import { KEY_NAMES } from "../contour.js";
 
@@ -74,4 +74,23 @@ test("songSummary keeps at most MAX_SUMMARY_CHORDS chords and refuses a project 
   for (let b = 0; b < MAX_SUMMARY_CHORDS + 10; b++) for (const x of [0, 4, 7]) harmony.push({ m: 60 + x + (b % 2 ? 2 : 0), t: b * 2.4, d: 2.3 });
   assert.equal(songSummary({ bpm: 100, notes: [], harmony }, { key: null }).chords.length, MAX_SUMMARY_CHORDS);
   assert.throws(() => songSummary({ bpm: 0, notes: [], harmony }, { key: null }), /tempo/);
+});
+
+test("chatBody sends the summary only when the request fits the server's limit", () => {
+  const guards = readFileSync(new URL("../request_guards.py", import.meta.url), "utf8");
+  assert.equal(CHAT_BODY_MAX_BYTES, Number(guards.match(/^CHAT_BODY_MAX_BYTES = ([\d_]+)$/m)[1].replaceAll("_", "")));
+  const song = { key: { tonic: 0, mode: "major" }, chords: [{ t: 0, d: 2.4, root: 0, quality: "major" }] };
+  const bytes = x => new TextEncoder().encode(x).length;
+  // A message of multi-byte characters: the limit is in UTF-8 bytes, not characters.
+  const body = n => ({ message: "\u00e9".repeat(n), project: {}, history: [], song });
+  const withSong = bytes(JSON.stringify(body(0)));
+  const fits = (CHAT_BODY_MAX_BYTES - withSong) / 2;   // each e-acute is 2 bytes
+  assert.equal(bytes(chatBody(body(fits))), CHAT_BODY_MAX_BYTES);
+  assert.deepEqual(JSON.parse(chatBody(body(fits))).song, song);
+  const over = JSON.parse(chatBody(body(fits + 1)));
+  assert.equal(over.song, undefined);
+  assert.equal(over.message.length, fits + 1);
+  // Without a summary the body is the plain JSON, whatever its size.
+  const plain = { message: "x".repeat(CHAT_BODY_MAX_BYTES), project: {} };
+  assert.equal(chatBody(plain), JSON.stringify(plain));
 });

@@ -50,3 +50,17 @@ export function songSummary(project, { key } = {}) {
     chords: chords.slice(0, MAX_SUMMARY_CHORDS).map(c => ({ t: round3(c.t), d: round3(c.d), root: c.root, quality: c.quality })),
   };
 }
+
+// The server refuses a chat request body over this many bytes (request_guards.py CHAT_BODY_MAX_BYTES;
+// tests/actions.test.mjs checks they match).
+export const CHAT_BODY_MAX_BYTES = 262_144;
+
+// The chat request's JSON text. The song summary is optional context: when the request with it would be
+// over the server's limit, it goes without it (the prompt is then as before AI.7), rather than the request
+// being refused. A partial chord list is not sent, since the model would read it as the whole song.
+export function chatBody(body, { maxBytes = CHAT_BODY_MAX_BYTES } = {}) {
+  const text = JSON.stringify(body);
+  if (body.song === undefined || new TextEncoder().encode(text).length <= maxBytes) return text;
+  const { song, ...rest } = body;
+  return JSON.stringify(rest);
+}
