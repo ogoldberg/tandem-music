@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createVersionStore, projectFromState, VERSIONS_KEY, MAX_VERSIONS, MAX_NAME_LENGTH } from "../versions.js";
+import { createVersionStore, projectFromState, hasWork, VersionLimitError, VERSIONS_KEY, MAX_VERSIONS, MAX_NAME_LENGTH } from "../versions.js";
 import { memoryKV } from "./memory-kv.mjs";
 
 const project = (bpm = 100, notes = [{ m: 60, t: 0, d: 0.4 }]) =>
@@ -142,11 +142,73 @@ test("rejects a project without note and drum lists", async () => {
   assert.deepEqual(await store.list(), []);
 });
 
-test("keeps at most the limit, dropping the oldest", async () => {
-  const store = createVersionStore(memoryKV(), { now: clock(), limit: 3 });
-  for (const n of ["v1", "v2", "v3", "v4"]) await store.save(n, project());
+test("saving past the limit is refused until the oldest is named for removal (SONG.2)", async () => {
+  const kv = memoryKV();
+  const store = createVersionStore(kv, { now: clock(), limit: 3 });
+  const saved = [];
+  for (const n of ["v1", "v2", "v3"]) saved.push(await store.save(n, project()));
+  const before = structuredClone(kv.data.get(VERSIONS_KEY));
+  const err = await store.save("v4", project()).then(() => null, e => e);
+  assert.ok(err instanceof VersionLimitError, "a fourth version is refused");
+  assert.equal(err.code, "version-limit");
+  assert.equal(err.limit, 3);
+  assert.deepEqual(err.oldest, { id: saved[0].id, name: "v1", savedAt: saved[0].savedAt });
+  assert.match(err.message, /3 versions/);
+  assert.match(err.message, /"v1"/);
+  assert.deepEqual(kv.data.get(VERSIONS_KEY), before, "nothing is written or dropped");
+  await store.save("v4", project(), null, { replace: err.oldest.id });
   assert.deepEqual(await names(store), ["v4", "v3", "v2"]);
   assert.equal(MAX_VERSIONS, 50);
+});
+
+test("a replace naming a version that is no longer there is refused again with the current oldest", async () => {
+  const store = createVersionStore(memoryKV(), { now: clock(), limit: 2 });
+  const a = await store.save("a", project());
+  await store.save("b", project());
+  await store.remove(a.id);
+  await store.save("c", project());
+  const err = await store.save("d", project(), null, { replace: a.id }).then(() => null, e => e);
+  assert.ok(err instanceof VersionLimitError);
+  assert.equal(err.oldest.name, "b");
+  assert.deepEqual(await names(store), ["c", "b"]);
+});
+
+test("a replace is not needed, and drops nothing, when there is room", async () => {
+  const store = createVersionStore(memoryKV(), { now: clock(), limit: 3 });
+  const a = await store.save("a", project());
+  await store.save("b", project(), null, { replace: a.id });
+  assert.deepEqual(await names(store), ["b", "a"]);
+});
+
+test("automatic versions do not count towards the limit and are never dropped by it (SONG.2)", async () => {
+  const kv = memoryKV();
+  const store = createVersionStore(kv, { now: clock(), limit: 2 });
+  await store.save("Before the beat", project(), null, { auto: true });
+  await store.save("v1", project());
+  await store.save("Before an idea", project(), null, { auto: true });
+  await store.save("v2", project());
+  await store.save("Before the example", project(), null, { auto: true });
+  assert.deepEqual(await names(store), ["Before the example", "v2", "Before an idea", "v1", "Before the beat"]);
+  const err = await store.save("v3", project()).then(() => null, e => e);
+  assert.ok(err instanceof VersionLimitError, "two kept versions fill a limit of two");
+  assert.equal(err.oldest.name, "v1", "the oldest kept version, not the oldest automatic one");
+  await store.save("v3", project(), null, { replace: err.oldest.id });
+  assert.deepEqual(await names(store), ["v3", "Before the example", "v2", "Before an idea", "Before the beat"]);
+  const list = await store.list();
+  assert.deepEqual(list.map(v => !!v.auto), [false, true, false, true, true]);
+  assert.equal(kv.data.get(VERSIONS_KEY).filter(e => e.auto === true).length, 3, "the flag is stored");
+});
+
+test("hasWork: an empty song has nothing to keep; any part, recording, words or section has", () => {
+  const empty = { bpm: 100, instrument: "piano", notes: [], drums: [] };
+  assert.equal(hasWork(empty), false);
+  assert.equal(hasWork({ ...empty, harmony: [], voice2: [], layers: [], sections: [], lyrics: "  ", genre: "rock", mix: { drums: { level: -3 } } }), false);
+  assert.equal(hasWork(empty, { recording: true }), true);
+  for (const extra of [
+    { notes: [{ m: 60, t: 0, d: 1 }] }, { drums: [{ k: "kick", t: 0 }] }, { harmony: [{ m: 48, t: 0, d: 1 }] },
+    { voice2: [{ m: 64, t: 0, d: 1 }] }, { band: { id: "b" } }, { timbre: { id: "t" } }, { voice2_sung: { id: "s" } },
+    { layers: [{ id: "l" }] }, { takes: { list: [], comp: [] } }, { sections: [{ name: "Verse", from: 0, to: 4 }] }, { lyrics: "la la" },
+  ]) assert.equal(hasWork({ ...empty, ...extra }), true, JSON.stringify(extra));
 });
 
 test("remove deletes one version and reports whether it existed", async () => {
@@ -205,7 +267,10 @@ test("the version limit counts only recognised entries and never drops unrecogni
   const future = { id: "f", name: "future", savedAt: 1, project: { version: 2 } };
   const kv = memoryKV({ [VERSIONS_KEY]: [future] });
   const store = createVersionStore(kv, { now: clock(), limit: 2 });
-  for (const n of ["v1", "v2", "v3"]) await store.save(n, project());
+  const v1 = await store.save("v1", project());
+  await store.save("v2", project());
+  await assert.rejects(store.save("v3", project()), VersionLimitError);
+  await store.save("v3", project(), null, { replace: v1.id });
   assert.deepEqual(await names(store), ["v3", "v2"]);
   assert.ok(kv.data.get(VERSIONS_KEY).some(e => e.id === "f"));
 });

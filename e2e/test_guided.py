@@ -28,6 +28,8 @@ SECTION_TOOLS = ["sectionrepeat", "sectionearlier", "sectionlater", "sectiondele
 PRACTICE_BAR = ["practiceask", "practicekeep", "practicestop"]
 # PRACTICE.2: Forget range and progress, shown once a range or a stretch's progress is kept on the device.
 RANGE_BOX = ["practiceforget"]
+# SONG.2: Remove it and save and Cancel, shown only when a version is saved at the limit.
+VERSION_FULL = ["versionkeep", "versionreplace"]
 CONTROL = re.compile(r'<(button|input|select|textarea)\b[^>]*\bid="([^"]+)"')
 
 
@@ -236,8 +238,8 @@ def test_every_control_of_the_studio_is_in_the_all_controls_view(browser, server
         wrong = [r for r in report if r[1] not in ("shown", "feature")]
         assert not wrong, wrong
         # Hidden here only because the feature is not available or not in use: the Mac app's controls, the MIDI ports
-        # (shown after Connect MIDI), the harmony line trial (shown after Create harmony), Keep line and Cancel (shown with a drawn line), the comp controls (shown with two takes), the section tools (shown with a section chosen), the practice bar (shown while practising) and the file pickers behind their buttons.
-        assert sorted(r[0] for r in report if r[1] == "feature") == sorted(MAC_APP + MIDI_PORTS + LINE_TRIAL + DRAWN_LINE + TAKES + SECTION_TOOLS + PRACTICE_BAR + RANGE_BOX + ["audiofile", "projectfile"])
+        # (shown after Connect MIDI), the harmony line trial (shown after Create harmony), Keep line and Cancel (shown with a drawn line), the comp controls (shown with two takes), the section tools (shown with a section chosen), the practice bar (shown while practising), the version limit's question (shown at the limit) and the file pickers behind their buttons.
+        assert sorted(r[0] for r in report if r[1] == "feature") == sorted(MAC_APP + MIDI_PORTS + LINE_TRIAL + DRAWN_LINE + TAKES + SECTION_TOOLS + PRACTICE_BAR + RANGE_BOX + VERSION_FULL + ["audiofile", "projectfile"])
         # The guided view's own controls are not in the studio's layout, and the roll is back in its place.
         assert page.evaluate("document.getElementById('melodyroll').closest('.lane').dataset.lane === 'melody'")
         assert page.evaluate("document.getElementById('melodytools').closest('[data-panel-part]').dataset.panelPart === 'melody'")

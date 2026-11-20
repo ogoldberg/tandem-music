@@ -1128,11 +1128,12 @@ def test_work_survives_a_browser_restart(browser_type, browser_type_launch_args,
         return context, page
 
     context, page = open_studio()
+    # SONG.2: the example starts a new song, so it comes before the take.
+    page.click("#demo")
     import_recording(page, tone_wav(tmp_path / "a.wav"))
     page.click("#polish")
     expect(page.locator("#status")).to_have_text("Vocal polished. Compare Original and Polished.")
     links = wait_for_draft_audio(page, ["original", "polished"])
-    page.click("#demo")
     page.fill("#versionname", "Before restart")
     page.click("#saveversion")
     expect(page.locator("#status")).to_have_text("Saved version: Before restart")

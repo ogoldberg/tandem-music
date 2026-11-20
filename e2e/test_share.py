@@ -366,9 +366,10 @@ def song_with_a_take(page, tmp_path, name="Bus stop"):
     page.wait_for_function("!document.body.inert")
     wav = tmp_path / "take.wav"
     tone_wav(wav)
-    import_recording(page, wav)
+    # SONG.2: the example starts a new song, so it comes before the take.
     page.click("#demo")
     expect(page.locator("#notecount")).to_have_text("8 notes")
+    import_recording(page, wav)
     expect(page.locator("#original")).to_be_enabled()
     page.fill("#songname", name)
     page.dispatch_event("#songname", "change")
