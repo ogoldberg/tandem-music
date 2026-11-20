@@ -1,0 +1,86 @@
+{
+  "about": "AI.7: the studio actions the chat's model may ask for, each declared once. tandem_backend.py builds the system prompt's action list, the validation (normalize_actions) and melody lock from it; actions.js runs each one in the studio. A Node test and a pytest check all three agree with this file. Param kinds: int and number are clamped to min..max; choice must be one of values (\"$INSTRUMENTS\" is voices.js INSTRUMENTS, \"$DRUMS\" kick, snare, hat) or the action is dropped; list keeps at most max items, each an object of item fields, an item whose choice field is not allowed is left out, and any other bad value drops the action. parts are the project parts an action changes; an object maps one param's value to its parts. Melody lock (ADR-004) drops every action that changes the melody part.",
+  "locked_parts": ["melody"],
+  "actions": [
+    {
+      "name": "set_tempo",
+      "summary": "set_tempo (45..220)",
+      "description": "Set the song's tempo in beats a minute.",
+      "params": {"bpm": {"kind": "int", "min": 45, "max": 220}},
+      "parts": ["tempo"],
+      "example": {"bpm": 110}
+    },
+    {
+      "name": "set_instrument",
+      "summary": "set_instrument (INSTRUMENT_NAMES)",
+      "description": "Play the melody on another instrument.",
+      "params": {"instrument": {"kind": "choice", "values": "$INSTRUMENTS"}},
+      "parts": ["instrument"],
+      "example": {"instrument": "marimba"}
+    },
+    {
+      "name": "transpose",
+      "summary": "transpose (-24..24)",
+      "description": "Move every melody note up or down by semitones, kept within MIDI 36..96.",
+      "params": {"semitones": {"kind": "int", "min": -24, "max": 24}},
+      "parts": ["melody"],
+      "example": {"semitones": 2}
+    },
+    {
+      "name": "add_note",
+      "summary": "add_note (pitch MIDI 36..96, start and duration in seconds)",
+      "description": "Add one note to the melody.",
+      "params": {
+        "pitch": {"kind": "int", "min": 36, "max": 96},
+        "start": {"kind": "number", "min": 0, "max": 60},
+        "duration": {"kind": "number", "min": 0.08, "max": 8}
+      },
+      "parts": ["melody"],
+      "example": {"pitch": 60, "start": 0, "duration": 0.5}
+    },
+    {
+      "name": "add_hit",
+      "summary": "add_hit (kick, snare, hat)",
+      "description": "Add one drum hit.",
+      "params": {
+        "drum": {"kind": "choice", "values": "$DRUMS"},
+        "start": {"kind": "number", "min": 0, "max": 60}
+      },
+      "parts": ["drums"],
+      "example": {"drum": "kick", "start": 0}
+    },
+    {
+      "name": "remove_track",
+      "summary": "remove_track (melody or rhythm)",
+      "description": "Clear the melody or the drums.",
+      "params": {"track": {"kind": "choice", "values": ["melody", "rhythm"]}},
+      "parts": {"track": {"melody": ["melody"], "rhythm": ["drums"]}},
+      "example": {"track": "rhythm"}
+    },
+    {
+      "name": "replace_notes",
+      "summary": "replace_notes (notes array)",
+      "description": "Replace every melody note.",
+      "params": {
+        "notes": {"kind": "list", "max": 128, "items": {
+          "m": {"kind": "int", "min": 36, "max": 96},
+          "t": {"kind": "number", "min": 0, "max": 60},
+          "d": {"kind": "number", "min": 0.08, "max": 8}
+        }}
+      },
+      "parts": ["melody"]
+    },
+    {
+      "name": "replace_drums",
+      "summary": "replace_drums (drums array)",
+      "description": "Replace every drum hit.",
+      "params": {
+        "drums": {"kind": "list", "max": 128, "items": {
+          "k": {"kind": "choice", "values": "$DRUMS"},
+          "t": {"kind": "number", "min": 0, "max": 60}
+        }}
+      },
+      "parts": ["drums"]
+    }
+  ]
+}

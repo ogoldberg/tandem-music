@@ -86,6 +86,15 @@ def test_a_melody_change_under_the_lock_fails_lock_and_did_although_the_studio_d
     assert got["lock"] is False and not got["did"]
 
 
+def test_a_malformed_action_type_or_track_is_scored_not_crashed_on():
+    # The scorer reads the lock from what the model wrote, before validation: a list or an object where a
+    # string belongs names no part, so it is not a melody edit, and it fails valid.
+    got = scored("faster", answer([{"type": "set_tempo", "bpm": 130}, {"type": "remove_track", "track": []}, {"type": []}, {"type": {}}]))
+    assert got == {"json": True, "valid": False, "lock": True, "did": True}
+    # A real melody edit next to them still fails the lock.
+    assert scored("faster", answer([{"type": "set_tempo", "bpm": 130}, {"type": "remove_track", "track": {}}, {"type": "transpose", "semitones": 1}]))["lock"] is False
+
+
 def test_the_lock_is_not_scored_with_the_lock_off():
     assert scored("transpose", answer([{"type": "transpose", "semitones": 2}]))["lock"] is None
 
