@@ -159,9 +159,12 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         page.click("#gsaveversion")
         expect(page.locator("#gversions")).to_have_text("1 version saved on this device.")
         expect(page.locator("#gversionname")).to_have_value("")
+        # SHARE.1: the other formats are folded under "Open in other music apps"; every file is named after the song.
+        expect(page.locator('[data-press="exportwav"]')).to_be_hidden()
+        page.click("#gmoreapps summary")
         with page.expect_download(timeout=40_000) as info:
             page.click('[data-press="exportwav"]')
-        assert info.value.suggested_filename == "tandem-arrangement.wav"
+        assert info.value.suggested_filename == "Tandem song.wav"
 
         # The rail (shown at desktop widths) sums up each step.
         sums = page.eval_on_selector_all("#steps .gsum", "els => els.map(e => e.textContent)")
@@ -297,7 +300,7 @@ def test_without_recording_storage_record_a_beat_says_the_take_is_lost_and_saves
         expect(page.locator("#gbeatdownload")).to_be_visible()
         with page.expect_download() as info:
             page.click("#gbeatdownload")
-        assert info.value.suggested_filename == "tandem-voice.wav"
+        assert info.value.suggested_filename == "Tandem song - my voice.wav"
         with wave.open(str(info.value.path())) as w:
             assert w.getnframes() / w.getframerate() > 2
         expect(page.locator("#gstatus")).to_have_text("Downloaded your voice.")

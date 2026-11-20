@@ -12,7 +12,7 @@ import numpy as np
 from playwright.sync_api import expect
 
 from test_capture import PHONE, open_capture, phone_page, record
-from test_studio import IDB_GET, OPFS_FILES, count, download, tone_wav
+from test_studio import IDB_GET, OPFS_FILES, count, download, import_recording, tone_wav
 from conftest import ALL_CONTROLS
 
 # navigator.share with files, as on iOS Safari and Android Chrome: the shared file is kept for the test.
@@ -350,3 +350,172 @@ def test_without_device_storage_opening_a_file_says_the_draft_was_not_kept(page,
     expect(page.locator("#status")).to_have_text(re.compile(r"saved as a version: [^\n]*[^.]\. Undo brings back its notes but not its recording\.$"))
     assert count(page, "notecount") == 3
     assert not problems, problems
+
+
+# SHARE.1: Share the song, the files named after the song, and the song saved with its recordings.
+
+def song_samples(data):
+    """The shared mix as floats, after checking it is a WAV of the song."""
+    channels, width, rate, frames = wav_info(data)
+    assert channels == 1 and width == 2 and rate == 44100 and frames > rate
+    return np.frombuffer(data[44:44 + frames * 2], dtype="<i2").astype(np.float64) / 32768
+
+
+def song_with_a_take(page, tmp_path, name="Bus stop"):
+    """The example tune and drums over an imported take, the song named."""
+    page.wait_for_function("!document.body.inert")
+    wav = tmp_path / "take.wav"
+    tone_wav(wav)
+    import_recording(page, wav)
+    page.click("#demo")
+    expect(page.locator("#notecount")).to_have_text("8 notes")
+    expect(page.locator("#original")).to_be_enabled()
+    page.fill("#songname", name)
+    page.dispatch_event("#songname", "change")
+
+
+def test_share_the_song_named_after_it_with_or_without_your_voice(studio, tmp_path):
+    page = studio
+    song_with_a_take(page, tmp_path)
+    page.evaluate(SHARE_STUB % "[]")
+    # The voice is muted by default (MIX.1): the song is the arrangement alone.
+    expect(page.locator("#mute-voice")).to_have_attribute("aria-pressed", "true")
+    page.click("#sharesong")
+    expect(page.locator("#status")).to_have_text("Shared Bus stop.wav without your voice.", timeout=40_000)
+    page.click("#mute-voice")
+    expect(page.locator("#undo")).to_have_attribute("title", "Undo: Unmute your voice")
+    page.click("#sharesong")
+    expect(page.locator("#status")).to_have_text("Shared Bus stop.wav with your voice.", timeout=40_000)
+    without, with_voice = shares(page)
+    for shared in (without, with_voice):
+        assert shared["name"] == "Bus stop.wav" and shared["type"] == "audio/wav" and shared["title"] == "Bus stop"
+    a, b = (song_samples(base64.b64decode(x["b64"])) for x in (without, with_voice))
+    assert np.abs(a).max() > 0.01, "the arrangement is heard"
+    # The difference is the take: its first tone (440 Hz) from zero, at the start of the song.
+    n = min(len(a), len(b))
+    voice = (b[:n] - a[:n])[:int(0.6 * 44100)]
+    assert np.sqrt(np.mean(voice ** 2)) > 0.02
+    spectrum = np.abs(np.fft.rfft(voice))
+    assert abs(np.argmax(spectrum) * 44100 / len(voice) - 440) < 5
+
+
+def test_share_the_song_downloads_it_where_files_cannot_be_shared_and_every_export_is_named_after_it(studio, tmp_path):
+    page = studio
+    song_with_a_take(page, tmp_path, "Night: drive?")
+    page.evaluate(NO_SHARE)
+    with page.expect_download(timeout=40_000) as info:
+        page.click("#sharesong")
+    assert info.value.suggested_filename == "Night- drive.wav"
+    expect(page.locator("#status")).to_have_text("Downloaded Night- drive.wav without your voice.")
+    for button, name in [("#exportwav", "Night- drive.wav"), ("#exportmidi", "Night- drive.mid"),
+                         ("#exportmusicxml", "Night- drive.musicxml"), ("#save", "Night- drive.json"),
+                         ("#savebundle", "Night- drive.tandem.zip")]:
+        with page.expect_download(timeout=40_000) as info:
+            page.click(button)
+        assert info.value.suggested_filename == name, button
+
+
+def test_a_refused_share_of_the_song_is_offered_again_until_the_song_changes(studio, tmp_path):
+    page = studio
+    song_with_a_take(page, tmp_path)
+    page.evaluate(SHARE_STUB % "['AbortError', 'NotAllowedError', 'NotAllowedError']")
+    share = page.locator("#sharesong")
+    share.click()
+    expect(page.locator("#status")).to_have_text("Sharing was cancelled.", timeout=40_000)
+    share.click()
+    expect(share).to_have_text("Tap to share", timeout=40_000)
+    expect(page.locator("#status")).to_have_text("The song is ready. Tap Share the song again to send it.")
+    # A change to the song drops the ready file: the next tap makes it again.
+    page.click("#mute-voice")
+    share.click()
+    expect(share).to_have_text("Tap to share", timeout=40_000)
+    share.click()
+    expect(page.locator("#status")).to_have_text("Shared Bus stop.wav with your voice.")
+    expect(share).to_have_text("Share the song")
+    assert len(shares(page)) == 1
+
+
+def test_nothing_to_share_says_so(studio):
+    page = studio
+    page.wait_for_function("!document.body.inert")
+    page.evaluate(SHARE_STUB % "[]")
+    page.click("#sharesong")
+    expect(page.locator("#status")).to_have_text("Could not prepare the song: Nothing to hear yet: sing your idea or add some notes first.")
+    assert shares(page) == []
+
+
+def test_a_saved_song_file_opens_again_with_its_recordings_and_name(studio, browser, server_url, tmp_path):
+    page = studio
+    song_with_a_take(page, tmp_path)
+    page.click("#mute-voice")
+    path = download(page, "#savebundle", tmp_path)
+    assert path.name == "Bus stop.tandem.zip"
+    expect(page.locator("#status")).to_have_text("Saved Bus stop.tandem.zip with 1 recording.")
+    with zipfile.ZipFile(path) as z:
+        assert z.namelist() == ["tandem.json", "project.json", "original.wav"]
+        assert json.loads(z.read("tandem.json"))["name"] == "Bus stop"
+        project = json.loads(z.read("project.json"))
+        original = z.read("original.wav")
+    assert len(project["notes"]) == 8 and project["mix"] == {"voice": {"mute": False}}
+
+    problems = []
+    context, fresh = studio_page(browser, server_url, problems)
+    try:
+        open_bundle(fresh, path.name, path.read_bytes())
+        expect(fresh.locator("#status")).to_have_text("Opened Bus stop with its recording.")
+        expect(fresh.locator("#songname")).to_have_value("Bus stop")
+        expect(fresh.locator("#notecount")).to_have_text("8 notes")
+        expect(fresh.locator("#original")).to_be_enabled()
+        expect(fresh.locator("#mute-voice")).to_have_attribute("aria-pressed", "false")
+        links = wait_for_draft_audio(fresh, ["original"])
+        assert links and links["original"]["id"] == hashlib.sha256(original).hexdigest()
+        # Clearing the name clears it from the files too (review of #146): no name is kept behind the field.
+        fresh.fill("#songname", "")
+        fresh.dispatch_event("#songname", "change")
+        with fresh.expect_download() as info:
+            fresh.click("#exportmidi")
+        assert info.value.suggested_filename == "Tandem song.mid"
+        # A Tandem file without a name (an idea from the phone) names the song by its title, not the song before it.
+        fresh.fill("#songname", "Bus stop")
+        fresh.dispatch_event("#songname", "change")
+        unnamed = io.BytesIO()
+        with zipfile.ZipFile(path) as z, zipfile.ZipFile(unnamed, "w") as out:
+            for item in z.namelist():
+                data = z.read(item)
+                out.writestr(item, json.dumps({"format": "tandem-bundle", "version": 1, "name": "", "savedAt": None}) if item == "tandem.json" else data)
+        open_bundle(fresh, "Night drive.tandem.zip", unnamed.getvalue())
+        expect(fresh.locator("#status")).to_contain_text("Opened Night drive with its recording.")
+        expect(fresh.locator("#songname")).to_have_value("Night drive")
+    finally:
+        context.close()
+    assert not problems, problems
+
+
+def test_the_guided_share_step_shares_the_song_by_its_name_with_the_voice_chosen_there(browser, server_url):
+    from test_guided import guided_page, record_take, use_server_transcriber
+    with guided_page(browser, server_url, init=SHARE_STUB % "[]") as page:
+        page.click('#steps [data-step="share"]')
+        # Nothing recorded: no voice to choose, and the other formats are folded away.
+        expect(page.locator("#gsharevoicerow")).to_be_hidden()
+        expect(page.locator("#gsharesong")).to_be_visible()
+        expect(page.locator('#gmoreapps [data-press="exportstems"]')).to_be_hidden()
+        page.click('#steps [data-step="sing"]')
+        use_server_transcriber(page)
+        page.click('[data-mode="vocal"]')
+        record_take(page)
+        page.click('#steps [data-step="share"]')
+        page.fill("#gsongname", "Bus stop")
+        page.dispatch_event("#gsongname", "change")
+        expect(page.locator("#songname")).to_have_value("Bus stop")
+        # Singing with words is heard (UX.1); unticking With my voice mutes it as one edit.
+        expect(page.locator("#gsharevoice")).to_be_checked()
+        page.uncheck("#gsharevoice")
+        expect(page.locator("#mute-voice")).to_have_attribute("aria-pressed", "true")
+        expect(page.locator("#undo")).to_have_attribute("title", "Undo: Mute your voice")
+        expect(page.locator("#gvoicein")).not_to_be_checked()
+        page.click("#gsharesong")
+        expect(page.locator("#status")).to_have_text(re.compile(r"Shared Bus stop\.wav without your voice\."), timeout=40_000)
+        page.check("#gsharevoice")
+        page.click("#gsharesong")
+        expect(page.locator("#status")).to_have_text(re.compile(r"Shared Bus stop\.wav with your voice\."), timeout=40_000)
+        assert [s["name"] for s in shares(page)] == ["Bus stop.wav", "Bus stop.wav"]

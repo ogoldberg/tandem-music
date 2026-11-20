@@ -246,8 +246,23 @@ export async function readBundle(bytes, options) {
   return { name, savedAt, project, recordings };
 }
 
-// "<name>.tandem.zip", with characters that some file systems refuse replaced.
+// A name with the characters some file systems refuse replaced, at most 60 characters ("" when nothing is left).
+const safeName = name => String(name ?? "").replace(/[\/\\:*?"<>|\x00-\x1f]+/g, "-").replace(/-+/g, "-").replace(/^[\s.-]+|[\s.-]+$/g, "").slice(0, MAX_NAME).trim();
+
+// "<name>.tandem.zip" for an idea shared from the capture page.
 export function bundleFileName(name) {
-  const clean = String(name ?? "").replace(/[\/\\:*?"<>|\x00-\x1f]+/g, "-").replace(/-+/g, "-").replace(/^[\s.-]+|[\s.-]+$/g, "").slice(0, MAX_NAME).trim();
-  return (clean || "Tandem idea") + BUNDLE_EXT;
+  return (safeName(name) || "Tandem idea") + BUNDLE_EXT;
+}
+
+// SHARE.1: what each of the studio's exports adds to the song's name.
+export const SONG_FILES = Object.freeze({
+  mix: ".wav", evolution: " - how it grew.wav", stems: " - stems.zip", midi: ".mid", musicxml: ".musicxml",
+  dawproject: ".dawproject", project: ".json", bundle: BUNDLE_EXT, voice: " - my voice.wav",
+  tuned: " - tuned voice.wav", polished: " - polished voice.wav", music: " - music.wav",
+});
+
+// The file name of one of the song's exports: the song's name (or "Tandem song") and the kind's ending.
+export function songFileName(name, kind) {
+  if (!Object.hasOwn(SONG_FILES, kind)) throw Error(`Unknown export: ${kind}`);
+  return (safeName(name) || "Tandem song") + SONG_FILES[kind];
 }

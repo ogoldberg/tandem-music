@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { grooveHits } from "../beats.js";
 import {
   crc32, zipFiles, unzipFiles, inflateWithin, encodeWav, isWav, toWav, writeBundle, readBundle, isBundle,
-  bundleFileName, ideaProject, BUNDLE_FILES, MAX_BUNDLE_BYTES,
+  bundleFileName, songFileName, SONG_FILES, ideaProject, BUNDLE_FILES, MAX_BUNDLE_BYTES,
 } from "../bundle.js";
 
 const text = s => new TextEncoder().encode(s);
@@ -216,6 +216,29 @@ test("a bundle file name comes from the idea's name and is safe on every system"
   assert.equal(bundleFileName('a/b:c*?"<>|\\d. '), "a-b-c-d.tandem.zip");
   assert.equal(bundleFileName(""), "Tandem idea.tandem.zip");
   assert.equal(bundleFileName("..."), "Tandem idea.tandem.zip");
+});
+
+test("SHARE.1: every export is named after the song, safely, with a plain name when the song has none", () => {
+  assert.equal(songFileName("Bus stop", "mix"), "Bus stop.wav");
+  assert.equal(songFileName("Bus stop", "evolution"), "Bus stop - how it grew.wav");
+  assert.equal(songFileName("Bus stop", "stems"), "Bus stop - stems.zip");
+  assert.equal(songFileName("Bus stop", "midi"), "Bus stop.mid");
+  assert.equal(songFileName("Bus stop", "musicxml"), "Bus stop.musicxml");
+  assert.equal(songFileName("Bus stop", "dawproject"), "Bus stop.dawproject");
+  assert.equal(songFileName("Bus stop", "project"), "Bus stop.json");
+  assert.equal(songFileName("Bus stop", "bundle"), "Bus stop.tandem.zip");
+  assert.equal(songFileName("Bus stop", "voice"), "Bus stop - my voice.wav");
+  assert.equal(songFileName("Bus stop", "tuned"), "Bus stop - tuned voice.wav");
+  assert.equal(songFileName("Bus stop", "polished"), "Bus stop - polished voice.wav");
+  assert.equal(songFileName("Bus stop", "music"), "Bus stop - music.wav");
+  assert.equal(songFileName('a/b:c*?"<>|\\d. ', "midi"), "a-b-c-d.mid");
+  assert.equal(songFileName("", "mix"), "Tandem song.wav");
+  assert.equal(songFileName("  ...  ", "bundle"), "Tandem song.tandem.zip");
+  assert.equal(songFileName("x".repeat(80), "mix"), "x".repeat(60) + ".wav");
+  // Every kind has a distinct name, so no export overwrites another in the downloads folder.
+  const names = Object.keys(SONG_FILES).map(k => songFileName("Song", k));
+  assert.equal(new Set(names).size, names.length);
+  assert.throws(() => songFileName("Song", "nope"), /Unknown export/);
 });
 
 test("an idea's project is empty, at 100 bpm on piano, with the melody protected", () => {
