@@ -653,10 +653,12 @@ class SongKey(BaseModel):
     tonic: int = Field(ge=0,le=11)
     mode: Literal["major","minor"]
 class SongChord(BaseModel):
-    """One chord of the chords part as harmony.js readChords names it: start and length in seconds, root, kind."""
+    """One chord of the chords part as harmony.js readChords names it: start and length in seconds, root, kind.
+    A chords note may start at 600 s and last 600 s (ProjectNote), and readChords reads a held chord again in the
+    bars it sounds through, so a chord the studio reads from a valid project starts and lasts at most 1200 s."""
     model_config=ConfigDict(extra="forbid")
-    t: float = Field(ge=0,le=600,allow_inf_nan=False)
-    d: float = Field(gt=0,le=600,allow_inf_nan=False)
+    t: float = Field(ge=0,le=1200,allow_inf_nan=False)
+    d: float = Field(gt=0,le=1200,allow_inf_nan=False)
     root: int = Field(ge=0,le=11)
     quality: Literal[tuple(CHORD_SUFFIXES)]
 class SongSummary(BaseModel):
@@ -713,19 +715,24 @@ def normalize_actions(actions):
     """The model's actions that actions.json declares, at most 50, each with only its own params, cleaned."""
     clean=[]
     for a in actions[:50] if isinstance(actions,list) else []:
-        if not isinstance(a,dict) or a.get("type") not in ACTIONS: continue
+        # A type that is not a string (a list or an object, which cannot be looked up) is not an action.
+        if not isinstance(a,dict) or not isinstance(a.get("type"),str) or a["type"] not in ACTIONS: continue
         spec=ACTIONS[a["type"]]
         try: clean.append({"type":spec["name"],**{k:_clean_value(p,a[k]) for k,p in spec["params"].items()}})
         except (ValueError,TypeError,KeyError,OverflowError): continue
     return clean
 def action_parts(action):
-    """The project parts an action changes, from actions.json (an unknown action changes none)."""
-    spec=ACTIONS.get(action.get("type"))
+    """The project parts an action changes, from actions.json (an unknown action changes none). Safe on a raw,
+    unvalidated action too (the chat evaluation scores what the model wrote): a type or a param value that is not
+    a string names no action and no part."""
+    t=action.get("type")
+    spec=ACTIONS.get(t) if isinstance(t,str) else None
     if spec is None: return set()
     parts=spec["parts"]
     if isinstance(parts,list): return set(parts)
     (param,by),=parts.items()
-    return set(by.get(action.get(param),()))
+    value=action.get(param)
+    return set(by.get(value,())) if isinstance(value,str) else set()
 def extract_json(s):
     s=re.sub(r"^\s*```(?:json)?|\s*```\s*$","",s.strip())
     try: return json.loads(s)

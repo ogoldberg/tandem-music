@@ -4,7 +4,10 @@ prompt and the lock note are the ones written by hand before, and the validation
 one gave (checked on random replies against a copy of it below), except that a reply the old code crashed on (a drum
 hit that is not an object) is now dropped. The song summary goes with the studio's requests only."""
 import json
+import pathlib
 import random
+import shutil
+import subprocess
 
 import pytest
 
@@ -100,6 +103,17 @@ def test_a_drum_hit_that_is_not_an_object_drops_the_action_instead_of_failing_th
     assert r.status_code == 200 and r.json()["actions"] == [{"type": "set_tempo", "bpm": 90}]
 
 
+def test_a_type_that_is_not_a_string_drops_that_action_and_keeps_the_rest(client, monkeypatch):
+    # The old code compared the type with strings and skipped these; a registry lookup of a list or an object fails.
+    bad = [{"type": []}, {"type": {}}, {"type": ["set_tempo"]}, {"type": 7}, {"type": None}]
+    assert server.normalize_actions(bad + [{"type": "set_tempo", "bpm": 90}]) == [{"type": "set_tempo", "bpm": 90}]
+    async def fake(messages, config=None):
+        return json.dumps({"reply": "Slower", "actions": bad + [{"type": "set_tempo", "bpm": 90}]})
+    monkeypatch.setattr(server, "invoke_llm", fake)
+    r = run(client("POST", "/api/chat", json={"message": "slower", "project": {}}))
+    assert r.status_code == 200 and r.json()["actions"] == [{"type": "set_tempo", "bpm": 90}]
+
+
 def test_melody_lock_comes_from_the_parts_each_action_changes():
     assert {n for n, a in server.ACTIONS.items() if server.touches_melody({"type": n, **a.get("example", {})})} == {"transpose", "add_note", "replace_notes"}
     assert server.touches_melody({"type": "replace_notes", "notes": []})
@@ -107,6 +121,9 @@ def test_melody_lock_comes_from_the_parts_each_action_changes():
     assert not server.touches_melody({"type": "remove_track", "track": "rhythm"})
     assert not server.touches_melody({"type": "replace_drums", "drums": []})
     assert not server.touches_melody({"type": "bogus"}) and not server.touches_melody({"type": None})
+    # Raw, unvalidated actions (the chat evaluation scores those): a list or object type or track names nothing.
+    for raw in ({"type": []}, {"type": {}}, {"type": "remove_track", "track": []}, {"type": "remove_track", "track": {}}):
+        assert not server.touches_melody(raw) and server.action_parts(raw) == set()
     assert server.action_parts({"type": "remove_track", "track": "rhythm"}) == {"drums"}
 
 
@@ -143,6 +160,35 @@ def test_a_malformed_song_summary_gets_422(client, monkeypatch, song):
     monkeypatch.setenv("TANDEM_ALLOW_OPEN_CHAT", "1")
     r = run(client("POST", "/api/chat", json={"message": "hi", "project": {}, "song": song}))
     assert r.status_code == 422
+
+
+REPO = pathlib.Path(__file__).resolve().parents[1]
+
+
+def studio_summary(project):
+    """actions.js songSummary of the project, as the studio sends it with the chat request."""
+    script = ("import {songSummary} from './actions.js';"
+              "process.stdout.write(JSON.stringify(songSummary(JSON.parse(process.argv[1]))))")
+    done = subprocess.run([shutil.which("node"), "--input-type=module", "-e", script, json.dumps(project)],
+                          cwd=REPO, capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+@pytest.mark.parametrize("harmony", [
+    [{"m": m, "t": 599.5, "d": 2} for m in (60, 64, 67)],      # held into the bar after 600 s
+    [{"m": m, "t": 600, "d": 600} for m in (60, 64, 67)],      # the latest and longest chords notes a project can hold
+])
+def test_the_summary_the_studio_reads_from_any_valid_project_is_accepted(client, monkeypatch, harmony):
+    project = {"bpm": 220, "notes": [], "drums": [], "harmony": harmony}
+    song = studio_summary(project)
+    assert song["chords"] and max(c["t"] for c in song["chords"]) > 600, song
+    async def fake(messages, config=None):
+        return json.dumps({"reply": "ok", "actions": []})
+    monkeypatch.setattr(server, "invoke_llm", fake)
+    monkeypatch.setenv("TANDEM_ALLOW_OPEN_CHAT", "1")
+    r = run(client("POST", "/api/chat", json={"message": "hi", "project": project, "song": song}))
+    assert r.status_code == 200, r.text
 
 
 def test_actions_js_is_served_and_precached(client):

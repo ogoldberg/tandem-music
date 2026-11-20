@@ -6,6 +6,7 @@ against the server's ChatRequest and prompt. Only the model's text is canned: e2
 The example project is at 100 bpm (a 2.4 s bar): 8 melody notes 0.45 s apart (60 64 67 69 67 64 62 60), in C major.
 """
 import json
+import re
 
 from playwright.sync_api import expect
 
@@ -85,3 +86,14 @@ def test_every_registry_action_runs_as_one_edit_and_the_request_carries_the_song
                                                                     {"type": "add_hit", "drum": "kick", "start": 3}]}), "new tune")
     expect(page.locator("#status")).to_have_text("Applied 1 AI edit(s). Undo is available.")
     assert note_pitches(page) == [60, 64, 67, 69, 67, 64, 62, 60] and count(page, "hitcount") == 17
+
+    # remove_track on its own (in the reply above replace_drums wrote the drums after it): the drums are gone, and
+    # Undo brings back every hit.
+    before = page.evaluate(IDB_DRAFT)["drums"]
+    assert len(before) == 17
+    ask(page, server, json.dumps({"reply": "No drums.", "actions": [{"type": "remove_track", "track": "rhythm"}]}), "no drums")
+    expect(page.locator("#status")).to_have_text("Applied 1 AI edit(s). Undo is available.")
+    assert count(page, "hitcount") == 0 and page.evaluate(IDB_DRAFT)["drums"] == []
+    page.click("#undo")
+    expect(page.locator("#hitcount")).to_have_text(re.compile(r"^17 "))
+    assert page.evaluate(IDB_DRAFT)["drums"] == before
