@@ -94,6 +94,13 @@ def test_add_beats_hits_are_the_studios():
         assert ev.beat_hits(g, 3, 100) == hits, g
 
 
+def test_genre_instruments_are_the_studios():
+    script = ("import {GENRES, genreChanges} from './genre.js';"
+              "process.stdout.write(JSON.stringify(GENRES.map(g => [g.id, genreChanges(g.id).instrument])))")
+    assert dict(node_json(script, None)) == ev.GENRE_INSTRUMENTS
+    assert list(ev.GENRE_INSTRUMENTS) == list(server.GENRES)
+
+
 @pytest.mark.parametrize("cid,actions", [
     ("faster", [{"type": "set_tempo", "bpm": 110}]),
     ("slower", [{"type": "set_tempo", "bpm": 120}]),
@@ -125,6 +132,10 @@ def test_add_beats_hits_are_the_studios():
                          {"type": "generate_harmony", "style": "bass"}]),
     ("to-g-major", [{"type": "transpose", "semitones": 7}, {"type": "transpose", "semitones": -7}]),
     ("to-g-major", [{"type": "transpose", "semitones": 7}, {"type": "remove_track", "track": "melody"}]),
+    # A later genre sets its own instrument over the one asked for.
+    ("marimba", [{"type": "set_instrument", "instrument": "marimba"}, {"type": "set_genre", "genre": "jazz"}]),
+    ("two-changes", [{"type": "set_tempo", "bpm": 72}, {"type": "set_instrument", "instrument": "strings"},
+                     {"type": "set_genre", "genre": "jazz"}]),
 ])
 def test_a_wrong_edit_is_not_what_was_asked(cid, actions):
     got = scored(cid, answer(actions))
@@ -136,6 +147,11 @@ def test_a_wrong_edit_is_not_what_was_asked(cid, actions):
     ("bass-line", [{"type": "generate_harmony", "style": "chords"}, {"type": "generate_harmony", "style": "bass"}]),
     ("to-g-major", [{"type": "transpose", "semitones": 2}, {"type": "transpose", "semitones": 5}]),
     ("to-g-major", [{"type": "transpose", "semitones": -5}]),
+    # The song's own genre chosen again changes nothing, so the instrument asked for stays; a genre whose
+    # instrument is the one asked for gets there too.
+    ("two-changes", [{"type": "set_tempo", "bpm": 72}, {"type": "set_instrument", "instrument": "strings"},
+                     {"type": "set_genre", "genre": "folk"}]),
+    ("marimba", [{"type": "set_genre", "genre": "hiphop"}]),
     ("to-g-major", [{"type": "replace_notes", "notes": [{**n, "m": n["m"] + 7} for n in ev.MELODY]}]),
 ])
 def test_the_ai6_cases_score_what_the_song_ends_with(cid, actions):

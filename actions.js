@@ -20,6 +20,7 @@ function fitsChat(list, what) {
   if (list.some(n => n.t > CHAT_LIMITS.seconds || (n.d ?? 0) > CHAT_LIMITS.seconds))
     throw Error(`The ${what} would run past ${CHAT_LIMITS.seconds / 60} minutes, longer than the chat can hold.`);
 }
+const utf8Bytes = text => new TextEncoder().encode(text).length;
 
 // One function per action, (project, action, context) => void, changing the project in place. The studio calls
 // applyActions inside one edit(), so a reply's actions are one undo step. A handler that cannot run throws before
@@ -40,8 +41,9 @@ export const HANDLERS = Object.freeze({
   generate_harmony(p, a, { key = null } = {}) {
     // key: the key menu's choice, or null for the melody's key, read after the reply's earlier actions.
     const h = generateHarmony(p, { style: a.style, key, feel: harmonyStyle(p.genre) });
+    const bass = !p.harmony?.length && a.style === "bass" && (p.harmony_instrument ?? "piano") === "piano";
     fitsChat(h.notes, a.style === "bass" ? "bass line" : "chords");
-    if (!p.harmony?.length && a.style === "bass" && (p.harmony_instrument ?? "piano") === "piano") p.harmony_instrument = "bass";
+    if (bass) p.harmony_instrument = "bass";
     p.harmony = h.notes;
   },
   add_beat(p, a) {
@@ -91,12 +93,21 @@ export function songSummary(project, { key } = {}) {
 // tests/actions.test.mjs checks they match).
 export const CHAT_BODY_MAX_BYTES = 262_144;
 
-// The chat request's JSON text. The song summary is optional context: when the request with it would be
-// over the server's limit, it goes without it (the prompt is then as before AI.7), rather than the request
-// being refused. A partial chord list is not sent, since the model would read it as the whole song.
+// The chat request's JSON text. The song summary and the history are optional context: when the request
+// would be over the server's limit, the summary goes first (the prompt is then as before AI.7), then the
+// oldest turns of the history one by one, rather than the request being refused. A partial chord list is not
+// sent, since the model would read it as the whole song. A project within ChatProject's limits and the longest
+// message fit on their own, so a generated part (a beat, chords) never leaves the chat unable to send.
 export function chatBody(body, { maxBytes = CHAT_BODY_MAX_BYTES } = {}) {
-  const text = JSON.stringify(body);
-  if (body.song === undefined || new TextEncoder().encode(text).length <= maxBytes) return text;
+  let text = JSON.stringify(body);
+  if (utf8Bytes(text) <= maxBytes) return text;
   const { song, ...rest } = body;
-  return JSON.stringify(rest);
+  text = JSON.stringify(rest);
+  if (!Array.isArray(rest.history)) return text;
+  const history = [...rest.history];
+  while (history.length && utf8Bytes(text) > maxBytes) {
+    history.shift();
+    text = JSON.stringify({ ...rest, history });
+  }
+  return text;
 }

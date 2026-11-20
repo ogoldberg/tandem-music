@@ -92,9 +92,19 @@ test("chatBody sends the summary only when the request fits the server's limit",
   const over = JSON.parse(chatBody(body(fits + 1)));
   assert.equal(over.song, undefined);
   assert.equal(over.message.length, fits + 1);
-  // Without a summary the body is the plain JSON, whatever its size.
+  // Without a summary or a history the body is the plain JSON, whatever its size.
   const plain = { message: "x".repeat(CHAT_BODY_MAX_BYTES), project: {} };
   assert.equal(chatBody(plain), JSON.stringify(plain));
+  // Still over without the summary: the oldest turns of the history go, one by one, until it fits.
+  const turn = i => ({ role: i % 2 ? "assistant" : "user", content: String(i).repeat(3000) });
+  const big = { message: "m", project: { lyrics: "x".repeat(CHAT_BODY_MAX_BYTES - 20_000) }, history: Array.from({ length: 10 }, (_, i) => turn(i)), song };
+  const sent = JSON.parse(chatBody(big));
+  assert.ok(bytes(chatBody(big)) <= CHAT_BODY_MAX_BYTES);
+  assert.equal(sent.song, undefined);
+  assert.deepEqual(sent.history, big.history.slice(-sent.history.length));
+  assert.ok(sent.history.length >= 5 && sent.history.length < 10, String(sent.history.length));
+  // One turn fewer would not have fitted: only as many go as must.
+  assert.ok(bytes(JSON.stringify({ ...sent, history: big.history.slice(-(sent.history.length + 1)) })) > CHAT_BODY_MAX_BYTES);
 });
 
 // AI.6: the three actions that run the studio's own generators.
@@ -182,6 +192,27 @@ test("a generated part the next chat request could not carry is refused, not kep
     assert.ok(p.drums.length <= CHAT_LIMITS.items && p.drums.at(-1).t < CHAT_LIMITS.seconds, g.id);
   }
   assert.equal(problems.length, 1);
+});
+
+test("after a generated beat the next chat request still fits: the oldest history goes", () => {
+  // The reviewer's case: a request near the cap, then a 64-bar shuffle that adds about 16 KB to the project.
+  const notes = Array.from({ length: 1024 }, (_, i) => ({ m: 60 + i % 8, t: i * Math.PI / 20, d: Math.SQRT2 / 10 }));
+  const project = { notes, voice2: notes, drums: [], harmony: [], bpm: 100, lyrics: "\u{1F3B5}".repeat(3900), melody_locked: true };
+  const history = Array.from({ length: 10 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: "\u{1F3B5}".repeat(i % 2 ? 2700 : 2990) }));
+  const message = "\u{1F3B5}".repeat(2980) + " add a beat";
+  const send = () => JSON.parse(chatBody({ project, history, message, song: songSummary(project) }));
+  const bytes = () => new TextEncoder().encode(chatBody({ project, history, message, song: songSummary(project) })).length;
+  assert.ok(bytes() <= CHAT_BODY_MAX_BYTES);
+  assert.equal(send().history.length, 10);
+  const problems = [];
+  assert.equal(applyActions(project, [{ type: "add_beat", groove: "shuffle", bars: 64 }], { problems }), 1);
+  assert.deepEqual(problems, []);
+  assert.ok(bytes() <= CHAT_BODY_MAX_BYTES, String(bytes()));
+  const sent = send();
+  assert.equal(sent.message, message);
+  assert.deepEqual(sent.project, JSON.parse(JSON.stringify(project)));
+  assert.ok(sent.history.length < 10 && sent.history.length > 0, String(sent.history.length));
+  assert.deepEqual(sent.history, history.slice(-sent.history.length));
 });
 
 test("an action that cannot run on this song is skipped with its reason and changes nothing", () => {

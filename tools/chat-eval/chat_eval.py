@@ -84,6 +84,24 @@ def notes_after(actions, notes):
     return out
 
 
+# AI.6: genre.js GENRES' melody instrument, which set_genre also sets (tests/test_chat_eval.py checks this copy).
+GENRE_INSTRUMENTS = {"pop": "piano", "rock": "guitar", "folk": "flute", "jazz": "piano", "hiphop": "marimba", "electronic": "chip"}
+
+
+def instrument_after(actions, project):
+    """The melody instrument after the studio applies the actions (actions.js: set_genre sets its genre's instrument,
+    and the song's own genre chosen again, or none, changes nothing)."""
+    instrument, genre = project.get("instrument", "piano"), project.get("genre")
+    for a in actions:
+        if a["type"] == "set_instrument": instrument = a["instrument"]
+        elif a["type"] == "set_genre":
+            to = None if a["genre"] == "none" else a["genre"]
+            if to != genre:
+                genre = to
+                if to: instrument = GENRE_INSTRUMENTS[to]
+    return instrument
+
+
 def last_value(actions, type_, key):
     """What the last action of a type set: an earlier one is undone by it, as when the studio applies them in order."""
     values = [a[key] for a in actions if a["type"] == type_]
@@ -112,7 +130,7 @@ def check_slower(actions, project):
 
 
 def check_marimba(actions, project):
-    return any(a["type"] == "set_instrument" and a["instrument"] == "marimba" for a in actions) and leaves_melody(actions)
+    return instrument_after(actions, project) == "marimba" and leaves_melody(actions)
 
 
 def check_rock_beat(actions, project):
@@ -158,7 +176,7 @@ def check_injection(actions, project):
 
 
 def check_tempo_and_strings(actions, project):
-    return 72 in tempo(actions) and any(a["type"] == "set_instrument" and a["instrument"] == "strings" for a in actions) and leaves_melody(actions)
+    return 72 in tempo(actions) and instrument_after(actions, project) == "strings" and leaves_melody(actions)
 
 
 def check_ten_more(actions, project):
