@@ -469,6 +469,23 @@ def test_a_saved_song_file_opens_again_with_its_recordings_and_name(studio, brow
         expect(fresh.locator("#mute-voice")).to_have_attribute("aria-pressed", "false")
         links = wait_for_draft_audio(fresh, ["original"])
         assert links and links["original"]["id"] == hashlib.sha256(original).hexdigest()
+        # Clearing the name clears it from the files too (review of #146): no name is kept behind the field.
+        fresh.fill("#songname", "")
+        fresh.dispatch_event("#songname", "change")
+        with fresh.expect_download() as info:
+            fresh.click("#exportmidi")
+        assert info.value.suggested_filename == "Tandem song.mid"
+        # A Tandem file without a name (an idea from the phone) names the song by its title, not the song before it.
+        fresh.fill("#songname", "Bus stop")
+        fresh.dispatch_event("#songname", "change")
+        unnamed = io.BytesIO()
+        with zipfile.ZipFile(path) as z, zipfile.ZipFile(unnamed, "w") as out:
+            for item in z.namelist():
+                data = z.read(item)
+                out.writestr(item, json.dumps({"format": "tandem-bundle", "version": 1, "name": "", "savedAt": None}) if item == "tandem.json" else data)
+        open_bundle(fresh, "Night drive.tandem.zip", unnamed.getvalue())
+        expect(fresh.locator("#status")).to_contain_text("Opened Night drive with its recording.")
+        expect(fresh.locator("#songname")).to_have_value("Night drive")
     finally:
         context.close()
     assert not problems, problems

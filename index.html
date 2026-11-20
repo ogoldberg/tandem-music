@@ -516,8 +516,8 @@ const typing=t=>t?.isContentEditable||t?.tagName==='TEXTAREA'||(t?.tagName==='IN
 const SONG_KEY='song-name';
 function setSongName(name){$('songname').value=$('gsongname').value=String(name||'').trim().slice(0,60);if(kv)kv.set(SONG_KEY,$('songname').value).catch(e=>status('The song name could not be kept: '+e.message))}
 $('songname').onchange=()=>setSongName($('songname').value);$('gsongname').onchange=()=>setSongName($('gsongname').value);
-// SHARE.1: every export is named after the song (bundle.js songFileName), or the Mac app's project folder.
-const songName=()=>$('songname').value.trim()||projectName;
+// SHARE.1: every export is named after the song (bundle.js songFileName); an empty name gives "Tandem song".
+const songName=()=>$('songname').value.trim();
 const fileFor=kind=>songFileName(songName(),kind);
 // UI.2: in the studio, Space plays or stops and 1 to 4 pick the steps, unless a field, button or roll has the key.
 document.addEventListener('keydown',e=>{if($('allcontrols').hidden||e.ctrlKey||e.metaKey||e.altKey||e.defaultPrevented||typing(e.target))return;const at=e.target?.closest?.bind(e.target)??(()=>null);if(e.key===' '){if(at('button,select,a,input,.roll,.target,#timeline'))return;e.preventDefault();$(playing?'stop':'play').click()}else if(/^[1-4]$/.test(e.key)&&!at('select,.roll,.target'))showPart(STEP_PART[STEPS[Number(e.key)-1].id])});
@@ -1129,13 +1129,13 @@ async function openBundle(b,fileName){
   const wav=s=>b.recordings[s]&&new Blob([b.recordings[s]],{type:'audio/wav'});
   adoptRecordings(b);
   const title=b.name||(b.savedAt!=null?ideaTitle({name:'',savedAt:b.savedAt},shortTime):fileName.replace(/(\.tandem)?\.zip$/i,''));
-  if(!b.recordings.original){await openProject(b.project,title,true);if(b.name)setSongName(b.name);return}
+  if(!b.recordings.original){await openProject(b.project,title,true);setSongName(title);return}
   // Decode the recording before anything changes, so a file whose audio cannot be read leaves the draft as it was.
   try{await decoded(wav('original'))}catch(e){throw Error('Could not decode the recording in the file: '+e.message)}
   const kept=await keepDraft(title);
   newProject();edit('Open '+title,()=>Object.assign(state,projectFields(b.project)));
   await useAudio({original:wav('original'),polished:wav('polished'),tuned:wav('tuned'),vocal:wav('vocal'),accompaniment:wav('accompaniment')},'from the file');await saveDraftAudio();
-  projectName=title;if(b.name)setSongName(b.name);
+  projectName=title;setSongName(title);
   status('Opened '+title+' with its recording'+(Object.keys(b.recordings).length>1?'s':'')+'.'+kept);
 }
 // DESK.3: in the Mac app's own window a project is kept as a folder of files (project.json and its recordings as WAV)
@@ -1198,7 +1198,7 @@ $('openfolder').onclick=async()=>{try{
   const b=await readBundle(new Uint8Array(await r.arrayBuffer()));
   if(b.recordings.original){await openBundle(b,b.name);return}
   checkProject(b.project);adoptRecordings(b);
-  const kept=await openProject(b.project,b.name,true);projectName=b.name;status('Opened '+b.name+' (it has no recording).'+kept);
+  const kept=await openProject(b.project,b.name,true);projectName=b.name;setSongName(b.name);status('Opened '+b.name+' (it has no recording).'+kept);
 }catch(e){status('Could not open the project folder: '+e.message)}};
 // SEP.1: in the Mac app's own window, Separate splits the recording into the voice and the music with HTDemucs on this Mac
 // (tandem_desktop/separation.py), downloading the model the first time (84 MB, pinned by hash and checked). The vocal and
