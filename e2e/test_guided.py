@@ -419,3 +419,63 @@ def test_a_tune_take_leaves_the_voice_out_of_the_song(browser, server_url):
         expect(page.locator("#gvoicein")).to_be_enabled()
         expect(page.locator("#gvoicein")).not_to_be_checked()
         assert voice_muted(page)
+
+
+def test_the_notes_step_listens_first_and_folds_the_expert_tools_on_a_phone(browser, server_url):
+    # UX.2: on a 390 px phone, Listen to comes before the roll, the expert melody tools and the Timeline are folded
+    # (closed), the tools have plain labels, the gear says Settings, and the Share step ends with Show every control.
+    with guided_page(browser, server_url) as page:
+        page.click("#gdemo")
+        page.click('#steps [data-step="notes"]')
+        page.evaluate("window.scrollTo(0, 0)")
+        tops = page.evaluate("""ids => ids.map(id => document.getElementById(id).getBoundingClientRect().top + scrollY)""",
+                             ["glisten", "gvoice", "melodyroll", "melodydraw", "gmoretools", "lyrics", "gtimeline", "gfixcard"])
+        assert tops == sorted(tops), tops
+        # Listen to is on the first screen, under the key and speed.
+        assert page.locator("#gvoice").bounding_box()["y"] + 44 < 844
+        for fold in ("#gmoretools", "#gtimeline"):
+            assert page.eval_on_selector(fold, "d => d.open") is False
+        for hidden in ("#melodyoctdown", "#melodyoctup", "#melodykeydown", "#melodykeyup", "#melodyfit", "#practice",
+                       "#warmup", "#addwarmup", "#timeline", "#marksection"):
+            expect(page.locator(hidden)).to_be_hidden()
+        for shown in ("#melodydraw", "#melodyline", "#melodyall", "#melodydelete", "#melodysemidown", "#melodysemiup", "#lyrics"):
+            expect(page.locator(shown)).to_be_visible()
+        expect(page.locator("#melodysemidown")).to_have_text("Down a semitone")
+        expect(page.locator("#melodysemiup")).to_have_text("Up a semitone")
+        assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
+
+        page.click("#gmoretools summary")
+        expect(page.locator("#gmoretools #melodykeydown")).to_have_text("Down a note in the key")
+        expect(page.locator("#gmoretools #melodykeyup")).to_have_text("Up a note in the key")
+        expect(page.locator("#gmoretools #melodyoctdown")).to_have_text("Down an octave")
+        expect(page.locator("#gmoretools #melodyfit")).to_have_text("Show which notes fit the chords")
+        for shown in ("#melodyoctdown", "#melodykeydown", "#melodyfit", "#practice", "#warmup", "#addwarmup"):
+            expect(page.locator(shown)).to_be_visible()
+        assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
+        # The folded tools drive the same handlers: Up an octave moves the selected notes up 12.
+        first = page.locator("#melodyroll .note").first
+        before = int(first.get_attribute("title").split()[1])
+        page.click("#melodyall")
+        page.click("#melodyoctup")
+        expect(first).to_have_attribute("title", re.compile(rf"^MIDI {before + 12} "))
+
+        page.click("#gtimeline summary")
+        expect(page.locator("#gtimeline #timeline")).to_be_visible()
+        expect(page.locator("#gtimeline #marksection")).to_be_visible()
+
+        # The gear is labelled Settings and fits the top bar.
+        settings = page.locator("#gsettings")
+        expect(settings).to_have_accessible_name("Settings")
+        box = settings.bounding_box()
+        assert box["x"] + box["width"] <= 390
+
+        # Show every control ends the Share step, and leads to the studio with every tool back in its place.
+        page.click('#steps [data-step="share"]')
+        last = page.evaluate("""() => { const c = [...document.querySelectorAll('[data-panel="share"] button, [data-panel="share"] input, [data-panel="share"] select')];
+            return c[c.length - 1].id }""")
+        assert last == "gshareall"
+        page.click("#gshareall")
+        expect(page.locator("#guide")).to_be_hidden()
+        assert page.evaluate("""() => document.getElementById('melodymore').parentElement.id === 'melodytools'
+            && !!document.getElementById('transport').closest('#lanes')""")
+        expect(page.locator("#melodyfit")).to_be_attached()
