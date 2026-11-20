@@ -534,6 +534,20 @@ Asked for by the operator on 2026-11-18 ("find ways to improve the UI/UX, existi
   - "Add chords and a beat" in the chat cannot be done: no AI action edits the harmony. New allowlisted actions `generate_harmony`, `add_beat` and `set_genre` run the existing generators in the browser; the model never writes harmony notes and melody lock is unchanged. Needs ADR-010's and GENRE.1's "no AI action edits it" amended in `docs/DECISIONS.md` first. Last here because no hosted model is set up (AI.1, AI.2): only checkable with a local model or the Mac app's key.
   - **Acceptance:** API tests with a mocked provider for the allowlist and clamping; an e2e test applies and undoes each; new cases in `tools/chat-eval`.
 
+### 9e. Sing it to the chat (operator idea, 2026-11-20)
+"Add a guitar line that goes like this", then hum it: the chat hears the hummed line, turns it into notes on the asked instrument, puts it in the right place in the song, and leaves it editable like any other part. The audio stays on the device: it is transcribed here (Basic Pitch, `contour.js` `sungNotes`) and the model gets the request and a description of the notes, never the recording.
+- [ ] **CHAT.1** More than one note line: an instrument line as a part of its own
+  - Today the note parts are fixed (melody, chords, harmony voice, drums), so "a guitar line" has nowhere to go but the melody. Optional project field `lines` `[{id, name, instrument, notes:[{m,t,d}]}]` (mirrored in `tandem_backend.py`), each a lane with its own roll, Draw, note editing (`noteedit.js`), mixer strip, stem, MIDI track, MusicXML part and DAWproject note track; a layer (TRACK.1) can be transcribed into a new line.
+  - **Acceptance:** Node tests for the field's cleaning and every export; e2e tests that a line is added, edited, undone and exported.
+- [ ] **CHAT.2** Hum into the chat: "add a guitar line that goes like this"
+  - **Depends:** CHAT.1, AI.2
+  - A record button in the chat records a hum after the typed request (count-in at the tempo, the take path of REC.2/REC.3 so it lines up with the song). It is transcribed on the device and quantized to the song's grid; the request goes with the hummed notes' summary (length in bars, range, key fit, where the playhead or marked section is) and the new allowlisted action `add_line {instrument, at}` places them: `at` is the marked section, a named section (SONG.1), a bar, or where the hum was sung over the song. One edit, undoable; the line is then edited like any other (CHAT.1), and the chat can be asked to change it (transpose, octave, instrument) with the existing action style. Melody lock is unchanged: a line is not the melody. Needs the "no AI action edits it" decisions amended in `docs/DECISIONS.md` for the new action.
+  - **Acceptance:** API tests with a mocked provider for `add_line`'s allowlist and clamping; an e2e test with the fake microphone and a mocked chat reply adds a line at the marked section, undoes it and edits it; chat-eval cases.
+- [ ] **CHAT.3** Say it instead of typing it
+  - **Depends:** CHAT.2, SPEECH.1
+  - The request spoken into the same record button before the hum: speech is turned into text on the device (SPEECH.1), and the sung part is told apart from the spoken part, so one recording carries "add a guitar line that goes like this" and the line.
+  - **Acceptance:** e2e test with a recorded fixture of speech then humming gives the request text and the line's notes.
+
 ### 10. Later
 - [x] **ARR.1** Better arrangement: richer instruments, harmony, swing and phrase-aware editing
   - **Depends:** CI.2
