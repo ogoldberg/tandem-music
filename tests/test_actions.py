@@ -146,6 +146,31 @@ def test_melody_lock_keeps_ai6_actions():
     assert server.action_parts({"type": "generate_harmony", "style": "bass"}) == {"harmony", "harmony_instrument"}
 
 
+def test_ai6_actions_through_the_chat_endpoint_with_a_mocked_provider(client, monkeypatch):
+    # The whole /api/chat path: the model's answer is validated, clamped and lock-filtered before it reaches the page.
+    async def fake(messages, config=None):
+        return json.dumps({"reply": "Chords, a beat and jazz.", "actions": [
+            {"type": "generate_harmony", "style": "chords", "notes": [{"m": 60, "t": 0, "d": 1}]},
+            {"type": "generate_harmony", "style": "strings"},
+            {"type": "add_beat", "groove": "shuffle", "bars": 999}, {"type": "add_beat", "groove": "four", "bars": 0},
+            {"type": "add_beat", "groove": "polka", "bars": 4},
+            {"type": "set_genre", "genre": "jazz"}, {"type": "set_genre", "genre": "Jazz"}, {"type": "set_genre", "genre": "none"},
+            {"type": "transpose", "semitones": 2}]})
+    monkeypatch.setattr(server, "invoke_llm", fake)
+    project = {"notes": [{"m": 60, "t": 0, "d": 1}], "drums": [], "melody_locked": True}
+    r = run(client("POST", "/api/chat", json={"message": "add chords and a beat, make it jazz", "project": project}))
+    assert r.status_code == 200
+    assert r.json()["actions"] == [
+        {"type": "generate_harmony", "style": "chords"},
+        {"type": "add_beat", "groove": "shuffle", "bars": 64}, {"type": "add_beat", "groove": "four", "bars": 1},
+        {"type": "set_genre", "genre": "jazz"}, {"type": "set_genre", "genre": "none"}]
+    assert r.json()["reply"] == "Chords, a beat and jazz. " + server.LOCKED_REPLY
+    # With the lock off the transpose goes through beside them.
+    r = run(client("POST", "/api/chat", json={"message": "and up a tone", "project": {**project, "melody_locked": False}}))
+    assert r.status_code == 200 and r.json()["actions"][-1] == {"type": "transpose", "semitones": 2}
+    assert r.json()["reply"] == "Chords, a beat and jazz."
+
+
 def test_a_drum_hit_that_is_not_an_object_drops_the_action_instead_of_failing_the_request(client, monkeypatch):
     async def fake(messages, config=None):
         return json.dumps({"reply": "Beat", "actions": [{"type": "replace_drums", "drums": [1]}, {"type": "set_tempo", "bpm": 90}]})

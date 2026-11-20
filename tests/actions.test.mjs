@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { HANDLERS, applyActions, songSummary, MAX_SUMMARY_CHORDS, chatBody, CHAT_BODY_MAX_BYTES } from "../actions.js";
+import { HANDLERS, applyActions, songSummary, MAX_SUMMARY_CHORDS, chatBody, CHAT_BODY_MAX_BYTES, CHAT_LIMITS } from "../actions.js";
 import { CHORD_QUALITIES, generateHarmony, readChords, chordName } from "../harmony.js";
 import { KEY_NAMES } from "../contour.js";
 import { GROOVES, grooveHits } from "../beats.js";
@@ -148,6 +148,40 @@ test("set_genre changes what the Genre menu changes; none clears the genre and k
   applyActions(p, [{ type: "set_genre", genre: "none" }]);
   assert.equal(p.genre, null);
   assert.equal(p.instrument, genreChanges("jazz").instrument);
+  // The song's own genre again changes nothing, as in the Genre menu: instruments chosen since are kept.
+  const own = { ...song(), genre: "jazz", instrument: "flute", harmony_instrument: "guitar" };
+  assert.equal(applyActions(own, [{ type: "set_genre", genre: "jazz" }]), 1);
+  assert.deepEqual([own.genre, own.instrument, own.harmony_instrument], ["jazz", "flute", "guitar"]);
+  const none = { ...song(), instrument: "flute" };
+  applyActions(none, [{ type: "set_genre", genre: "none" }]);
+  assert.equal(none.instrument, "flute");
+  assert.ok(!("genre" in none) || none.genre == null);
+});
+
+test("the chat limits are the server's ProjectNote and part limits", () => {
+  assert.match(backend, /class ProjectNote\(BaseModel\):[^]*?t: float = Field\(ge=0,le=600,/);
+  assert.match(backend, /class ProjectNote\(BaseModel\):[^]*?d: float = Field\(gt=0,le=600,/);
+  assert.match(backend, /class ProjectHit\(BaseModel\):[^]*?t: float = Field\(ge=0,le=600,/);
+  for (const part of ["notes", "drums", "harmony"]) assert.match(backend, new RegExp(`\\n    ${part}: list\\[Project(Note|Hit)\\] = Field\\(default_factory=list,max_length=1024\\)`), part);
+  assert.deepEqual({ ...CHAT_LIMITS }, { seconds: 600, items: 1024 });
+});
+
+test("a generated part the next chat request could not carry is refused, not kept", () => {
+  // A melody near the 10-minute end: the chords run past it (the reviewer's case).
+  const late = { bpm: 220, genre: "rock", notes: [{ m: 60, t: 597, d: 0.5 }, { m: 64, t: 598, d: 0.5 }, { m: 67, t: 599, d: 4 }], drums: [], harmony: [] };
+  assert.ok(generateHarmony(late, { style: "chords", feel: harmonyStyle("rock") }).notes.some(n => n.t > 600), "the generator does run past");
+  const problems = [];
+  assert.equal(applyActions(late, [{ type: "generate_harmony", style: "chords" }], { problems }), 0);
+  assert.deepEqual(late.harmony, []);
+  assert.match(problems[0].message, /past 10 minutes/);
+  // A beat stays inside 10 minutes (64 bars at the slowest 45 BPM is 341 s from the first bar line), but no groove
+  // may give one part more hits than the chat can carry: 64 bars of every groove fit, and a longer list is refused.
+  for (const g of GROOVES) {
+    const p = song();
+    assert.equal(applyActions(p, [{ type: "add_beat", groove: g.id, bars: 64 }], { problems }), 1, g.id);
+    assert.ok(p.drums.length <= CHAT_LIMITS.items && p.drums.at(-1).t < CHAT_LIMITS.seconds, g.id);
+  }
+  assert.equal(problems.length, 1);
 });
 
 test("an action that cannot run on this song is skipped with its reason and changes nothing", () => {

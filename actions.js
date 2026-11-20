@@ -12,6 +12,15 @@ import { genreChanges, harmonyStyle } from "./genre.js";
 
 const clampPitch = m => Math.max(36, Math.min(96, m));
 
+// What a project part may hold for the chat (tandem_backend.py ProjectNote/ProjectHit and the part lists; a Node test
+// checks): a generated part past these would make every later chat request fail, so its action is refused instead.
+export const CHAT_LIMITS = Object.freeze({ seconds: 600, items: 1024 });
+function fitsChat(list, what) {
+  if (list.length > CHAT_LIMITS.items) throw Error(`The ${what} would have ${list.length} notes; the chat can hold ${CHAT_LIMITS.items} a part.`);
+  if (list.some(n => n.t > CHAT_LIMITS.seconds || (n.d ?? 0) > CHAT_LIMITS.seconds))
+    throw Error(`The ${what} would run past ${CHAT_LIMITS.seconds / 60} minutes, longer than the chat can hold.`);
+}
+
 // One function per action, (project, action, context) => void, changing the project in place. The studio calls
 // applyActions inside one edit(), so a reply's actions are one undo step. A handler that cannot run throws before
 // it changes anything (AI.6's generators work out the new part first and then assign it).
@@ -31,14 +40,21 @@ export const HANDLERS = Object.freeze({
   generate_harmony(p, a, { key = null } = {}) {
     // key: the key menu's choice, or null for the melody's key, read after the reply's earlier actions.
     const h = generateHarmony(p, { style: a.style, key, feel: harmonyStyle(p.genre) });
+    fitsChat(h.notes, a.style === "bass" ? "bass line" : "chords");
     if (!p.harmony?.length && a.style === "bass" && (p.harmony_instrument ?? "piano") === "piano") p.harmony_instrument = "bass";
     p.harmony = h.notes;
   },
   add_beat(p, a) {
     const from = barOrigin({ bpm: p.bpm, notes: p.notes, drums: [], harmony: p.harmony, voice2: p.voice2 });
-    p.drums = grooveHits(a.groove, { bpm: p.bpm, bars: a.bars, from });
+    const drums = grooveHits(a.groove, { bpm: p.bpm, bars: a.bars, from });
+    fitsChat(drums, "beat");
+    p.drums = drums;
   },
-  set_genre(p, a) { Object.assign(p, genreChanges(a.genre === "none" ? null : a.genre)); },
+  set_genre(p, a) {
+    // As the Genre menu: the song's own genre chosen again changes nothing, so instruments chosen since are kept.
+    const to = a.genre === "none" ? null : a.genre;
+    if ((p.genre ?? null) !== to) Object.assign(p, genreChanges(to));
+  },
 });
 
 // Runs the server's validated actions in order; an action this studio does not know is skipped, and one that

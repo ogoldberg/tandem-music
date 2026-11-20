@@ -117,10 +117,30 @@ def test_add_beats_hits_are_the_studios():
     ("rock-beat", [{"type": "add_beat", "groove": "halftime", "bars": 1}]),
     ("to-g-major", [{"type": "transpose", "semitones": 2}]),
     ("to-g-major", [{"type": "set_genre", "genre": "pop"}]),
+    # AI.6: a later action of the same kind undoes the earlier one, so the song does not end as asked.
+    ("jazz", [{"type": "set_genre", "genre": "jazz"}, {"type": "set_genre", "genre": "rock"}]),
+    ("add-chords", [{"type": "generate_harmony", "style": "chords"}, {"type": "generate_harmony", "style": "bass"}]),
+    ("bass-line", [{"type": "generate_harmony", "style": "bass"}, {"type": "generate_harmony", "style": "chords"}]),
+    ("chords-and-beat", [{"type": "generate_harmony", "style": "chords"}, {"type": "add_beat", "groove": "straight", "bars": 4},
+                         {"type": "generate_harmony", "style": "bass"}]),
+    ("to-g-major", [{"type": "transpose", "semitones": 7}, {"type": "transpose", "semitones": -7}]),
+    ("to-g-major", [{"type": "transpose", "semitones": 7}, {"type": "remove_track", "track": "melody"}]),
 ])
 def test_a_wrong_edit_is_not_what_was_asked(cid, actions):
     got = scored(cid, answer(actions))
     assert got["json"] and not got["did"]
+
+
+@pytest.mark.parametrize("cid,actions", [
+    ("jazz", [{"type": "set_genre", "genre": "rock"}, {"type": "set_genre", "genre": "jazz"}]),
+    ("bass-line", [{"type": "generate_harmony", "style": "chords"}, {"type": "generate_harmony", "style": "bass"}]),
+    ("to-g-major", [{"type": "transpose", "semitones": 2}, {"type": "transpose", "semitones": 5}]),
+    ("to-g-major", [{"type": "transpose", "semitones": -5}]),
+    ("to-g-major", [{"type": "replace_notes", "notes": [{**n, "m": n["m"] + 7} for n in ev.MELODY]}]),
+])
+def test_the_ai6_cases_score_what_the_song_ends_with(cid, actions):
+    got = scored(cid, answer(actions))
+    assert got["json"] and got["did"], got
 
 
 def test_a_melody_change_under_the_lock_fails_lock_and_did_although_the_studio_drops_it():

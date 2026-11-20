@@ -73,6 +73,23 @@ def drums_after(actions, drums, bpm=None):
     return hits
 
 
+def notes_after(actions, notes):
+    """The melody after the studio applies the actions (actions.js: transpose clamps to 36..96)."""
+    out = [dict(n) for n in notes]
+    for a in actions:
+        if a["type"] == "transpose": out = [{**n, "m": max(36, min(96, n["m"] + a["semitones"]))} for n in out]
+        elif a["type"] == "replace_notes": out = [dict(n) for n in a["notes"]]
+        elif a["type"] == "add_note": out.append({"m": a["pitch"], "t": a["start"], "d": a["duration"]})
+        elif a["type"] == "remove_track" and a["track"] == "melody": out = []
+    return out
+
+
+def last_value(actions, type_, key):
+    """What the last action of a type set: an earlier one is undone by it, as when the studio applies them in order."""
+    values = [a[key] for a in actions if a["type"] == type_]
+    return values[-1] if values else None
+
+
 def tempo(actions):
     return [a["bpm"] for a in actions if a["type"] == "set_tempo"]
 
@@ -148,16 +165,17 @@ def check_ten_more(actions, project):
     return any(127 <= b <= 133 for b in tempo(actions)) and leaves_melody(actions)
 
 
+# AI.6's checks score what the song ends with: a later action of the same kind replaces an earlier one.
 def check_chords(actions, project):
-    return any(a["type"] == "generate_harmony" and a["style"] == "chords" for a in actions) and leaves_melody(actions)
+    return last_value(actions, "generate_harmony", "style") == "chords" and leaves_melody(actions)
 
 
 def check_bass(actions, project):
-    return any(a["type"] == "generate_harmony" and a["style"] == "bass" for a in actions) and leaves_melody(actions)
+    return last_value(actions, "generate_harmony", "style") == "bass" and leaves_melody(actions)
 
 
 def check_jazz(actions, project):
-    return any(a["type"] == "set_genre" and a["genre"] == "jazz" for a in actions) and leaves_melody(actions)
+    return last_value(actions, "set_genre", "genre") == "jazz" and leaves_melody(actions)
 
 
 def check_chords_and_beat(actions, project):
@@ -165,10 +183,9 @@ def check_chords_and_beat(actions, project):
 
 
 def check_to_g_major(actions, project):
-    # The summary says C major: up a fifth or down a fourth.
-    if any(a["type"] == "transpose" and a["semitones"] in (7, -5) for a in actions): return True
-    return any(a["type"] == "replace_notes" and (same_notes(a["notes"], [{**n, "m": n["m"] + 7} for n in project["notes"]])
-                                                 or same_notes(a["notes"], [{**n, "m": n["m"] - 5} for n in project["notes"]])) for a in actions)
+    # The summary says C major: the melody ends up a fifth higher or a fourth lower.
+    got = notes_after(actions, project["notes"])
+    return any(same_notes(got, [{**n, "m": n["m"] + k} for n in project["notes"]]) for k in (7, -5))
 
 
 def project(**overrides):
