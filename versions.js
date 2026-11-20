@@ -11,6 +11,28 @@ import { cleanLinks, linkedIds } from "./recordings.js";
 export const MAX_VERSIONS = 50;
 export const MAX_NAME_LENGTH = 60;
 
+// SONG.2: saving a version past the limit never drops the oldest silently. The save is refused with this error,
+// which names the oldest kept version; saving again with { replace: err.oldest.id } removes that one and saves.
+export class VersionLimitError extends Error {
+  constructor(limit, oldest) {
+    super(`You have ${limit} versions saved on this device. Saving another removes the oldest, "${oldest.name}".`);
+    this.name = "VersionLimitError";
+    this.code = "version-limit";
+    this.limit = limit;
+    this.oldest = oldest;
+  }
+}
+
+// SONG.2: whether a song has anything worth keeping before it is replaced (New song, Try an example, opening an
+// idea or a file): a recording, any note part, a generated part, a layer, takes, sections or words. A tempo, an
+// instrument, a genre or a mixer setting alone is not a song.
+export function hasWork(p, { recording = false } = {}) {
+  const some = x => Array.isArray(x) && x.length > 0;
+  return !!(recording || some(p.notes) || some(p.drums) || some(p.harmony) || some(p.voice2) || p.band || p.timbre
+    || p.voice2_sung || some(p.layers) || (p.takes && typeof p.takes === "object") || some(p.sections)
+    || (typeof p.lyrics === "string" && p.lyrics.trim()));
+}
+
 export function projectFromState(state) {
   return {
     format: "tandem-project",
@@ -71,11 +93,14 @@ export function createVersionStore(kv, { now = () => Date.now(), limit = MAX_VER
 
   return {
     async list() {
-      return (await read()).map(({ id, name, savedAt }) => ({ id, name, savedAt }));
+      return (await read()).map(({ id, name, savedAt, auto }) => ({ id, name, savedAt, ...(auto === true ? { auto } : {}) }));
     },
 
     // Read-modify-write in one transaction, so a version saved in another tab at the same time is kept.
-    async save(name, project, audio = null) {
+    // SONG.2: an automatic version (`auto`, kept by the studio before something replaces the draft) does not count
+    // towards the limit and is never dropped by it. A version saved by the person at the limit is refused with a
+    // VersionLimitError, unless `replace` names one of the kept versions to remove instead.
+    async save(name, project, audio = null, { auto = false, replace = null } = {}) {
       const clean = String(name ?? "").trim().slice(0, MAX_NAME_LENGTH);
       if (!clean) throw Error("Give the version a name.");
       if (!isProject(project)) throw Error("Only a project with note and drum lists can be saved.");
@@ -87,10 +112,20 @@ export function createVersionStore(kv, { now = () => Date.now(), limit = MAX_VER
         let id = String(savedAt), n = 1;
         while (entries.some(e => e?.id === id)) id = `${savedAt}-${n++}`;
         const entry = { id, name: clean, savedAt, project: stored };
+        if (auto) entry.auto = true;
         if (Object.keys(links).length) entry.audio = links;
-        // The limit counts recognised versions only; the oldest of those beyond it are dropped.
-        let kept = 0;
-        return [[entry, ...entries].filter(e => !isEntry(e) || ++kept <= limit), { id, name: clean, savedAt }];
+        // The limit counts the person's recognised versions only; unrecognised and automatic ones are kept.
+        const counted = entries.filter(e => isEntry(e) && e.auto !== true);
+        let next = entries;
+        if (!auto && counted.length >= limit) {
+          const chosen = counted.find(e => e.id === replace);
+          if (!chosen) {
+            const oldest = counted[counted.length - 1];
+            throw new VersionLimitError(limit, { id: oldest.id, name: oldest.name, savedAt: oldest.savedAt });
+          }
+          next = entries.filter(e => e !== chosen);
+        }
+        return [[entry, ...next], { id, name: clean, savedAt }];
       });
     },
 
