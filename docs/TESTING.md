@@ -100,7 +100,7 @@ HARM.3 tests: `tests/tuning.test.mjs` checks `harmonyTargets` (a harmony note sp
 
 ## Chat model evaluation (AI.5)
 
-`tools/chat-eval/chat_eval.py` (see its README) asks a model 13 fixed cases through the studio's own chat path (`chat_messages`, `invoke_llm`, `chat_plan`) and scores valid JSON, valid actions, melody-lock respect (on what the model wrote, over the runs with an answer: a timeout is not scored) and whether the edit did what was asked, with seconds and tokens. `tests/test_chat_eval.py` checks the scoring with a faked model: a right answer to every case scores full marks and each kind of wrong answer fails the score it should. The runs below (2026-11-17, 3 repeats a case) keep every answer in `tools/chat-eval/results/`.
+`tools/chat-eval/chat_eval.py` (see its README) asks a model 18 fixed cases through the studio's own chat path (`chat_messages`, `invoke_llm`, `chat_plan`) and scores valid JSON, valid actions, melody-lock respect (on what the model wrote, over the runs with an answer: a timeout is not scored) and whether the edit did what was asked, with seconds and tokens. `tests/test_chat_eval.py` checks the scoring with a faked model: a right answer to every case scores full marks and each kind of wrong answer fails the score it should. The runs below (2026-11-17, 3 repeats a case) keep every answer in `tools/chat-eval/results/`.
 
 **Local models, free leg** (Ollama 0.40.16 on an M5 with 32 GB, one model loaded at a time, the app's temperature 0.5 and 75 s timeout). First run, with melody lock only a key in the project JSON:
 
@@ -138,6 +138,26 @@ What the runs show:
 - Eighth-note timing is still mostly wrong (2 passes in 15 runs across the five models), and gemma3, llama3.1 and qwen2.5 never managed "delete the last note and keep the rest" (the qwen3 models mostly did).
 - The qwen3 models think before answering: about six times the output tokens, a median of 19-47 s, and some answers time out at 75 s (a timeout now says so instead of an empty error).
 - Recommendation for "Ollama on this Mac": **qwen3:8b**, the most edits done right (72%) on a Mac with 16 GB or more, accepting about 20 s an answer; **llama3.1:8b** when speed matters (2.6 s median, 51%). No local model here is good enough to be the default for everyone; the default model (across paid providers too) waits for AI.5's paid leg.
+
+**AI.6's five cases** (2026-11-20, the same Mac and settings, 3 repeats a case, `tools/chat-eval/results/2026-11-20-ai6.jsonl`): only the new cases, which ask for chords, a bass line, a jazz feel, chords and a beat, and the key of G major, and which, unlike the 13 above, carry the studio's song summary (here the key, C major, with no chords part yet) as the studio sends it. Melody lock is on in the first four, so a lock failure there is a melody edit nobody asked for; G major is asked with the lock off.
+
+| Model | Runs | JSON | Valid actions | Melody lock | Did what was asked | Median s | 90th pct s | Tokens in/out | Cost per request |
+|---|---|---|---|---|---|---|---|---|---|
+| ollama gemma3:12b | 15 | 100% | 100% | 67% | 47% | 10.7 | 24.1 | 1454/106 | free (this Mac) |
+| ollama llama3.1:8b | 15 | 100% | 93% | 92% | 67% | 4.9 | 8.3 | 1420/77 | free (this Mac) |
+| ollama qwen3:8b | 15 | 73% | 73% | 78% | 53% | 51.2 | 75.0 | 1469/772 | free (this Mac) |
+
+| Model | add-chords | bass-line | jazz | chords-and-beat | to-g-major |
+|---|---|---|---|---|---|
+| gemma3:12b | 3/3 | 0/3 | 0/3 | 3/3 | 1/3 |
+| llama3.1:8b | 3/3 | 1/3 | 3/3 | 2/3 | 1/3 |
+| qwen3:8b | 3/3 | 0/3 | 2/3 | 2/3 | 1/3 |
+
+- Every model asked for `generate_harmony` when asked for chords (9 of 9), and mostly for chords and a beat together (7 of 9).
+- "Add a bass line" mostly failed: gemma3 asked for chords instead of a bass line, and qwen3 wrote the bass notes itself into the melody with `add_note` (the lock drops them). Only llama3.1 once asked for `style: bass`.
+- "Make it jazz": gemma3 never asked for `set_genre`; it changed the tempo and the melody instrument by hand. llama3.1 did it every time.
+- "Move it into G major" is a transpose of +7 or -5 from C; the models mostly gave +2, +3, +4 or +5. The song summary names the key, so the arithmetic is the problem, not reading the key.
+- qwen3:8b timed out at 75 s on 4 of 15 answers.
 
 ## Manual acceptance matrix
 
