@@ -10,7 +10,7 @@ import httpx
 from playwright.sync_api import expect
 
 from test_capture import PHONE
-from test_studio import IDB_DRAFT, count
+from test_studio import IDB_DRAFT, count, wait_until
 
 MAC_APP = ["aibaseurl", "aiforget", "aikey", "aimodel", "aiprovider", "aisave", "banddrums", "bandfollows", "bandmute", "bandstyle",
            "downloadband", "genband", "gentimbre", "openfolder", "playband", "playbandtrack", "playtimbretrack", "playvocal",
@@ -306,3 +306,111 @@ def test_without_recording_storage_record_a_beat_says_the_take_is_lost_and_saves
         expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
         expect(page.locator('[data-mode="rhythm"]')).to_have_attribute("aria-pressed", "true")
         assert page.evaluate("document.getElementById('versionlist').textContent") == "No saved versions yet."
+
+def test_try_an_example_opens_the_notes_step_and_says_how_to_hear_it(browser, server_url):
+    # UX.1: the Sing step has no Play button, so the example opens the Notes step, which has one; the message goes with a step change.
+    with guided_page(browser, server_url) as page:
+        page.click("#gdemo")
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Notes")
+        expect(page.locator("#gstatus")).to_have_text("Example loaded: tap The notes to hear it.")
+        expect(page.locator("#slot-roll #melodyroll .note")).to_have_count(8)
+        page.click("#gnotes")
+        expect(page.locator("#gstatus")).not_to_have_text("Example loaded: tap The notes to hear it.")
+        page.click("#gstopnotes")
+        page.click('#steps [data-step="sing"]')
+        page.click("#gdemo")
+        expect(page.locator("#gstatus")).to_have_text("Example loaded: tap The notes to hear it.")
+        page.click("#gnext")
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Song")
+        expect(page.locator("#gstatus")).to_have_text("")
+        # The studio's own Example button, in the all-controls view, keeps its message: that view has Play.
+        page.click("#gsettings")
+        page.click("#gshowall")
+        page.click("#demo")
+        expect(page.locator("#status")).to_have_text("Example loaded — press Play")
+
+
+def test_the_notes_and_song_steps_send_you_back_to_sing_when_there_is_nothing_yet(browser, server_url):
+    with guided_page(browser, server_url) as page:
+        for step in ["notes", "song"]:
+            page.click(f'#steps [data-step="{step}"]')
+            empty = page.locator(f'[data-panel="{step}"] .gempty')
+            expect(empty).to_be_visible()
+            expect(empty).to_contain_text("Nothing to work on yet: sing your idea first")
+        # Song: nothing to make chords or a bass line from, so those buttons are off, and no talk of "these notes".
+        expect(page.locator("#gchords")).to_be_disabled()
+        expect(page.locator("#gbass")).to_be_disabled()
+        expect(page.locator("#gvoice2create")).to_be_disabled()
+        expect(page.locator("#gharmkey")).not_to_contain_text("these notes")
+        page.click('#steps [data-step="notes"]')
+        for beat in ["gently", "tightly", "swung"]:
+            expect(page.locator(f'[data-beat="{beat}"]')).to_be_disabled()
+        # Its button goes back to Sing.
+        page.locator('[data-panel="notes"] .gempty button').click()
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
+        # With a tune there is something to work on.
+        page.click("#gdemo")
+        expect(page.locator('[data-panel="notes"] .gempty')).to_be_hidden()
+        expect(page.locator('[data-beat="tightly"]')).to_be_enabled()
+        page.click("#gnext")
+        expect(page.locator('[data-panel="song"] .gempty')).to_be_hidden()
+        expect(page.locator("#gchords")).to_be_enabled()
+        expect(page.locator("#gbass")).to_be_enabled()
+        expect(page.locator("#gharmkey")).to_have_text(re.compile(r"^Follows your tune, in "))
+
+
+def voice_muted(page):
+    return page.evaluate("document.getElementById('mute-voice').getAttribute('aria-pressed') === 'true'")
+
+
+def test_singing_with_words_puts_your_voice_in_the_song(browser, server_url):
+    # MIX.1 mutes the voice by default and the guided view has no mixer: a take with words unmutes it in the take's own
+    # edit, and the Song step's switch is the voice's mute.
+    with guided_page(browser, server_url) as page:
+        use_server_transcriber(page)
+        page.click("#gchange")
+        for helper in ["cleanup", "notes", "fixpitch"]:
+            page.uncheck(f'[data-helper="{helper}"]')
+        page.click("#ghelpersback")
+        page.click('#steps [data-step="song"]')
+        expect(page.locator("#gvoicein")).to_be_disabled()
+        expect(page.locator("#gvoicein")).not_to_be_checked()
+        page.click('#steps [data-step="sing"]')
+        page.click('[data-mode="vocal"]')
+        page.click("#grecord")
+        expect(page.locator("#greclabel")).to_have_text("Tap to stop")
+        page.wait_for_timeout(2500)
+        page.click("#grecord")
+        page.wait_for_function("document.getElementById('mute-voice').getAttribute('aria-pressed') === 'false'", timeout=60_000)
+        page.click('#steps [data-step="song"]')
+        expect(page.locator("#gvoicein")).to_be_enabled()
+        expect(page.locator("#gvoicein")).to_be_checked()
+        # The switch mutes and unmutes the voice, each one edit.
+        page.uncheck("#gvoicein")
+        assert voice_muted(page)
+        page.click("#gundo")
+        expect(page.locator("#gvoicein")).to_be_checked()
+        page.uncheck("#gvoicein")
+        assert voice_muted(page)
+        # A second take with words unmutes it again, in the same edit as the take: one Undo takes both back.
+        page.click('#steps [data-step="sing"]')
+        page.click("#grecord")
+        expect(page.locator("#greclabel")).to_have_text("Tap to stop")
+        page.wait_for_timeout(1500)
+        page.click("#grecord")
+        page.wait_for_function("document.getElementById('mute-voice').getAttribute('aria-pressed') === 'false'", timeout=60_000)
+        wait_until(page, "async () => ((await (" + IDB_DRAFT + ")())?.takes?.list?.length ?? 0) === 2", "the draft keeps two takes")
+        page.click("#gundo")
+        page.wait_for_function("document.getElementById('mute-voice').getAttribute('aria-pressed') === 'true'")
+        page.click('#steps [data-step="song"]')
+        expect(page.locator("#gvoicein")).not_to_be_checked()
+
+
+def test_a_tune_take_leaves_the_voice_out_of_the_song(browser, server_url):
+    with guided_page(browser, server_url) as page:
+        use_server_transcriber(page)
+        record_take(page)
+        page.click('#steps [data-step="song"]')
+        expect(page.locator("#gvoicein")).to_be_enabled()
+        expect(page.locator("#gvoicein")).not_to_be_checked()
+        assert voice_muted(page)

@@ -492,6 +492,9 @@ def test_a_rescue_download_leaves_out_a_take_recorded_while_it_is_prepared_and_s
             page.wait_for_function("window.fix8Held === true")
             page.set_input_files("#audiofile", str(tone_wav(tmp_path / "second.wav")))
             expect(page.locator("#takes")).to_contain_text("Take 2")
+            # The take's own status comes after its comp is loaded, later than Take 2 shows under Takes: wait for it,
+            # so the rescue's message is the last one written.
+            expect(page.locator("#status")).to_contain_text("Recorded Take 2")
             page.evaluate("window.fix8Release()")
         saved = tmp_path / got.value.suggested_filename
         got.value.save_as(saved)
