@@ -94,7 +94,10 @@ def test_fit_shows_in_the_guided_notes_step(browser, server_url):
     with guided_page(browser, server_url) as page:
         page.click("#gdemo")
         page.click('#steps [data-step="notes"]')
-        fit = page.locator("#slot-roll #melodyfit")
+        # UX.2: Fit is one of the tools folded under More tools.
+        fit = page.locator("#gmoretools #melodyfit")
+        expect(fit).to_be_hidden()
+        page.click("#gmoretools summary")
         expect(fit).to_be_visible()
         fit.click()
         expect(page.locator("#slot-roll #melodyfitinfo")).to_contain_text("8 in the key")

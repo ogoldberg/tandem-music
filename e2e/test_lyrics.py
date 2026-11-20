@@ -106,4 +106,4 @@ def test_export_musicxml_writes_the_words_under_the_melody(studio, tmp_path):
 def test_the_words_box_is_in_the_guided_notes_step(browser, server_url):
     with guided_page(browser, server_url) as page:
         page.click('#steps [data-step="notes"]')
-        expect(page.locator("#slot-roll #lyrics")).to_be_visible()
+        expect(page.locator("#slot-words #lyrics")).to_be_visible()
