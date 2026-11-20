@@ -184,7 +184,7 @@ def test_the_guided_share_step_plays_and_downloads_how_it_grew(browser, server_u
         expect(card.locator(".evostage")).to_have_text("")
         with page.expect_download(timeout=60_000) as info:
             card.locator('[data-press="exportevolution"]').click()
-        assert info.value.suggested_filename == "tandem-how-it-grew.wav"
+        assert info.value.suggested_filename == "Tandem song - how it grew.wav"
         with open(info.value.path(), "rb") as f:
             assert len(samples(f.read())) > SONG * RATE
 

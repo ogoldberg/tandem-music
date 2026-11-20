@@ -1450,7 +1450,7 @@ def test_stems_line_up_with_the_mix_and_the_midi_has_a_track_per_part(studio, tm
     expect(page.locator("#status")).to_have_text("Vocal polished. Compare Original and Polished.")
 
     path = download(page, "#exportstems", tmp_path)
-    assert path.name == "tandem-stems.zip"
+    assert path.name == "Tandem song - stems.zip"
     expect(page.locator("#status")).to_have_text(
         "Exported 5 stems (melody, harmony, drums, original vocal, polished vocal) and the MIDI file")
     stems = {}
@@ -1522,7 +1522,7 @@ def test_export_musicxml_writes_the_melody_and_harmony_as_sheet_music(studio, tm
     page.click("#demo")
     page.click("#genharmony")
     target = download(page, "#exportmusicxml", tmp_path)
-    assert target.name == "tandem.musicxml"
+    assert target.name == "Tandem song.musicxml"
     expect(page.locator("#status")).to_have_text("Exported the MusicXML score")
     score = music21.converter.parse(str(target), format="musicxml").stripTies()
     melody, harmony = score.parts
@@ -1567,7 +1567,7 @@ def test_export_dawproject_writes_note_and_audio_tracks_a_daw_can_open(studio, t
     expect(page.locator("#status")).to_have_text("Vocal polished. Compare Original and Polished.")
     page.select_option("#harmonykey", "9:minor")
     path = download(page, "#exportdawproject", tmp_path)
-    assert path.name == "tandem.dawproject"
+    assert path.name == "Tandem song.dawproject"
     expect(page.locator("#status")).to_have_text("Exported the DAWproject file with 2 audio tracks")
 
     with zipfile.ZipFile(path) as z:
