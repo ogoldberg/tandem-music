@@ -196,6 +196,19 @@ def test_at_phone_width_a_lane_scrolls_to_its_settings_and_back_to_tracks_return
     expect(heading).not_to_be_in_viewport()
 
 
+def test_back_to_tracks_with_no_lane_picked_focuses_the_tracks(studio):
+    """UX.3 follow-up: at phone width, Back to tracks before any lane is picked scrolls to the tracks and moves
+    keyboard focus there, not left on the link."""
+    page = studio
+    page.set_viewport_size({"width": 390, "height": 844})
+    link = page.locator("#backtotracks")
+    link.scroll_into_view_if_needed()
+    expect(link).to_be_in_viewport()
+    link.click()
+    expect(page.locator("#lanes")).to_be_focused()
+    assert page.evaluate("document.getElementById('lanes').getBoundingClientRect().top") < 844
+
+
 def test_record_becomes_stop_recording_and_the_voice_lane_says_why_it_is_silent(studio):
     """UX.3: while a take records, Record is replaced by Stop recording; the voice lane says it is muted, and why
     it is silent while another part is soloed."""
