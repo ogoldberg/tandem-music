@@ -4,7 +4,7 @@ import {
   STEPS, HELPERS, DEFAULTS, PITCH_AMOUNTS, BEAT_STYLES, GUIDE_KEY, normalizeSettings, readSettings, writeSettings,
   afterTake, stepSummaries, isChords, speedText, pitchAmountName, nextStep, previousStep, planSentence, pastTense, takeReport,
   VIEWS, VIEW_GROUPS, viewById, nextView, previousView, playsText, beforeText, viewSummaries, suggestNext, MOVES, PLACES, CONTROL_PLACES,
-  MORE_VIEWS,
+  MORE_VIEWS, songLines,
 } from "../guide.js";
 import { GENRES } from "../genre.js";
 
@@ -105,6 +105,26 @@ test("UX.5: viewSummaries says each kind's state in plain words", () => {
   assert.equal(some.chords, "A line added");
   assert.equal(some.takes, "1 take", "one recording and no takes list is one take");
   assert.equal(viewSummaries(null).notes, "No notes yet");
+});
+
+test("UX.8: songLines lists only the parts the song has, each with its view and state", () => {
+  assert.deepEqual(songLines({ notes: [], drums: [], harmony: [], voice2: [], bpm: 100 }), [], "an empty song has no lines");
+  const chords = [{ m: 48, t: 0, d: 1 }, { m: 52, t: 0, d: 1 }];
+  const full = songLines({
+    notes: [{ m: 60, t: 0, d: 0.5 }, { m: 62, t: 0.5, d: 0.5 }], drums: [{ k: "kick", t: 0 }], harmony: chords,
+    voice2: [{ m: 64, t: 0, d: 0.5 }], bpm: 100, lyrics: "la la", sections: [{ name: "Verse", from: 0, to: 1 }],
+  }, { recorded: true, tuned: true });
+  assert.deepEqual(full, [
+    { view: "voice", name: "Voice", text: "Not cleaned up, pitch fixed" },
+    { view: "notes", name: "Notes", text: "2 notes" },
+    { view: "words", name: "Words", text: "2 words" },
+    { view: "chords", name: "Chords", text: "Chords added" },
+    { view: "voice2", name: "Second voice", text: "1 note" },
+    { view: "beat", name: "Beat", text: "1 hit" },
+  ]);
+  const beatOnly = songLines({ notes: [], drums: [{ k: "hat", t: 0 }], harmony: [], voice2: [], lyrics: " _ - " });
+  assert.deepEqual(beatOnly.map(l => l.view), ["beat"], "no take, no notes, and marks without letters are no words");
+  assert.deepEqual(songLines(null), []);
 });
 
 test("UX.5: suggestNext offers chords for a tune without them, then a beat, then Share", () => {
