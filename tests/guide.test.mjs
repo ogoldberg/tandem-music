@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   STEPS, HELPERS, DEFAULTS, PITCH_AMOUNTS, BEAT_STYLES, GUIDE_KEY, normalizeSettings, readSettings, writeSettings,
-  afterTake, stepSummaries, isChords, speedText, pitchAmountName, nextStep, previousStep,
+  afterTake, stepSummaries, isChords, speedText, pitchAmountName, nextStep, previousStep, planSentence, pastTense, takeReport,
 } from "../guide.js";
 
 const memory = (init = {}) => {
@@ -131,4 +131,33 @@ test("stepSummaries describe what each step holds", () => {
   assert.equal(stepSummaries({ duration: 0, notes: 0, drums: 3, versions: null }).share, "Versions not available");
   assert.equal(stepSummaries({ duration: 0, notes: 4, drums: 0, harmony: [], voice2: 4, versions: 0 }).song, "A second voice added");
   assert.equal(stepSummaries({ duration: 0, notes: 4, drums: 2, harmony: chords, voice2: 4, versions: 0 }).song, "Chords, a second voice and drums added");
+});
+
+test("planSentence: the Sing step says in one sentence what happens when the take stops", () => {
+  assert.equal(planSentence(afterTake("melody", DEFAULTS)),
+    "When you stop, Tandem will clean up the sound, turn your tune into notes and find the speed, then let you hear it.");
+  assert.equal(planSentence([{ action: "polish", label: "Clean up the sound" }]), "When you stop, Tandem will clean up the sound, then let you hear it.");
+  assert.match(planSentence([]), /^When you stop, Tandem lets you hear your take\. Every helper/);
+});
+
+test("pastTense: every helper the plan can hold has a past form", () => {
+  const all = { ...DEFAULTS, helpers: Object.fromEntries(Object.keys(DEFAULTS.helpers).map(k => [k, true])) };
+  const labels = new Set(["melody", "rhythm", "vocal"].flatMap(m => afterTake(m, all).map(a => a.label)));
+  for (const label of labels) assert.notEqual(pastTense(label), label, label);
+  assert.equal(pastTense("Write down the notes you sang"), "Wrote down the notes you sang");
+});
+
+test("takeReport: one plain line per helper, done, skipped, failed or not run", () => {
+  const plan = afterTake("vocal", { ...DEFAULTS, helpers: { ...DEFAULTS.helpers, lineup: true } });
+  const report = takeReport(plan, { polish: "done", fixpitch: "failed", transcribe: "done", tempo: "skipped" },
+    { fixpitch: "The server is busy.", transcribe: "13 notes.", tempo: "Too short to find the speed: sing a little longer, or carry on." });
+  assert.deepEqual(report.map(r => r.state), ["done", "failed", "done", "skipped", "notrun"]);
+  assert.deepEqual(report.map(r => r.text), [
+    "Cleaned up the sound",
+    "Could not fix the pitch of your singing: The server is busy.",
+    "Wrote down the notes you sang. 13 notes.",
+    "Skipped: find the speed. Too short to find the speed: sing a little longer, or carry on.",
+    "Not done: line the notes up with the beat",
+  ]);
+  assert.deepEqual(takeReport([]), []);
 });

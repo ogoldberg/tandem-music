@@ -2,6 +2,7 @@
 
 These tests use fresh browser contexts without conftest's ALL_CONTROLS script, so the studio opens as it does for a
 new person: in the guided view. Recordings come from Chromium's fake microphone (a beeping tone)."""
+import json
 import re
 import wave
 from contextlib import contextmanager
@@ -59,7 +60,14 @@ def use_server_transcriber(page):
     page.click("#ghelpersback")
 
 
+def back_to_record(page):
+    # UX.4: after a take the Sing step shows Your take; Sing it again goes back to the record button.
+    if page.locator('[data-panel="take"]').is_visible():
+        page.click("#gtakeagain")
+
+
 def record_take(page, seconds=2.5):
+    back_to_record(page)
     page.click("#grecord")
     expect(page.locator("#greclabel")).to_have_text("Tap to stop")
     page.wait_for_timeout(int(seconds * 1000))
@@ -82,7 +90,7 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
 
         # Step 1: one take, and the helpers clean it up, turn it into notes and find the speed, each shown as done.
         record_take(page)
-        expect(page.locator("#gstatus")).to_have_text("Done. Check your notes next.")
+        expect(page.locator("#gstatus")).to_have_text("Done. Have a listen.")
         assert plan(page) == [["Clean up the sound", "done"], ["Turn your tune into notes", "done"], ["Find the speed", "done"]]
         notes = count(page, "notecount")
         assert notes >= 4, "the fake microphone beeps about once a second"
@@ -481,3 +489,129 @@ def test_the_notes_step_listens_first_and_folds_the_expert_tools_on_a_phone(brow
         assert page.evaluate("""() => document.getElementById('melodymore').parentElement.id === 'melodytools'
             && !!document.getElementById('transport').closest('#lanes')""")
         expect(page.locator("#melodyfit")).to_be_attached()
+
+
+HOLD_ANALYZE = """() => { const send = window.fetch; window.analyzeHeld = 0;
+  let open; window.analyzeGate = new Promise(r => { open = r; }); window.releaseAnalyze = () => open();
+  window.fetch = async (url, opts) => {
+    if (String(url).includes('/api/analyze')) { window.analyzeHeld++; await window.analyzeGate; }
+    return send(url, opts); }; }"""
+
+
+def take_t(page):
+    return page.eval_on_selector("#gtakewave", "w => Number(w.dataset.t || 0)")
+
+
+def draft(page):
+    d = page.evaluate(IDB_DRAFT)
+    return json.loads(d) if isinstance(d, str) else d
+
+
+def test_a_take_opens_on_your_take_and_plays_while_tandem_works_on_it(browser, server_url):
+    # UX.4: after Stop the Sing step's second face, Your take, shows at once; its Play plays the take as sung while a
+    # helper is still running; then What Tandem did, the listen row, and one choice: keep, sing again, share.
+    with guided_page(browser, server_url) as page:
+        use_server_transcriber(page)
+        expect(page.locator("#gplanline")).to_have_text(
+            "When you stop, Tandem will clean up the sound, turn your tune into notes and find the speed, then let you hear it.")
+        expect(page.locator('[data-panel="take"]')).to_be_hidden()
+        page.evaluate(HOLD_ANALYZE)
+        page.click("#grecord")
+        expect(page.locator("#greclabel")).to_have_text("Tap to stop")
+        page.wait_for_timeout(3000)
+        page.click("#grecord")
+
+        take = page.locator('[data-panel="take"]')
+        expect(take).to_be_visible(timeout=20_000)
+        expect(page.locator('[data-panel="sing"]')).to_be_hidden()
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
+        page.wait_for_function("window.analyzeHeld > 0", timeout=30_000)
+        # The notes are still being found: the helpers' list shows it, the choices wait, the waveform is here.
+        assert ["Turn your tune into notes", "running"] in plan(page)
+        expect(page.locator("#gtakework")).to_be_visible()
+        expect(page.locator("#gtakewave #wave")).to_be_visible()
+        expect(page.locator("#glistenrow")).to_be_hidden()
+        for choice in ("#gtakekeep", "#gtakeagain", "#gtakeshare"):
+            expect(page.locator(choice)).to_be_disabled()
+        expect(page.locator("#gtakeplay")).to_have_text("Play my take")
+        page.click("#gtakeplay")
+        expect(page.locator("#gstatus")).to_have_text("Playing your take as you sang it")
+        expect(page.locator("#gtakeplay")).to_have_text("Stop")
+        page.wait_for_function("Number(document.getElementById('gtakewave').dataset.t || 0) > 0.3")
+        assert ["Turn your tune into notes", "running"] in plan(page), "played while a helper was still running"
+        page.click("#gtakeplay")
+        expect(page.locator("#gtakeplay")).to_have_text("Play my take")
+        assert take_t(page) == 0
+        assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
+
+        page.evaluate("window.releaseAnalyze()")
+        page.wait_for_function("/^(Done|Not everything)/.test(document.getElementById('gstatus').textContent)", timeout=90_000)
+        expect(page.locator("#gstatus")).to_have_text(re.compile(r"^Done\. Have a listen\."))
+        expect(page.locator("#gtakework")).to_be_hidden()
+        report = page.eval_on_selector_all("#gtakereport li", "els => els.map(e => [e.textContent, e.dataset.state])")
+        assert [r[1] for r in report] == ["done", "done", "done"], report
+        assert report[0][0] == "Cleaned up the sound" and report[1][0].startswith("Turned your tune into notes"), report
+        assert report[2][0].startswith("Found the speed"), report
+        # The listen row has moved here: The notes plays the melody (the Timeline's playhead moves).
+        expect(page.locator("#slot-takelisten #glistenrow")).to_be_visible()
+        page.click("#gnotes")
+        page.wait_for_function("Number(document.getElementById('timeline').dataset.t || 0) > 0.2", timeout=20_000)
+        page.click("#gstopnotes")
+        # Play now plays the best take, cleaned up.
+        expect(page.locator("#gtakeplay")).to_have_text("Play")
+        page.click("#gtakeplay")
+        expect(page.locator("#gstatus")).to_have_text("Playing your take")
+        page.wait_for_function("Number(document.getElementById('gtakewave').dataset.t || 0) > 0.2")
+        assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
+
+        # Keep this take: on to the notes, the playback stopped, the listen row back in the Notes step.
+        page.click("#gtakekeep")
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Notes")
+        expect(take).to_be_hidden()
+        assert take_t(page) == 0
+        expect(page.locator("#slot-notelisten #glistenrow")).to_be_visible()
+
+
+def test_sing_it_again_keeps_both_takes_and_share_it_as_it_is_goes_to_share(browser, server_url):
+    with guided_page(browser, server_url) as page:
+        use_server_transcriber(page)
+        record_take(page)
+        expect(page.locator('[data-panel="take"]')).to_be_visible()
+        page.click("#gtakeagain")
+        expect(page.locator('[data-panel="sing"]')).to_be_visible()
+        expect(page.locator('[data-panel="take"]')).to_be_hidden()
+        record_take(page)
+        expect(page.locator('[data-panel="take"]')).to_be_visible()
+        wait_until(page, f"""async () => {{ const d = await ({IDB_DRAFT})(); const p = typeof d === 'string' ? JSON.parse(d) : d;
+                               return !!p?.takes && p.takes.list.length === 2; }}""", "two takes in the draft")
+        page.click("#gtakeshare")
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Share")
+        # The rail's Sing goes back to the record button, not Your take.
+        page.click('#steps [data-step="sing"]')
+        expect(page.locator('[data-panel="sing"]')).to_be_visible()
+
+
+def test_an_imported_take_opens_your_take_and_a_failed_helper_is_named_there(browser, server_url, tmp_path):
+    with guided_page(browser, server_url) as page:
+        use_server_transcriber(page)
+        page.route("**/api/analyze", lambda route: route.fulfill(status=503, content_type="application/json",
+                                                                 body='{"detail": "The server is busy."}'))
+        path = tmp_path / "take.wav"
+        rate, seconds = 22050, 2.0
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(rate)
+            import math
+            w.writeframes(b"".join(int(8000 * math.sin(2 * math.pi * 440 * i / rate)).to_bytes(2, "little", signed=True)
+                                   for i in range(int(rate * seconds))))
+        with page.expect_file_chooser() as chooser:
+            page.click("#gimport")
+        chooser.value.set_files(str(path))
+        page.wait_for_function("/^(Done|Not everything)/.test(document.getElementById('gstatus').textContent)", timeout=90_000)
+        expect(page.locator('[data-panel="take"]')).to_be_visible()
+        report = page.eval_on_selector_all("#gtakereport li", "els => els.map(e => [e.textContent, e.dataset.state])")
+        assert report[0] == ["Cleaned up the sound", "done"], report
+        assert report[1][1] == "failed" and report[1][0].startswith("Could not turn your tune into notes: "), report
+        assert report[2] == ["Not done: find the speed", "notrun"], report
+        expect(page.locator("#gtakekeep")).to_be_enabled()
