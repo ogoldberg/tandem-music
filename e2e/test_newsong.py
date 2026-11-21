@@ -2,9 +2,11 @@
 and saving past the version limit asks before the oldest version goes."""
 import json
 
+import pytest
 from playwright.sync_api import expect
 
 from test_guided import guided_page
+from test_practice import practice_page, sharp_browser  # noqa: F401 (fixtures)
 from test_studio import IDB_GET, draft_audio, import_recording, tone_wav, wait_for_draft_audio, wait_until
 
 FULL_SONG = {
@@ -191,3 +193,93 @@ def test_new_song_and_the_example_wait_until_the_take_being_recorded_is_stopped(
     page.click("#newsong")
     expect(page.locator("#status")).to_contain_text("New song: sing, play or type to start.")
     expect(page.locator("#original")).to_be_disabled()
+
+
+# FIX.10 (review of #147): a keyboard take or a practice run under way stays with its song, and Record pressed while
+# New song keeps the song before waits for it, so the take is not unloaded with the old song.
+KEYS_FIRST = "Stop recording from the keyboard first: the notes you play belong to the song you are playing them into."
+PRACTICE_FIRST = "Stop practising first: the pass you are singing belongs to the song you are practising."
+
+
+def test_new_song_and_the_example_wait_until_the_keyboard_take_is_stopped(page, server_url):
+    import time
+    from test_midi import MOCK_MIDI, connect, open_studio
+    problems = open_studio(page, server_url, MOCK_MIDI)
+    page.click("#demo")
+    page.fill("#bpm", "150")
+    page.locator("#bpm").dispatch_event("change")
+    connect(page)
+    page.click("#midirecord")
+    expect(page.locator("#status")).to_contain_text("Recording from Test Keys")
+    for button in ["#newsong", "#demo"]:
+        page.click(button)
+        expect(page.locator("#status")).to_have_text(KEYS_FIRST)
+    time.sleep(1.6 + 0.3)  # past the one-bar count-in at 150 BPM
+    page.evaluate("window.__midiKey([0x90, 72, 100])")
+    time.sleep(0.3)
+    page.evaluate("window.__midiKey([0x80, 72, 0])")
+    page.click("#midirecord")
+    expect(page.locator("#status")).to_have_text("Recorded 1 note from the MIDI keyboard into the melody")
+    expect(page.locator("#notecount")).to_have_text("9 notes")
+    wait_until(page, f"async () => (await ({IDB_GET})('draft'))?.notes?.length === 9", "the take is in the example's draft")
+    assert page.evaluate(IDB_GET, "versions") is None, "nothing was replaced, so nothing was kept"
+    page.click("#newsong")
+    expect(page.locator("#status")).to_contain_text("New song: sing, play or type to start.")
+    assert [len(v["project"]["notes"]) for v in page.evaluate(IDB_GET, "versions")] == [9]
+    assert not problems, problems
+
+
+@pytest.mark.parametrize("starting", [False, True], ids=["practising", "starting"])
+def test_new_song_and_the_example_wait_until_practising_stops(practice_page, starting):
+    from test_practice import GATE_MIC, with_melody
+    page = practice_page
+    with_melody(page)
+    page.uncheck("#countin")
+    if starting:
+        page.evaluate(GATE_MIC)  # Practise waits for the microphone: still starting.
+    page.click("#practice")
+    if not starting:
+        expect(page.locator("#practice")).to_have_attribute("aria-pressed", "true", timeout=8000)
+    for button in ["#newsong", "#demo"]:
+        page.click(button)
+        expect(page.locator("#status")).to_have_text(PRACTICE_FIRST)
+    if starting:
+        page.evaluate("() => window.__openMic()")
+        expect(page.locator("#practice")).to_have_attribute("aria-pressed", "true", timeout=8000)
+    expect(page.locator("#notecount")).to_have_text("4 notes")
+    page.click("#practicestop")
+    assert page.evaluate(IDB_GET, "versions") is None, "the song being practised was not replaced"
+    assert len(draft(page)["notes"]) == 4
+
+
+HOLD_RECORDINGS = """() => new Promise(held => navigator.locks.request('tandem-recordings', {mode: 'exclusive'},
+  () => new Promise(release => { window.__releaseRecordings = release; held(); })))"""
+
+
+def test_record_pressed_while_new_song_keeps_the_song_before_waits_for_it(studio):
+    page = studio
+    page.uncheck("#countin")
+    page.click("#demo")
+    page.fill("#bpm", "120")
+    page.locator("#bpm").dispatch_event("change")
+    wait_until(page, f"async () => (await ({IDB_GET})('draft'))?.bpm === 120", "the changed example is the draft")
+    # Keeping the song before as a version waits on the recordings lock, held here until released.
+    page.evaluate(HOLD_RECORDINGS)
+    page.click("#newsong")
+    page.click("#practice")
+    expect(page.locator("#status")).to_have_text("Wait a moment: the song before is still being kept as a version.")
+    expect(page.locator("#practice")).to_have_attribute("aria-pressed", "false")
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording once the song before is kept…")
+    page.wait_for_timeout(1500)
+    expect(page.locator("#finish")).to_be_disabled()
+    assert page.evaluate(IDB_GET, "versions") is None
+    page.evaluate("() => window.__releaseRecordings()")
+    expect(page.locator("#status")).to_have_text("Recording…", timeout=8000)
+    page.click("#finish")
+    expect(page.locator("#original")).to_be_enabled()
+    wait_for_draft_audio(page, ["original"])
+    d = draft(page)
+    assert d["bpm"] == 100 and d["notes"] == [], "the take is in the new song"
+    stored = page.evaluate(IDB_GET, "versions")
+    assert [(v["name"], v["project"]["bpm"], v.get("audio")) for v in stored] == [("Before a new song", 120, None)]
