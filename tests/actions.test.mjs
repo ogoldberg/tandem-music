@@ -3,9 +3,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { HANDLERS, applyActions, songSummary, MAX_SUMMARY_CHORDS, chatBody, CHAT_BODY_MAX_BYTES } from "../actions.js";
+import { HANDLERS, applyActions, songSummary, MAX_SUMMARY_CHORDS, chatBody, CHAT_BODY_MAX_BYTES, CHAT_LIMITS } from "../actions.js";
 import { CHORD_QUALITIES, generateHarmony, readChords, chordName } from "../harmony.js";
 import { KEY_NAMES } from "../contour.js";
+import { GROOVES, grooveHits } from "../beats.js";
+import { GENRE_IDS, genreChanges, harmonyStyle } from "../genre.js";
 
 const registry = JSON.parse(readFileSync(new URL("../actions.json", import.meta.url), "utf8"));
 const backend = readFileSync(new URL("../tandem_backend.py", import.meta.url), "utf8");
@@ -90,7 +92,137 @@ test("chatBody sends the summary only when the request fits the server's limit",
   const over = JSON.parse(chatBody(body(fits + 1)));
   assert.equal(over.song, undefined);
   assert.equal(over.message.length, fits + 1);
-  // Without a summary the body is the plain JSON, whatever its size.
+  // Without a summary or a history the body is the plain JSON, whatever its size.
   const plain = { message: "x".repeat(CHAT_BODY_MAX_BYTES), project: {} };
   assert.equal(chatBody(plain), JSON.stringify(plain));
+  // Still over without the summary: the oldest turns of the history go, one by one, until it fits.
+  const turn = i => ({ role: i % 2 ? "assistant" : "user", content: String(i).repeat(3000) });
+  const big = { message: "m", project: { lyrics: "x".repeat(CHAT_BODY_MAX_BYTES - 20_000) }, history: Array.from({ length: 10 }, (_, i) => turn(i)), song };
+  const sent = JSON.parse(chatBody(big));
+  assert.ok(bytes(chatBody(big)) <= CHAT_BODY_MAX_BYTES);
+  assert.equal(sent.song, undefined);
+  assert.deepEqual(sent.history, big.history.slice(-sent.history.length));
+  assert.ok(sent.history.length >= 5 && sent.history.length < 10, String(sent.history.length));
+  // One turn fewer would not have fitted: only as many go as must.
+  assert.ok(bytes(JSON.stringify({ ...sent, history: big.history.slice(-(sent.history.length + 1)) })) > CHAT_BODY_MAX_BYTES);
+});
+
+// AI.6: the three actions that run the studio's own generators.
+const melody = [60, 64, 67, 69, 67, 64, 62, 60].map((m, i) => ({ m, t: i * 0.45, d: 0.4 }));
+const song = () => ({ bpm: 100, instrument: "piano", notes: melody.map(n => ({ ...n })), drums: [{ k: "kick", t: 0 }], harmony: [], harmony_instrument: "piano" });
+
+test("the server's groove and genre choices are the studio's", () => {
+  const grooves = backend.match(/^GROOVES=\(([^)]*)\)/m);
+  assert.ok(grooves, "GROOVES found in tandem_backend.py");
+  assert.deepEqual([...grooves[1].matchAll(/"([^"]*)"/g)].map(m => m[1]), GROOVES.map(g => g.id));
+  assert.match(backend, /"\$GENRE_CHOICES":\("none",\)\+GENRE_IDS/);
+  assert.ok(!GENRE_IDS.includes("none"));
+});
+
+test("generate_harmony writes what Generate writes, in the key given or the melody's, in the genre's feel", () => {
+  for (const style of ["chords", "bass"]) for (const genre of [null, "jazz"]) for (const key of [null, { tonic: 7, mode: "major" }]) {
+    const p = { ...song(), genre };
+    const want = generateHarmony(p, { style, key, feel: harmonyStyle(genre) }).notes;
+    assert.equal(applyActions(p, [{ type: "generate_harmony", style }], { key }), 1);
+    assert.deepEqual(p.harmony, want, `${style} ${genre} ${key && key.tonic}`);
+    assert.ok(want.length > 0);
+  }
+  // A bass line into an empty chords part on the default piano plays on bass, as Generate does; chords stay on piano.
+  const b = song(); applyActions(b, [{ type: "generate_harmony", style: "bass" }]);
+  assert.equal(b.harmony_instrument, "bass");
+  const c = song(); applyActions(c, [{ type: "generate_harmony", style: "chords" }]);
+  assert.equal(c.harmony_instrument, "piano");
+  // Read after the reply's earlier actions: a transpose first moves the key the chords are in.
+  const t = song(), up = song();
+  applyActions(t, [{ type: "transpose", semitones: 2 }, { type: "generate_harmony", style: "chords" }]);
+  up.notes = up.notes.map(n => ({ ...n, m: n.m + 2 }));
+  assert.deepEqual(t.harmony, generateHarmony(up, { style: "chords" }).notes);
+});
+
+test("add_beat replaces the drums with the starter beat from the song's bar grid", () => {
+  for (const g of GROOVES) {
+    const p = song();
+    applyActions(p, [{ type: "add_beat", groove: g.id, bars: 4 }]);
+    assert.deepEqual(p.drums, grooveHits(g.id, { bpm: 100, bars: 4, from: 0 }), g.id);
+  }
+  // Sung in free time, the melody's first bar line is the grid, as Starter beat uses (groove.js barOrigin).
+  const free = song(); free.notes = free.notes.map(n => ({ ...n, t: n.t + 0.7 }));
+  applyActions(free, [{ type: "add_beat", groove: "straight", bars: 2 }]);
+  assert.ok(free.drums[0].t > 0 && free.drums[0].t < 2.4, free.drums[0].t);
+});
+
+test("set_genre changes what the Genre menu changes; none clears the genre and keeps the instruments", () => {
+  const p = song();
+  applyActions(p, [{ type: "set_genre", genre: "jazz" }]);
+  assert.deepEqual({ genre: p.genre, instrument: p.instrument, harmony_instrument: p.harmony_instrument }, genreChanges("jazz"));
+  applyActions(p, [{ type: "set_genre", genre: "none" }]);
+  assert.equal(p.genre, null);
+  assert.equal(p.instrument, genreChanges("jazz").instrument);
+  // The song's own genre again changes nothing, as in the Genre menu: instruments chosen since are kept.
+  const own = { ...song(), genre: "jazz", instrument: "flute", harmony_instrument: "guitar" };
+  assert.equal(applyActions(own, [{ type: "set_genre", genre: "jazz" }]), 1);
+  assert.deepEqual([own.genre, own.instrument, own.harmony_instrument], ["jazz", "flute", "guitar"]);
+  const none = { ...song(), instrument: "flute" };
+  applyActions(none, [{ type: "set_genre", genre: "none" }]);
+  assert.equal(none.instrument, "flute");
+  assert.ok(!("genre" in none) || none.genre == null);
+});
+
+test("the chat limits are the server's ProjectNote and part limits", () => {
+  assert.match(backend, /class ProjectNote\(BaseModel\):[^]*?t: float = Field\(ge=0,le=600,/);
+  assert.match(backend, /class ProjectNote\(BaseModel\):[^]*?d: float = Field\(gt=0,le=600,/);
+  assert.match(backend, /class ProjectHit\(BaseModel\):[^]*?t: float = Field\(ge=0,le=600,/);
+  for (const part of ["notes", "drums", "harmony"]) assert.match(backend, new RegExp(`\\n    ${part}: list\\[Project(Note|Hit)\\] = Field\\(default_factory=list,max_length=1024\\)`), part);
+  assert.deepEqual({ ...CHAT_LIMITS }, { seconds: 600, items: 1024 });
+});
+
+test("a generated part the next chat request could not carry is refused, not kept", () => {
+  // A melody near the 10-minute end: the chords run past it (the reviewer's case).
+  const late = { bpm: 220, genre: "rock", notes: [{ m: 60, t: 597, d: 0.5 }, { m: 64, t: 598, d: 0.5 }, { m: 67, t: 599, d: 4 }], drums: [], harmony: [] };
+  assert.ok(generateHarmony(late, { style: "chords", feel: harmonyStyle("rock") }).notes.some(n => n.t > 600), "the generator does run past");
+  const problems = [];
+  assert.equal(applyActions(late, [{ type: "generate_harmony", style: "chords" }], { problems }), 0);
+  assert.deepEqual(late.harmony, []);
+  assert.match(problems[0].message, /past 10 minutes/);
+  // A beat stays inside 10 minutes (64 bars at the slowest 45 BPM is 341 s from the first bar line), but no groove
+  // may give one part more hits than the chat can carry: 64 bars of every groove fit, and a longer list is refused.
+  for (const g of GROOVES) {
+    const p = song();
+    assert.equal(applyActions(p, [{ type: "add_beat", groove: g.id, bars: 64 }], { problems }), 1, g.id);
+    assert.ok(p.drums.length <= CHAT_LIMITS.items && p.drums.at(-1).t < CHAT_LIMITS.seconds, g.id);
+  }
+  assert.equal(problems.length, 1);
+});
+
+test("after a generated beat the next chat request still fits: the oldest history goes", () => {
+  // The reviewer's case: a request near the cap, then a 64-bar shuffle that adds about 16 KB to the project.
+  const notes = Array.from({ length: 1024 }, (_, i) => ({ m: 60 + i % 8, t: i * Math.PI / 20, d: Math.SQRT2 / 10 }));
+  const project = { notes, voice2: notes, drums: [], harmony: [], bpm: 100, lyrics: "\u{1F3B5}".repeat(3900), melody_locked: true };
+  const history = Array.from({ length: 10 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: "\u{1F3B5}".repeat(i % 2 ? 2700 : 2990) }));
+  const message = "\u{1F3B5}".repeat(2980) + " add a beat";
+  const send = () => JSON.parse(chatBody({ project, history, message, song: songSummary(project) }));
+  const bytes = () => new TextEncoder().encode(chatBody({ project, history, message, song: songSummary(project) })).length;
+  assert.ok(bytes() <= CHAT_BODY_MAX_BYTES);
+  assert.equal(send().history.length, 10);
+  const problems = [];
+  assert.equal(applyActions(project, [{ type: "add_beat", groove: "shuffle", bars: 64 }], { problems }), 1);
+  assert.deepEqual(problems, []);
+  assert.ok(bytes() <= CHAT_BODY_MAX_BYTES, String(bytes()));
+  const sent = send();
+  assert.equal(sent.message, message);
+  assert.deepEqual(sent.project, JSON.parse(JSON.stringify(project)));
+  assert.ok(sent.history.length < 10 && sent.history.length > 0, String(sent.history.length));
+  assert.deepEqual(sent.history, history.slice(-sent.history.length));
+});
+
+test("an action that cannot run on this song is skipped with its reason and changes nothing", () => {
+  const p = song(); p.notes = [];
+  const before = structuredClone(p), problems = [];
+  assert.equal(applyActions(p, [{ type: "generate_harmony", style: "chords" }, { type: "set_tempo", bpm: 90 }], { problems }), 1);
+  assert.deepEqual(problems, [{ type: "generate_harmony", message: "Add or transcribe a melody before generating harmony." }]);
+  assert.deepEqual({ ...p, bpm: 100 }, before);
+  const q = song(); q.bpm = 0;
+  applyActions(q, [{ type: "add_beat", groove: "straight", bars: 4 }], { problems });
+  assert.equal(problems.length, 2);
+  assert.deepEqual(q.drums, [{ k: "kick", t: 0 }]);
 });
