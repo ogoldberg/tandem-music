@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   STEPS, HELPERS, DEFAULTS, PITCH_AMOUNTS, BEAT_STYLES, GUIDE_KEY, normalizeSettings, readSettings, writeSettings,
   afterTake, stepSummaries, isChords, speedText, pitchAmountName, nextStep, previousStep, planSentence, pastTense, takeReport,
-  VIEWS, VIEW_GROUPS, viewById, nextView, previousView, playsText, beforeText, viewSummaries, suggestNext,
+  VIEWS, VIEW_GROUPS, viewById, nextView, previousView, playsText, beforeText, viewSummaries, suggestNext, MOVES, PLACES, CONTROL_PLACES,
+  MORE_VIEWS,
 } from "../guide.js";
 import { GENRES } from "../genre.js";
 
@@ -30,21 +31,24 @@ test("UX.5: a step kept from before Your song (notes or song) opens Your song", 
   assert.equal(normalizeSettings({ step: "view" }).step, "sing");
 });
 
-test("UX.5: the nine change views, grouped, in the order Prev and Next walk them", () => {
-  assert.deepEqual(VIEWS.map(v => v.id), ["voice", "notes", "timing", "words", "chords", "voice2", "beat", "sound", "ask"]);
-  assert.deepEqual(VIEWS.map(v => v.name), ["Voice", "Notes", "Timing", "Words", "Chords", "Second voice", "Beat", "Sound", "Ask Tandem"]);
-  assert.deepEqual(VIEW_GROUPS.map(g => g.id), ["fix", "add", "ask"]);
+test("UX.5, UX.7: the twelve change views, grouped, in the order Prev and Next walk them", () => {
+  assert.deepEqual(VIEWS.map(v => v.id), ["voice", "notes", "timing", "words", "chords", "voice2", "beat", "sound", "sections", "takes",
+    "practise", "ask"]);
+  assert.deepEqual(VIEWS.map(v => v.name), ["Voice", "Notes", "Timing", "Words", "Chords", "Second voice", "Beat", "Sound", "Sections",
+    "Takes", "Practise", "Ask Tandem"]);
+  assert.deepEqual(VIEW_GROUPS.map(g => g.id), ["fix", "add", "more", "ask"]);
   const groups = VIEWS.map(v => v.group);
-  assert.deepEqual(groups, ["fix", "fix", "fix", "fix", "add", "add", "add", "add", "ask"]);
+  assert.deepEqual(groups, ["fix", "fix", "fix", "fix", "add", "add", "add", "add", "more", "more", "more", "ask"]);
   assert.ok(VIEWS.every(v => ["voice", "both", "song"].includes(v.plays)));
-  assert.deepEqual(VIEWS.filter(v => v.roll).map(v => v.id), ["notes", "timing", "words"]);
+  assert.deepEqual(VIEWS.filter(v => v.roll).map(v => v.id), ["notes", "timing", "words", "sections", "practise"]);
   assert.equal(VIEWS[0].plays, "voice");
   assert.ok(Object.isFrozen(VIEWS) && VIEWS.every(Object.isFrozen));
   assert.equal(viewById("chords").name, "Chords");
   assert.equal(viewById("nope"), null);
   assert.equal(previousView("voice"), null);
   assert.equal(nextView("voice"), "notes");
-  assert.equal(nextView("sound"), "ask");
+  assert.equal(nextView("sound"), "sections");
+  assert.equal(nextView("practise"), "ask");
   assert.equal(nextView("ask"), null);
   assert.equal(previousView("chords"), "words");
   assert.equal(nextView("nope"), null);
@@ -70,7 +74,8 @@ test("UX.5: viewSummaries says each kind's state in plain words", () => {
   const empty = viewSummaries({ notes: [], drums: [], harmony: [], voice2: [], bpm: 100 });
   assert.deepEqual(empty, {
     voice: "Nothing recorded yet", notes: "No notes yet", timing: "100 beats a minute", words: "No words yet",
-    chords: "Not added", voice2: "Not added", beat: "Not added", sound: "No genre", ask: "Your melody is protected",
+    chords: "Not added", voice2: "Not added", beat: "Not added", sound: "No genre", sections: "No sections yet",
+    takes: "Nothing recorded yet", practise: "Needs a tune first", ask: "Your melody is protected",
   });
   assert.deepEqual(Object.keys(empty), VIEWS.map(v => v.id), "one line per view, in VIEWS order");
   const chords = [{ m: 48, t: 0, d: 1 }, { m: 52, t: 0, d: 1 }, { m: 55, t: 0, d: 1 }];
@@ -78,7 +83,13 @@ test("UX.5: viewSummaries says each kind's state in plain words", () => {
     notes: [{ m: 60, t: 0, d: 0.5 }], drums: [{ k: "kick", t: 0 }, { k: "hat", t: 0.5 }], harmony: chords,
     voice2: [{ m: 64, t: 0, d: 0.5 }, { m: 65, t: 0.5, d: 0.5 }], voice2_sung: { id: "a", seconds: 2, muted: false, line: "x" },
     bpm: 92.4, lyrics: "Twin-kle twin-kle _ lit-tle star", genre: "jazz", melody_locked: false,
+    sections: [{ name: "Verse", from: 0, to: 2 }, { name: "Chorus", from: 2, to: 4 }],
+    takes: { list: [{ id: "a", name: "Take 1", seconds: 2 }, { id: "b", name: "Take 2", seconds: 2 }], comp: [] },
+    layers: [{ id: "l", name: "Layer 1", seconds: 2 }],
   }, { recorded: true, polished: true, tuned: true, sounds: { melody: "Flute" } });
+  assert.equal(full.sections, "2 sections");
+  assert.equal(full.takes, "2 takes, 1 layer");
+  assert.equal(full.practise, "Sing along, note by note");
   assert.equal(full.voice, "Cleaned up, pitch fixed");
   assert.equal(full.notes, "1 note");
   assert.equal(full.timing, "92 beats a minute");
@@ -92,6 +103,7 @@ test("UX.5: viewSummaries says each kind's state in plain words", () => {
     voice2_sung: { muted: true }, bpm: 120 }, { recorded: true });
   assert.equal(some.voice, "Not cleaned up, pitch as sung");
   assert.equal(some.chords, "A line added");
+  assert.equal(some.takes, "1 take", "one recording and no takes list is one take");
   assert.equal(viewSummaries(null).notes, "No notes yet");
 });
 
@@ -255,4 +267,35 @@ test("UX.6: Before names what it plays: the take as sung in Voice, the song as t
   assert.equal(beforeText("timing"), "Before: the song as it was when you opened Timing. Choose After to change it.");
   assert.equal(beforeText("voice2"), "Before: the song as it was when you opened Second voice. Choose After to change it.");
   assert.equal(beforeText("nope"), "");
+});
+
+test("UX.7: every control of the studio page has a guided screen or fold, and every entry is a control", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const ids = [...page.matchAll(/<(button|input|select|textarea|details|form|a)\b[^>]*\bid="([^"]+)"/g)].map(m => m[2]).filter(id => !id.includes("'"));
+  assert.ok(ids.length > 250 && new Set(ids).size === ids.length);
+  const guided = ids.filter(id => page.indexOf('id="' + id + '"') < page.indexOf('<main id="allcontrols">'));
+  const missing = ids.filter(id => !(id in CONTROL_PLACES));
+  assert.deepEqual(missing, [], "a control with no place in the guided view");
+  assert.deepEqual(Object.keys(CONTROL_PLACES).filter(id => !ids.includes(id)), [], "an entry for a control the page does not have");
+  for (const [id, { place, via }] of Object.entries(CONTROL_PLACES)) {
+    assert.ok(place in PLACES, id + ": " + place);
+    if (via?.startsWith("#")) assert.ok(ids.includes(via.slice(1)), id + " is driven from " + via + ", which the page does not have");
+    if (via) assert.ok(!guided.includes(id), id + ": a control of the guided view is shown there, not driven");
+  }
+  // Each place is an element of the page, and each slot a move fills is one.
+  for (const sel of Object.values(PLACES)) {
+    const id = sel.match(/^#([\w-]+)$/)?.[1];
+    if (id) assert.ok(page.includes('id="' + id + '"'), sel);
+  }
+  for (const [sel, slot] of MOVES) {
+    assert.ok(page.includes('id="' + slot + '"'), slot);
+    const id = sel.match(/^#([\w-]+)$/)?.[1];
+    if (id) assert.ok(page.includes('id="' + id + '"'), sel);
+  }
+  assert.equal(new Set(MOVES.map(m => m[0])).size, MOVES.length, "an element moves to one place");
+  // Only the studio's own header, rail and side-panel link are left out of the guided view, and the file pickers.
+  assert.deepEqual(Object.keys(CONTROL_PLACES).filter(id => CONTROL_PLACES[id].place === "studio").sort(), ["backtotracks", "shortcuts", "showguide"]);
+  assert.deepEqual(MORE_VIEWS.map(id => PLACES["view:" + id + ":more"]), ["#gmore-voice", "#gmoretools", "#gmore-timing", "#gmore-chords",
+    "#gmore-voice2", "#gmore-beat", "#gmore-sound"]);
 });

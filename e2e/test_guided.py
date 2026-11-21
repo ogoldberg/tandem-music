@@ -84,8 +84,11 @@ def record_take(page, seconds=2.5):
     page.wait_for_function("/^(Done|Not everything)/.test(document.getElementById('gstatus').textContent)", timeout=90_000)
 
 
-VIEW_IDS = ["voice", "notes", "timing", "words", "chords", "voice2", "beat", "sound", "ask"]
-VIEW_NAMES = ["Voice", "Notes", "Timing", "Words", "Chords", "Second voice", "Beat", "Sound", "Ask Tandem"]
+VIEW_IDS = ["voice", "notes", "timing", "words", "chords", "voice2", "beat", "sound", "sections", "takes", "practise", "ask"]
+VIEW_NAMES = ["Voice", "Notes", "Timing", "Words", "Chords", "Second voice", "Beat", "Sound", "Sections", "Takes", "Practise",
+              "Ask Tandem"]
+# UX.7: the views under More, whose edits are in test_guided_more.py.
+MORE_GROUP = ["sections", "takes", "practise"]
 
 
 def open_view(page, view):
@@ -514,7 +517,8 @@ def test_the_notes_view_listens_first_and_folds_the_expert_tools_on_a_phone(brow
         expect(page.locator("#gmoretools #melodykeyup")).to_have_text("Up a note in the key")
         expect(page.locator("#gmoretools #melodyoctdown")).to_have_text("Down an octave")
         expect(page.locator("#gmoretools #melodyfit")).to_have_text("Show which notes fit the chords")
-        for shown in ("#melodyoctdown", "#melodykeydown", "#melodyfit", "#practice", "#warmup", "#addwarmup"):
+        # UX.7: practice and warm-ups have a view of their own (Practise), so they are not in Notes.
+        for shown in ("#melodyoctdown", "#melodykeydown", "#melodyfit", "#addnote", "#phraseup", "#ganalyze"):
             expect(page.locator(shown)).to_be_visible()
         assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
         # The folded tools drive the same handlers: Up an octave moves the selected notes up 12.
@@ -697,7 +701,7 @@ def test_every_change_view_makes_its_edit_and_done_shows_it_on_your_song(browser
     with guided_page(browser, server_url) as page:
         page.click("#gdemo")
         assert page.eval_on_selector_all("#gtiles .gtile", "els => els.map(e => e.dataset.view)") == VIEW_IDS
-        assert page.eval_on_selector_all("#gtiles .glabel", "els => els.map(e => e.textContent)") == ["Fix your tune", "Add to it", "Or ask for it"]
+        assert page.eval_on_selector_all("#gtiles .glabel", "els => els.map(e => e.textContent)") == ["Fix your tune", "Add to it", "More", "Or ask for it"]
         expect(page.locator("#gtiles .gtused:visible")).to_have_count(0)
         expect(page.locator("#gtile-chords")).to_have_attribute("data-suggested", "true")
         expect(page.locator("#gtile-chords .gtsuggest")).to_be_visible()
@@ -769,8 +773,9 @@ def test_every_change_view_makes_its_edit_and_done_shows_it_on_your_song(browser
         page.wait_for_function("document.getElementById('bpm').value === '90'")
         done_shows(page, "ask", "Your melody is protected")
         expect(page.locator("#gtile-timing .gtstate")).to_have_text("90 beats a minute")
-        # Every view was used, Voice aside.
-        assert page.eval_on_selector_all("#gtiles .gtile", "els => els.filter(e => e.dataset.used === 'true').map(e => e.dataset.view)") == VIEW_IDS[1:]
+        # Every view was used, Voice and the More group aside.
+        assert page.eval_on_selector_all("#gtiles .gtile", "els => els.filter(e => e.dataset.used === 'true').map(e => e.dataset.view)") == [
+            v for v in VIEW_IDS[1:] if v not in MORE_GROUP]
         page.screenshot(path=str(SHOTS / "ux5-hub.png"), full_page=True)
 
 
@@ -818,7 +823,7 @@ def test_prev_next_and_the_jump_menu_walk_the_views_and_the_roll_is_in_one_view_
             expect(page.locator("#gviewjump")).to_have_value(VIEW_IDS[len(seen) - 1])
             # The roll and the Timeline fold are in the open view when it shows them, and nowhere on screen otherwise.
             view = VIEW_IDS[len(seen) - 1]
-            if view in ("notes", "timing", "words"):
+            if view in ("notes", "timing", "words", "sections", "practise"):
                 assert page.evaluate("document.getElementById('melodyroll').closest('.gview').dataset.view") == view
                 assert page.evaluate("document.getElementById('gtimeline').closest('.gview').dataset.view") == view
                 expect(page.locator("#melodyroll")).to_be_visible()
