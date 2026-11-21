@@ -204,14 +204,18 @@ def test_record_becomes_stop_recording_and_the_voice_lane_says_why_it_is_silent(
     page.uncheck("#countin")
     expect(page.locator("#record")).to_be_visible()
     expect(page.locator("#finish")).to_be_hidden()
-    page.click("#record")
+    # From the keyboard: focus moves to Stop recording while it stands in Record's place, and back.
+    page.focus("#record")
+    page.keyboard.press("Enter")
     expect(page.locator("#status")).to_have_text("Recording…", timeout=8000)
     expect(page.locator("#finish")).to_be_visible()
     expect(page.locator("#record")).to_be_hidden()
+    expect(page.locator("#finish")).to_be_focused()
     page.wait_for_timeout(1200)
-    page.click("#finish")
+    page.keyboard.press("Enter")
     expect(page.locator("#record")).to_be_visible()
     expect(page.locator("#finish")).to_be_hidden()
+    expect(page.locator("#record")).to_be_focused()
     sub = page.locator("#lanesub-voice")
     expect(sub).to_contain_text("Muted: the song plays without your voice until you unmute it")
     page.click("#mute-voice")
@@ -221,3 +225,24 @@ def test_record_becomes_stop_recording_and_the_voice_lane_says_why_it_is_silent(
     expect(sub).to_contain_text("Silent: another part is soloed")
     page.click("#solo-melody")
     expect(sub).not_to_contain_text("Silent")
+
+
+def test_a_refused_token_opens_the_connection_fold(page, server_url):
+    """UX.3: the token is in a closed fold, so when chat says the token is wrong the fold opens on it."""
+    problems = []
+    page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
+    page.on("console", lambda msg: problems.append(f"console.{msg.type}: {msg.text}") if msg.type == "error" else None)
+    page.goto(server_url + "/")
+    page.wait_for_function("document.getElementById('notecount').textContent !== ''")
+    page.route("**/api/chat", lambda route: route.fulfill(status=401, content_type="application/json",
+                                                          body='{"detail":"Invalid Tandem access token"}'))
+    page.locator('#rail .railstep[data-part="song"]').click()
+    assert page.evaluate("document.getElementById('connection').open") is False
+    page.fill("#prompt", "Make it brighter")
+    page.click("#chatform button[type=submit]")
+    expect(page.locator("#chat")).to_contain_text("Enter the access token under Connection (advanced)")
+    assert page.evaluate("document.getElementById('connection').open") is True
+    expect(page.locator("#token")).to_be_focused()
+    # Chromium logs the route's 401 answer as a console error; the page itself reported nothing.
+    expected = "console.error: Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    assert problems == [expected], "Browser reported errors:\n" + "\n".join(problems)
