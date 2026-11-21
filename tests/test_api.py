@@ -215,7 +215,9 @@ def test_the_chat_disclosure_matches_what_chat_sends():
     sent=json.dumps(server.chat_messages(req))
     for text in ("lo-fi brushes","Backing oohs","la la","earlier turn","-7.5","Morning take","Evening take"): assert text in sent
     panel=open("index.html",encoding="utf-8").read()
-    assert "sends your whole project" in panel and "and the recent chat to the configured AI model" in panel
+    # UX.3: one sentence above the chat, the full list behind What is sent.
+    assert "never your recordings" in panel and "<summary>What is sent</summary>" in panel
+    assert "Your whole project (notes" in panel and "and the recent chat go to the configured AI model" in panel
     assert "but no recordings" in panel
     security=open("docs/SECURITY.md",encoding="utf-8").read()
     assert "sends the whole project" in security and "the last 10 chat turns" in security

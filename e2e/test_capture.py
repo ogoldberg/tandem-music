@@ -1,6 +1,7 @@
 """MOB.1: the phone capture page records ideas from a (fake) microphone, keeps them on the device and
 opens them in the studio. Runs in a phone-sized, touch context."""
 import json
+import re
 from contextlib import contextmanager
 
 import httpx
@@ -273,13 +274,13 @@ def test_persistent_storage_is_requested_when_the_first_idea_is_kept(phone, gran
     page = phone
     page.add_init_script(PERSIST_STUB % ("true" if granted else "false"))
     open_capture(page)
-    expect(page.locator("#storageinfo")).to_contain_text("may clear saved work")
+    expect(page.locator("#storageinfo")).to_contain_text("may clear your ideas")
     assert page.evaluate("window.__persistCalls") == 0
     record(page)
     if granted:
-        expect(page.locator("#storageinfo")).to_contain_text("will keep saved work until you clear it")
+        expect(page.locator("#storageinfo")).to_contain_text("will keep your ideas until you clear it")
     else:
-        expect(page.locator("#storageinfo")).to_contain_text("may clear saved work")
+        expect(page.locator("#storageinfo")).to_contain_text("may clear your ideas")
     assert page.evaluate("window.__persistCalls") == 1
     # Asked once per visit, not on every take.
     record(page)
@@ -454,3 +455,12 @@ def test_opening_an_idea_again_from_a_draft_already_kept_as_a_version_saves_no_n
     page.click(".idea >> text=Open in studio")
     expect(page.locator("#status")).to_contain_text("Your previous draft was saved as the version \"Before ")
     expect(page.locator("#versionlist .version")).to_have_count(2)
+
+
+def test_the_capture_page_says_share_and_check_my_pitch(phone):
+    """UX.3: the capture page asks for ideas to be shared, not project files exported, and names the pitch choice."""
+    page = phone
+    open_capture(page)
+    expect(page.locator("#storageinfo")).to_contain_text("Share the ideas you want to keep")
+    expect(page.locator("#storageinfo")).not_to_contain_text("Export project files")
+    expect(page.locator('label:has(#pitchkey)')).to_have_text(re.compile(r"^Check my pitch against"))

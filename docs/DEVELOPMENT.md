@@ -102,7 +102,7 @@ Vercel project settings: https://vercel.com/oren-goldbergs-projects-c0a37bd5/tan
 
 On the last inspected Vercel environment (2026-11-09), no model configuration variables were present. Check current settings directly before relying on this historical observation.
 
-To generate a long random access token on macOS: `openssl rand -hex 32`. Store it in Vercel Production environment variables and enter the same token in the browser's **Connection** panel. The browser keeps the token only for that tab (sessionStorage), so you re-enter it in each new tab. Redeploy after environment changes. Do not paste credentials into issues, chat, screenshots or source.
+To generate a long random access token on macOS: `openssl rand -hex 32`. Store it in Vercel Production environment variables and enter the same token in the browser's **Connection (advanced)** fold under the chat (Song step). The browser keeps the token only for that tab (sessionStorage), so you re-enter it in each new tab. Redeploy after environment changes. Do not paste credentials into issues, chat, screenshots or source.
 
 ### Sanity check after deploy
 
@@ -134,5 +134,5 @@ The provider key never belongs in browser JavaScript. Vercel production refuses 
 - **Basic Pitch import/model unavailable**: Check that `/vendor/basic-pitch-1.0.1-2/basic-pitch.mjs` and `/model/model.json` load (a 404 means the route or the deployed files are missing), then supported browser and memory; select server fallback for basic melody/rhythm detection. A status that says Basic Pitch is slow because the browser has no WebGL graphics acceleration means TensorFlow.js fell back to its CPU backend: turn on hardware acceleration in the browser, or use the server listener.
 - **WORLD dependency build failure**: Check PyWorld wheel Python ABI and Vercel build output; use the pinned prebuilt distribution instead of the unsupported original package.
 - **Unchanged or unnatural vocal**: Separate polish (EQ) from tune (WORLD). Ensure solo voiced singing, review detected targets and strength; no quality guarantee.
-- **Chat returns 503/401**: Inspect provider and token config on server; confirm browser connection token but never expose provider credentials.
+- **Chat returns 503/401**: Inspect provider and token config on server; confirm browser connection token but never expose provider credentials. On a 401 the studio opens the chat's Connection (advanced) fold on the token field (UX.3); in the guided view the chat says how to reach it (Settings, Show every control, Song).
 - **Blank page or 404**: Check FastAPI root/static asset routes, project framework detection, current deployment commit and service-worker cache.

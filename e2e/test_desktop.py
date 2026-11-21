@@ -148,6 +148,7 @@ def test_tune_in_the_mac_app_uses_its_own_server_even_with_another_api_base(page
     page.route("https://elsewhere.example/**", lambda route: (elsewhere.append(route.request.url), route.abort()))
     api = []
     page.on("request", lambda r: api.append(r) if "/api/tune" in r.url else None)
+    page.click("#connection summary")
     page.fill("#api", "https://elsewhere.example")
     page.select_option("#mode", "vocal")
     page.select_option("#tuneengine", "server")

@@ -23,7 +23,7 @@ details.takeopts{width:100%;border:1px solid #33465f;border-radius:12px;padding:
 select{font:inherit;border:1px solid #455c78;background:#263950;color:white;border-radius:10px;padding:8px 10px;min-height:44px}
 .swupdate{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:100;box-shadow:0 2px 12px #0008}.swupdate[hidden]{display:none}</style></head><body><button id="swupdate" class="swupdate" hidden title="A new version of Tandem is downloaded: open it now (your work is kept)">Update Tandem</button><main>
 <header><h1>♫ Tandem Capture</h1><a href="./">Open studio →</a></header>
-<section class="recorder" aria-label="Recorder"><button id="record" aria-pressed="false">Record</button><div id="time" aria-hidden="true"></div><div id="pitchguide" class="pitchguide hide"><canvas id="pitchstrip" aria-hidden="true"></canvas><div id="pitchnow" role="status"></div></div><div class="guideopts"><label><input type="checkbox" id="showpitch" checked> Show my pitch</label><label>Against <select id="pitchkey"></select></label></div><details class="takeopts" id="takeopts"><summary>Beat and count-in</summary><div class="optrow"><label>Beat <select id="beat"></select></label><label>Speed <input id="bpm" type="number" min="45" max="220" step="1" inputmode="numeric" aria-label="Speed in beats a minute"> bpm</label></div><div class="optrow"><label><input type="checkbox" id="countin"> Count in one bar first</label></div><p id="beatnote" class="muted">Use headphones with a beat: through the speaker it gets into the take. With Bluetooth headphones the phone's own microphone records you.</p><div class="optrow"><span id="latencyinfo" class="muted">Takes are lined up with the beat by the delay of your microphone and headphones.</span><button id="calibrate">Measure the delay</button></div></details></section>
+<section class="recorder" aria-label="Recorder"><button id="record" aria-pressed="false">Record</button><div id="time" aria-hidden="true"></div><div id="pitchguide" class="pitchguide hide"><canvas id="pitchstrip" aria-hidden="true"></canvas><div id="pitchnow" role="status"></div></div><div class="guideopts"><label><input type="checkbox" id="showpitch" checked> Show my pitch</label><label>Check my pitch against <select id="pitchkey"></select></label></div><details class="takeopts" id="takeopts"><summary>Beat and count-in</summary><div class="optrow"><label>Beat <select id="beat"></select></label><label>Speed <input id="bpm" type="number" min="45" max="220" step="1" inputmode="numeric" aria-label="Speed in beats a minute"> bpm</label></div><div class="optrow"><label><input type="checkbox" id="countin"> Count in one bar first</label></div><p id="beatnote" class="muted">Use headphones with a beat: through the speaker it gets into the take. With Bluetooth headphones the phone's own microphone records you.</p><div class="optrow"><span id="latencyinfo" class="muted">Takes are lined up with the beat by the delay of your microphone and headphones.</span><button id="calibrate">Measure the delay</button></div></details></section>
 <div id="status" class="status" role="status" aria-live="polite">Opening storage…</div>
 <button id="rescue" class="hide">Download the recording that was not kept</button>
 <section aria-labelledby="ideasheading"><h2 id="ideasheading" style="font-size:1.05rem">Your ideas <small id="count"></small></h2><ul id="ideas"></ul></section>
@@ -32,7 +32,7 @@ select{font:inherit;border:1px solid #455c78;background:#263950;color:white;bord
 <script type="module">
 // MOB.1 (ADR-013): record a song idea in one tap; every take is kept on this device at once, in the
 // same storage as the studio (ideas.js list, recordings.js files), and can be opened in the studio.
-import {openKV,persistence,PERSISTENCE_TEXT} from './storage.js';
+import {openKV,persistence,CAPTURE_PERSISTENCE_TEXT} from './storage.js';
 import {openRecordings} from './recordings.js';
 import {createVersionStore} from './versions.js';
 import {createIdeaStore,ideaTitle,formatDuration,storageProblem} from './ideas.js';
@@ -49,7 +49,7 @@ const $=id=>document.getElementById(id);
 let kv=null,recordings=null,ideas=null,take=null,starting=false,ticker=null,unsaved=null,downloaded=null,updating=false,player=null,playingId=null,askedToPersist=false;
 // Whether the browser promised to keep this site's storage. Asked for once per visit, when an idea is
 // first kept (browsers grant it more readily once the site holds something, and some ask the user).
-const showPersistence=(request=false)=>persistence(navigator.storage,{request}).then(s=>{$('storageinfo').textContent=PERSISTENCE_TEXT[s]},()=>{});
+const showPersistence=(request=false)=>persistence(navigator.storage,{request}).then(s=>{$('storageinfo').textContent=CAPTURE_PERSISTENCE_TEXT[s]},()=>{});
 const status=s=>{$('status').textContent=s};
 // FIX.6: an idea still being kept, which Update waits for before it reloads.
 const saving=new Set(),held=p=>{saving.add(p);p.then(()=>saving.delete(p),()=>saving.delete(p));return p};
