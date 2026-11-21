@@ -61,7 +61,7 @@ test("UX.5: what a view's Play plays, said plainly with and without a take", () 
   assert.equal(playsText("voice", true), "Plays your voice");
   assert.equal(playsText("voice", false), "Record yourself first to hear your voice");
   assert.equal(playsText("both", true), "Plays your voice with the notes");
-  assert.equal(playsText("both", false), "Plays the notes");
+  assert.equal(playsText("both", false), "Plays the song");
   assert.equal(playsText("song", true), "Plays the song");
   assert.equal(playsText("song", false), "Plays the song");
 });

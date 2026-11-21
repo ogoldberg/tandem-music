@@ -36,11 +36,11 @@ const viewIndex = id => VIEWS.findIndex(v => v.id === id);
 export const nextView = id => { const i = viewIndex(id); return i >= 0 && i < VIEWS.length - 1 ? VIEWS[i + 1].id : null; };
 export const previousView = id => { const i = viewIndex(id); return i > 0 ? VIEWS[i - 1].id : null; };
 
-// What a view's Play plays: the best take alone, the take with the notes (the notes alone with no take), or the song
-// as the mixer has it.
+// What a view's Play plays: the best take alone, the take with the notes (the song as mixed when there is no take),
+// or the song as the mixer has it.
 export function playsText(plays, recorded) {
   if (plays === "voice") return recorded ? "Plays your voice" : "Record yourself first to hear your voice";
-  if (plays === "both") return recorded ? "Plays your voice with the notes" : "Plays the notes";
+  if (plays === "both") return recorded ? "Plays your voice with the notes" : "Plays the song";
   return "Plays the song";
 }
 

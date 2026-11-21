@@ -496,7 +496,7 @@ def test_the_notes_view_listens_first_and_folds_the_expert_tools_on_a_phone(brow
         assert tops == sorted(tops), tops
         # Play is on the first screen.
         assert page.locator("#gviewplay").bounding_box()["y"] + 44 < 844
-        expect(page.locator("#gviewplays")).to_have_text("Plays the notes")
+        expect(page.locator("#gviewplays")).to_have_text("Plays the song")
         for fold in ("#gmoretools", "#gtimeline"):
             assert page.eval_on_selector(fold, "d => d.open") is False
         for hidden in ("#melodyoctdown", "#melodyoctup", "#melodykeydown", "#melodykeyup", "#melodyfit", "#practice",
@@ -771,6 +771,32 @@ def test_every_change_view_makes_its_edit_and_done_shows_it_on_your_song(browser
         # Every view was used, Voice aside.
         assert page.eval_on_selector_all("#gtiles .gtile", "els => els.filter(e => e.dataset.used === 'true').map(e => e.dataset.view)") == VIEW_IDS[1:]
         page.screenshot(path=str(SHOTS / "ux5-hub.png"), full_page=True)
+
+
+def test_a_chat_reply_that_lands_in_another_view_marks_the_view_it_was_asked_from(browser, server_url):
+    # UX.5 review: an action that finishes later marks the view it was started in, not the one open when it lands.
+    import tandem_backend as server
+    with guided_page(browser, server_url) as page:
+        page.click("#gdemo")
+        open_view(page, "ask")
+        held = []
+        page.route("**/api/chat", lambda route: held.append(route))
+        page.fill("#prompt", "slower please")
+        page.click("#chatform button[type=submit]")
+        for _ in range(100):
+            if held:
+                break
+            page.wait_for_timeout(50)
+        assert held, "the chat request was not sent"
+        page.select_option("#gviewjump", "beat")
+        expect(page.locator('.gview[data-view="beat"]')).to_be_visible()
+        req = server.ChatRequest.model_validate(json.loads(held[0].request.post_data))
+        held[0].fulfill(status=200, json=server.chat_plan(json.dumps({"reply": "Slower.", "actions": [{"type": "set_tempo", "bpm": 90}]}), req))
+        page.wait_for_function("document.getElementById('bpm').value === '90'")
+        page.click("#gviewdone")
+        expect(page.locator('[data-panel="song"]')).to_be_visible()
+        expect(page.locator("#gtile-ask .gtused")).to_be_visible()
+        expect(page.locator("#gtile-beat .gtused")).to_be_hidden()
 
 
 def test_prev_next_and_the_jump_menu_walk_the_views_and_the_roll_is_in_one_view_at_a_time(browser, server_url):
