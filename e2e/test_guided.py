@@ -35,7 +35,7 @@ CONTROL = re.compile(r'<(button|input|select|textarea)\b[^>]*\bid="([^"]+)"')
 
 
 @contextmanager
-def guided_page(browser, server_url, *, init=None, **extra):
+def guided_page(browser, server_url, *, init=None, expected_errors=(), **extra):
     options = {**PHONE, "is_mobile": True, "permissions": ["microphone"], "base_url": server_url, **extra}
     context = browser.new_context(**options)
     if init:
@@ -50,6 +50,8 @@ def guided_page(browser, server_url, *, init=None, **extra):
         yield page
     finally:
         context.close()
+    # expected_errors: console lines a test causes on purpose (Chromium logs a routed error answer).
+    problems = [p for p in problems if p not in expected_errors]
     assert not problems, "Browser reported errors:\n" + "\n".join(problems)
 
 
@@ -96,8 +98,9 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         assert notes >= 4, "the fake microphone beeps about once a second"
         assert page.evaluate("document.getElementById('polished').disabled") is False
 
-        # Step 2: the real melody roll is in the step, with the speed in plain words.
-        page.click("#gnext")
+        # Step 2: Keep this take on Your take opens the Notes step: the real melody roll, the speed in plain words.
+        expect(page.locator("#gnext")).to_be_hidden()
+        page.click("#gtakekeep")
         expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Notes")
         expect(page.locator("#slot-roll #melodyroll .note")).to_have_count(notes)
         bpm = page.evaluate(IDB_DRAFT)["bpm"]
@@ -592,9 +595,10 @@ def test_sing_it_again_keeps_both_takes_and_share_it_as_it_is_goes_to_share(brow
 
 
 def test_an_imported_take_opens_your_take_and_a_failed_helper_is_named_there(browser, server_url, tmp_path):
-    with guided_page(browser, server_url) as page:
+    busy = "console.error: Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+    with guided_page(browser, server_url, expected_errors=(busy,)) as page:
         use_server_transcriber(page)
-        page.route("**/api/analyze", lambda route: route.fulfill(status=503, content_type="application/json",
+        page.route("**/api/analyze?*", lambda route: route.fulfill(status=503, content_type="application/json",
                                                                  body='{"detail": "The server is busy."}'))
         path = tmp_path / "take.wav"
         rate, seconds = 22050, 2.0
