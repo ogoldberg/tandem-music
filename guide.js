@@ -133,3 +133,29 @@ export function stepSummaries({ duration = 0, notes = 0, drums = 0, harmony = []
 const index = id => STEPS.findIndex(s => s.id === id);
 export const nextStep = id => { const i = index(id); return i >= 0 && i < STEPS.length - 1 ? STEPS[i + 1].id : null; };
 export const previousStep = id => { const i = index(id); return i > 0 ? STEPS[i - 1].id : null; };
+
+// UX.4: the Sing step's one sentence about what happens when the take stops, from afterTake's plan.
+const lower = s => s[0].toLowerCase() + s.slice(1);
+const list = items => items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items.at(-1);
+export function planSentence(plan) {
+  if (!plan.length) return "When you stop, Tandem lets you hear your take. Every helper for this kind of recording is off.";
+  return "When you stop, Tandem will " + list(plan.map(a => lower(a.label))) + ", then let you hear it.";
+}
+
+// UX.4: What Tandem did, one line per helper of the plan after the take, from the states runHelpers gave each
+// (done, skipped, failed; none when it never ran) and the sentence it left (notes[action]).
+const PAST = Object.freeze({ Clean: "Cleaned", Fix: "Fixed", Turn: "Turned", Write: "Wrote", Find: "Found", Line: "Lined" });
+export function pastTense(label) {
+  const [verb, ...rest] = label.split(" ");
+  return verb in PAST ? [PAST[verb], ...rest].join(" ") : label;
+}
+export function takeReport(plan, states = {}, notes = {}) {
+  return plan.map(({ action, label }) => {
+    const state = states[action] ?? "notrun", note = notes[action] ? String(notes[action]).trim() : "";
+    const text = state === "done" ? pastTense(label) + (note ? ". " + note : "")
+      : state === "skipped" ? "Skipped: " + lower(label) + (note ? ". " + note : "")
+      : state === "failed" ? "Could not " + lower(label) + (note ? ": " + note : "")
+      : "Not done: " + lower(label);
+    return { action, state, text };
+  });
+}

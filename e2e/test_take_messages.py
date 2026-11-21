@@ -57,6 +57,8 @@ def record_analyze_uploads(page):
 
 
 def import_take(page, path):
+    if page.locator('[data-panel="take"]').is_visible():
+        page.click("#gtakeagain")
     with page.expect_file_chooser() as chooser:
         page.click("#gimport")
     chooser.value.set_files(str(path))
@@ -72,7 +74,7 @@ def test_a_silent_take_keeps_the_melody_and_says_nothing_was_heard(browser, serv
     with guided_page(browser, server_url) as page:
         use_server_transcriber(page)
         import_take(page, take_wav(tmp_path / "tune.wav", [60, 62, 64, 65, 67, 65], seconds=6.5))
-        expect(page.locator("#gstatus")).to_have_text("Done. Check your notes next.")
+        expect(page.locator("#gstatus")).to_have_text("Done. Have a listen.")
         assert notes(page) == 6
         before = draft_notes(page)
 
@@ -96,7 +98,7 @@ def test_a_two_note_take_skips_the_speed_and_says_why(browser, server_url, tmp_p
         bpm = page.evaluate("Number(document.getElementById('bpm').value)")
         import_take(page, take_wav(tmp_path / "two.wav", [64, 67], seconds=2.5))
         expect(page.locator("#gstatus")).to_have_text(
-            "Done. Check your notes next. Too short to find the speed: sing a little longer, or carry on.")
+            "Done. Have a listen. Too short to find the speed: sing a little longer, or carry on.")
         assert notes(page) == 2
         assert plan(page) == [["Clean up the sound", "done"], ["Turn your tune into notes", "done"],
                               ["Find the speed", "skipped"]]
@@ -109,7 +111,7 @@ def test_a_take_over_a_minute_is_transcribed_for_its_first_minute(browser, serve
         record_analyze_uploads(page)
         import_take(page, take_wav(tmp_path / "long.wav", [60, 64] * 35, seconds=70, each=0.6, step=1.0))
         expect(page.locator("#gstatus")).to_have_text(
-            "Done. Check your notes next. The take is 70 seconds long, so the notes are from its first 60 seconds.")
+            "Done. Have a listen. The take is 70 seconds long, so the notes are from its first 60 seconds.")
         starts = [n["t"] for n in draft_notes(page)]
         assert len(starts) >= 55, starts
         assert max(starts) < 60 and max(starts) > 58, starts

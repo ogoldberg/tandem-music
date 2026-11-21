@@ -414,7 +414,7 @@ In the order to build them. Each leaves the app working and the all-controls vie
   - **Depends:** UX.7
   - The desktop rail takes the names Sing, Your song, Share. Show every control from a change view opens the studio with the matching part chosen (`showPart`), and Guided steps comes back to that view. At 1100 px and wider the guided view shows the hub on the left and the open view on the right.
   - **Acceptance:** e2e in `e2e/test_studio_layout.py`: the round trip from three views lands on the matching lane and back; at 1440 px the hub and a view are side by side with no control duplicated; the control-inventory test; screenshots at desktop and tablet widths.
-- [ ] **BEAT.4** Record a beat over the song (if open question 4 is agreed)
+- [ ] **BEAT.4** Record a beat over the song (open question 4, agreed)
   - The guided Record a beat replaces the sung take after a warning. Make it record a layer over the song (TRACK.1) that is read into the drums as one edit, and drop the warning and `#gbeatwarn`'s buttons from the path.
   - **Acceptance:** e2e with the fake microphone: after Record a beat from the Beat view the first take is still the song's take, there is one layer, and the drums hold its hits; Undo removes the hits.
 
@@ -430,3 +430,7 @@ In the order to build them. Each leaves the app working and the all-controls vie
 
 - Record a beat in the guided view records a layer over the song instead of replacing the sung take (agreed).
 - 2026-11-21: operator approved the design as proposed, with no changes: take every recommended answer to the open questions; file UX.4 onward from the roadmap split here and build them in order.
+- Open questions with no recommendation in the text, decided on the operator's standing instruction to take the recommendation (2026-11-21):
+  - 1, names: the design's names stay: Your song, Voice, Second voice.
+  - 7, the example: from UX.5 Try an example opens Your song with Play in view, with no take screen. In UX.4 it still opens the Notes step, since Your song does not exist yet.
+  - 9, who judges it: the operator on the Pixel first, then someone new to Tandem when one is available (HUMAN).
