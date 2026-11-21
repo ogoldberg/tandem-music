@@ -180,7 +180,8 @@ def test_the_guided_share_step_plays_and_downloads_how_it_grew(browser, server_u
         card.locator('[data-press="evolution"]').click()
         # No take: the song grows from the melody.
         expect(card.locator(".evostage")).to_have_text("Now: The melody on an instrument", timeout=20_000)
-        card.locator('[data-press="stop"]').click()
+        # UX.8: Share's player card has a Stop of its own; use the one beside Hear how it grew.
+        card.locator('.gcard:has([data-press="evolution"]) [data-press="stop"]').click()
         expect(card.locator(".evostage")).to_have_text("")
         with page.expect_download(timeout=60_000) as info:
             card.locator('[data-press="exportevolution"]').click()

@@ -205,6 +205,21 @@ export function viewSummaries(project, { recorded = false, polished = false, tun
   };
 }
 
+// UX.8: Share's "In your song", one line per part the song has (in the views' order), each naming its view and saying its
+// state in viewSummaries' words; a part the song does not have has no line. Same arguments as viewSummaries.
+export function songLines(project, options = {}) {
+  const p = project ?? {}, lines = viewSummaries(p, options);
+  const has = {
+    voice: !!options.recorded,
+    notes: (p.notes?.length ?? 0) > 0,
+    words: lines.words !== "No words yet",
+    chords: (p.harmony?.length ?? 0) > 0,
+    voice2: (p.voice2?.length ?? 0) > 0,
+    beat: (p.drums?.length ?? 0) > 0,
+  };
+  return VIEWS.filter(v => has[v.id]).map(v => ({ view: v.id, name: v.name, text: lines[v.id] }));
+}
+
 function takesLine(takes, layers) {
   if (!takes && !layers) return "Nothing recorded yet";
   return [takes && plural(takes, "take"), layers && plural(layers, "layer")].filter(Boolean).join(", ");
@@ -329,7 +344,7 @@ const PLACE_IDS = {
   "view:ask": "melodylock whatsent chatform prompt",
   settings: "ghelpersback gcleanup gpitchname gtuneengine gtranscriber gbeatstyle gshowall greset transcriber=#gtranscriber tuneengine=#gtuneengine",
   "settings:ai": "aiprovider aimodel aibaseurl aikey aisave aiforget connection api token connect",
-  share: "gsongname gsharevoice gsharesong gsavebundle gsavefolder gversionname gsaveversion gmoreapps gshareall songname=#gsongname " +
+  share: "gshareplay gsharestop gsongname gsharevoice gsharesong gsavebundle gsavefolder gversionname gsaveversion gmoreapps gshareall songname=#gsongname " +
     "sharesong=#gsharesong savebundle=#gsavebundle savefolder=#gsavefolder versionname=#gversionname saveversion=#gsaveversion " +
     "versionreplace=[data-press=versionreplace] versionkeep=[data-press=versionkeep] exportevolution=[data-press=exportevolution]",
   "share:apps": "exportwav=[data-press=exportwav] exportstems=[data-press=exportstems] exportmusicxml=[data-press=exportmusicxml] " +
