@@ -585,6 +585,11 @@ def test_sing_it_again_keeps_both_takes_and_share_it_as_it_is_goes_to_share(brow
         expect(page.locator('[data-panel="take"]')).to_be_hidden()
         record_take(page)
         expect(page.locator('[data-panel="take"]')).to_be_visible()
+        # Played to its end, the take says so no longer: the status goes back to Ready.
+        page.click("#gtakeplay")
+        expect(page.locator("#gstatus")).to_have_text("Playing your take")
+        expect(page.locator("#gtakeplay")).to_have_text("Play", timeout=15_000)
+        expect(page.locator("#gstatus")).to_have_text("Ready")
         wait_until(page, f"""async () => {{ const d = await ({IDB_DRAFT})(); const p = typeof d === 'string' ? JSON.parse(d) : d;
                                return !!p?.takes && p.takes.list.length === 2; }}""", "two takes in the draft")
         page.click("#gtakeshare")
