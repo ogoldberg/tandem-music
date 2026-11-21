@@ -170,3 +170,10 @@ export const PERSISTENCE_TEXT = {
   "best-effort": "This browser may clear saved work when space runs low. Export project files you want to keep.",
   unsupported: "This browser cannot promise to keep saved work. Export project files you want to keep.",
 };
+
+// UX.3: the capture page keeps ideas, not projects, and moves them with Share.
+export const CAPTURE_PERSISTENCE_TEXT = {
+  persisted: "This browser will keep your ideas until you clear it. Share an idea to move it to another device.",
+  "best-effort": "This browser may clear your ideas when space runs low. Share the ideas you want to keep.",
+  unsupported: "This browser cannot promise to keep your ideas. Share the ideas you want to keep.",
+};

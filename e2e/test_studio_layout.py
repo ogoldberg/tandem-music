@@ -137,3 +137,87 @@ def test_tablet_width_puts_the_steps_above_and_the_panel_beside_the_tracks(studi
     # The four steps sit side by side.
     tops = page.eval_on_selector_all("#rail .railstep", "bs => bs.map(b => Math.round(b.getBoundingClientRect().top))")
     assert len(set(tops)) == 1
+
+
+def test_the_chat_folds_its_connection_settings_and_says_in_a_sentence_what_is_sent(studio):
+    """UX.3: the API server and token are in a closed Connection (advanced) fold; the disclosure is one sentence
+    with the rest behind What is sent."""
+    page = studio
+    show_part = page.locator('#rail .railstep[data-part="song"]')
+    show_part.click()
+    note = page.locator("#chatnote")
+    expect(note).to_be_visible()
+    assert len(note.text_content().split()) <= 25
+    assert "never your recordings" in note.text_content()
+    for fold, inside in (("#connection", "#token"), ("#whatsent", "#whatsent p")):
+        assert page.evaluate(f"document.querySelector('{fold}').open") is False
+        expect(page.locator(inside)).to_be_hidden()
+    expect(page.locator("#connection summary")).to_have_text("Connection (advanced)")
+    expect(page.locator("#api")).to_be_hidden()
+    page.click("#whatsent summary")
+    expect(page.locator("#whatsent p")).to_contain_text("the recent chat")
+    page.click("#connection summary")
+    expect(page.locator("#api")).to_be_visible()
+    expect(page.locator("#connect")).to_be_visible()
+
+
+def test_at_tablet_width_the_shortcuts_fold_so_the_tracks_show(studio):
+    """UX.3: up to 1180 px, where the steps sit above the tracks, the shortcuts are a closed fold."""
+    page = studio
+    assert page.evaluate("document.getElementById('shortcuts').open") is True
+    expect(page.locator("#shortcuts dl")).to_be_visible()
+    page.set_viewport_size({"width": 1024, "height": 768})
+    page.wait_for_function("!document.getElementById('shortcuts').open")
+    expect(page.locator("#shortcuts dl")).to_be_hidden()
+    lane = page.locator('#lanes .lanehead[data-part="voice"]').bounding_box()
+    assert lane["y"] + lane["height"] <= 768, lane
+    # Still there for whoever wants it.
+    page.click("#shortcuts summary")
+    expect(page.locator("#shortcuts dl")).to_be_visible()
+    page.set_viewport_size({"width": 1300, "height": 800})
+    page.wait_for_function("document.getElementById('shortcuts').open")
+
+
+def test_at_phone_width_a_lane_scrolls_to_its_settings_and_back_to_tracks_returns(studio):
+    """UX.3: at phone width the panel is under every lane: picking a lane scrolls to it, Back to tracks scrolls back
+    to the lane picked."""
+    page = studio
+    expect(page.locator("#backtotracks")).to_be_hidden()
+    page.set_viewport_size({"width": 390, "height": 844})
+    pick_lane(page, "voice")
+    heading = page.locator("#ph-voice")
+    page.wait_for_function("(() => { const r = document.getElementById('ph-voice').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })()")
+    expect(heading).to_be_in_viewport()
+    expect(page.locator("#backtotracks")).to_be_in_viewport()
+    page.click("#backtotracks")
+    head = page.locator('#lanes .lanehead[data-part="voice"]')
+    expect(head).to_be_in_viewport()
+    expect(head).to_be_focused()
+    expect(heading).not_to_be_in_viewport()
+
+
+def test_record_becomes_stop_recording_and_the_voice_lane_says_why_it_is_silent(studio):
+    """UX.3: while a take records, Record is replaced by Stop recording; the voice lane says it is muted, and why
+    it is silent while another part is soloed."""
+    page = studio
+    page.click("#demo")
+    page.uncheck("#countin")
+    expect(page.locator("#record")).to_be_visible()
+    expect(page.locator("#finish")).to_be_hidden()
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording…", timeout=8000)
+    expect(page.locator("#finish")).to_be_visible()
+    expect(page.locator("#record")).to_be_hidden()
+    page.wait_for_timeout(1200)
+    page.click("#finish")
+    expect(page.locator("#record")).to_be_visible()
+    expect(page.locator("#finish")).to_be_hidden()
+    sub = page.locator("#lanesub-voice")
+    expect(sub).to_contain_text("Muted: the song plays without your voice until you unmute it")
+    page.click("#mute-voice")
+    expect(sub).not_to_contain_text("Muted")
+    expect(sub).not_to_contain_text("Silent")
+    page.click("#solo-melody")
+    expect(sub).to_contain_text("Silent: another part is soloed")
+    page.click("#solo-melody")
+    expect(sub).not_to_contain_text("Silent")

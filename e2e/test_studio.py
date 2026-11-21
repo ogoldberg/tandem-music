@@ -549,6 +549,8 @@ def test_access_token_kept_for_this_tab_only(studio):
     assert page.input_value("#token") == ""
 
     # A successful connection keeps the token for this tab only, never in localStorage.
+    # UX.3: the token is in the closed Connection (advanced) fold.
+    page.click("#connection summary")
     page.fill("#token", "tab-secret")
     page.click("#connect")
     expect(page.locator("#status")).to_have_text("Backend connection succeeded")
@@ -568,6 +570,7 @@ def test_access_token_kept_for_this_tab_only(studio):
     other.close()
 
     # Clearing the field and connecting again forgets the token.
+    page.click("#connection summary")
     page.fill("#token", "")
     page.click("#connect")
     page.wait_for_function("sessionStorage.getItem('tandem-token') === null")

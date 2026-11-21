@@ -283,3 +283,32 @@ def test_record_pressed_while_new_song_keeps_the_song_before_waits_for_it(studio
     assert d["bpm"] == 100 and d["notes"] == [], "the take is in the new song"
     stored = page.evaluate(IDB_GET, "versions")
     assert [(v["name"], v["project"]["bpm"], v.get("audio")) for v in stored] == [("Before a new song", 120, None)]
+
+
+FAIL_VERSIONS = """() => { const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (value, key) {
+    if (key === 'versions') throw new DOMException('The disk is full', 'QuotaExceededError');
+    return put.call(this, value, key);
+  }; }"""
+
+
+def test_record_pressed_while_new_song_fails_does_not_record_into_the_song_before(studio):
+    """UX.3 (PR #151's P3): when keeping the song before fails, New song says why and Record, which was waiting for
+    it, does not start a take in the song that was not replaced."""
+    page = studio
+    page.uncheck("#countin")
+    page.click("#demo")
+    page.fill("#bpm", "120")
+    page.locator("#bpm").dispatch_event("change")
+    wait_until(page, f"async () => (await ({IDB_GET})('draft'))?.bpm === 120", "the changed example is the draft")
+    page.evaluate(HOLD_RECORDINGS)
+    page.click("#newsong")
+    page.click("#record")
+    expect(page.locator("#status")).to_have_text("Recording once the song before is kept…")
+    page.evaluate(FAIL_VERSIONS)
+    page.evaluate("() => window.__releaseRecordings()")
+    expect(page.locator("#status")).to_contain_text("The disk is full")
+    page.wait_for_timeout(1500)
+    expect(page.locator("#finish")).to_be_disabled()
+    expect(page.locator("#status")).to_contain_text("The disk is full")
+    assert draft(page)["bpm"] == 120, "the song before is still the song"

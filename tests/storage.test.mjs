@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { BLOCKED_ERROR,
-  migrateLegacy, persistence, storageError, openKV, PERSISTENCE_TEXT,
+  migrateLegacy, persistence, storageError, openKV, PERSISTENCE_TEXT, CAPTURE_PERSISTENCE_TEXT,
   DRAFT_KEY, VERSIONS_KEY, LEGACY_DRAFT_KEY, LEGACY_VERSIONS_KEY,
 } from "../storage.js";
 import { memoryKV, memoryStorage } from "./memory-kv.mjs";
@@ -116,6 +116,7 @@ test("persistence reports what the browser promised, asking only when told to", 
   assert.equal(await persistence(manager(false, false), { request: true }), "best-effort");
   assert.equal(asked, 2);
   for (const k of ["persisted", "best-effort", "unsupported"]) assert.ok(PERSISTENCE_TEXT[k]);
+  for (const k of ["persisted", "best-effort", "unsupported"]) assert.match(CAPTURE_PERSISTENCE_TEXT[k], /your ideas/);
 });
 
 test("storage errors explain a full quota and pass others through", () => {
