@@ -1,17 +1,23 @@
-"""UI.1: the guided steps (Sing / Notes / Song / Share) and the automatic helpers, on a phone-sized touch screen.
+"""UI.1: the guided steps (UX.5: Sing / Your song / Share, Your song a hub of change views) and the automatic helpers,
+on a phone-sized touch screen.
 
 These tests use fresh browser contexts without conftest's ALL_CONTROLS script, so the studio opens as it does for a
 new person: in the guided view. Recordings come from Chromium's fake microphone (a beeping tone)."""
 import json
+import os
 import re
+import tempfile
 import wave
 from contextlib import contextmanager
+from pathlib import Path
 
 import httpx
 from playwright.sync_api import expect
 
 from test_capture import PHONE
 from test_studio import IDB_DRAFT, count, wait_until
+
+SHOTS = Path(os.environ.get("TANDEM_E2E_SHOTS") or tempfile.gettempdir())
 
 MAC_APP = ["aibaseurl", "aiforget", "aikey", "aimodel", "aiprovider", "aisave", "banddrums", "bandfollows", "bandmute", "bandstyle",
            "downloadband", "genband", "gentimbre", "openfolder", "playband", "playbandtrack", "playtimbretrack", "playvocal",
@@ -77,11 +83,23 @@ def record_take(page, seconds=2.5):
     page.wait_for_function("/^(Done|Not everything)/.test(document.getElementById('gstatus').textContent)", timeout=90_000)
 
 
+VIEW_IDS = ["voice", "notes", "timing", "words", "chords", "voice2", "beat", "sound", "ask"]
+VIEW_NAMES = ["Voice", "Notes", "Timing", "Words", "Chords", "Second voice", "Beat", "Sound", "Ask Tandem"]
+
+
+def open_view(page, view):
+    # UX.5: Your song's tile opens its change view.
+    page.click('#steps [data-step="song"]')
+    page.click(f"#gtile-{view}")
+    expect(page.locator('[data-panel="view"]')).to_be_visible()
+    expect(page.locator(f'.gview[data-view="{view}"]')).to_be_visible()
+
+
 def plan(page):
     return page.eval_on_selector_all("#gplan li", "els => els.map(e => [e.textContent, e.dataset.state || ''])")
 
 
-def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
+def test_a_new_person_walks_the_three_steps_on_a_phone(browser, server_url):
     with guided_page(browser, server_url) as page:
         expect(page.locator("#guide")).to_be_visible()
         expect(page.locator("#allcontrols")).to_be_hidden()
@@ -98,14 +116,20 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         assert notes >= 4, "the fake microphone beeps about once a second"
         assert page.evaluate("document.getElementById('polished').disabled") is False
 
-        # Step 2: Keep this take on Your take opens the Notes step: the real melody roll, the speed in plain words.
+        # Step 2: Keep this take on Your take opens Your song: its tiles say what each kind holds; Notes has the real melody
+        # roll; the speed chip says the speed in plain words and opens Timing.
         expect(page.locator("#gnext")).to_be_hidden()
         page.click("#gtakekeep")
-        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Notes")
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Your song")
+        expect(page.locator("#gtile-notes .gtstate")).to_have_text(f"{notes} notes")
+        expect(page.locator("#gtile-voice .gtstate")).to_have_text("Cleaned up, pitch as sung")
+        open_view(page, "notes")
         expect(page.locator("#slot-roll #melodyroll .note")).to_have_count(notes)
+        page.click("#gviewdone")
         bpm = page.evaluate(IDB_DRAFT)["bpm"]
         expect(page.locator("#gspeed")).to_have_text(f"Speed: {bpm} beats a minute")
-        page.click("#gkeyspeed")
+        page.click("#gspeed")
+        expect(page.locator("#gh-view")).to_have_text("Timing")
         page.fill("#gbpm", "90")
         page.locator("#gbpm").press("Tab")
         page.wait_for_function("document.getElementById('bpm').value === '90'")
@@ -113,22 +137,35 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         # The fake microphone's beeps may or may not give a key (the server transcriber sometimes finds a second pitch):
         # either way, choose one.
         expect(page.locator("#gkey")).to_have_text(re.compile(r"^Key: (not found yet|[A-G][♯♭]? (major|minor))$"))
-        page.select_option("#gkeysel", "0:major")
-        expect(page.locator("#gkey")).to_have_text("Key: C major")
         page.click('[data-beat="tightly"]')
         expect(page.locator("#gstatus")).to_have_text(re.compile(r"^(Quantize to 1/16 at 90 bpm|Already on the 1/16 grid)$"))
-        page.click("#gboth")
+        # Timing's Play plays the voice with the notes.
+        expect(page.locator("#gviewplays")).to_have_text("Plays your voice with the notes")
+        page.click("#gviewplay")
         expect(page.locator("#gstatus")).to_have_text("Playing your voice with the notes")
-        page.click("#gstopnotes")
-        # Fix my singing: the sung notes are found and the take tuned on the device.
+        page.click("#gviewstop")
+        page.click("#gviewdone")
+        expect(page.locator("#gtile-timing .gtstate")).to_have_text("90 beats a minute")
+        expect(page.locator("#gtile-timing .gtused")).to_be_visible()
+        # The key chip opens Chords, where the key is chosen.
+        page.click("#gkey")
+        expect(page.locator("#gh-view")).to_have_text("Chords")
+        page.select_option("#gkeysel", "0:major")
+        expect(page.locator("#gkey")).to_have_text("Key: C major")
+        # Fix my singing, in Voice: the sung notes are found and the take tuned on the device.
+        page.select_option("#gviewjump", "voice")
+        expect(page.locator("#gh-view")).to_have_text("Voice")
         page.eval_on_selector("#gpitch", "el => { el.value = '100'; el.dispatchEvent(new Event('input')) }")
         expect(page.locator("#gpitchvalue")).to_have_text("Perfect")
         page.click("#gfix")
         expect(page.locator("#gfixstate")).to_have_text("Fixed", timeout=90_000)
         assert page.evaluate("document.getElementById('tunestrength').value") == "100"
+        page.click("#gviewdone")
+        expect(page.locator("#gtile-voice .gtstate")).to_have_text("Cleaned up, pitch fixed")
+        expect(page.locator("#gtile-chords")).to_have_attribute("data-suggested", "true")
 
-        # Step 3: chords in the chosen key, as one edit that Undo takes back.
-        page.click("#gnext")
+        # Chords in the chosen key, as one edit that Undo takes back.
+        page.click("#gtile-chords")
         expect(page.locator("#gharmkey")).to_have_text("Follows your tune, in C major")
         page.click("#gchords")
         expect(page.locator("#gharmstate")).to_have_text("Chords added")
@@ -141,6 +178,8 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         # HARM.2: a harmony line, played at once, tried, and kept beside the chords as one edit.
         expect(page.locator("#gvoice2state")).to_have_text("Not added")
         expect(page.locator("#gvoice2try")).to_be_hidden()
+        page.click("#gviewnext")
+        expect(page.locator("#gh-view")).to_have_text("Second voice")
         page.click("#gvoice2create")
         expect(page.locator("#gvoice2trial")).to_contain_text("Line 1 of ")
         expect(page.locator("#gvoice2trial")).to_contain_text("Thirds above in ")
@@ -163,9 +202,13 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         page.click("#gsingvoice2")
         expect(page.locator("#gvoice2sung")).to_have_text("Sung in your voice", timeout=120_000)
         expect(page.locator("#gsingvoice2")).to_have_text("Sing it again in my voice")
+        page.select_option("#gviewjump", "ask")
         expect(page.locator("#slot-chat #chatform")).to_be_visible()
+        page.click("#gviewdone")
+        expect(page.locator("#gtile-voice2 .gtstate")).to_have_text(f"{voice} notes, sung in your voice")
+        expect(page.locator("#gtile-beat")).to_have_attribute("data-suggested", "true")
 
-        # Step 4: a named version, and the song as a WAV file.
+        # Step 3: a named version, and the song as a WAV file.
         page.click("#gnext")
         expect(page.locator("#gnext")).to_be_hidden()
         page.fill("#gversionname", "First go")
@@ -182,7 +225,7 @@ def test_a_new_person_walks_the_four_steps_on_a_phone(browser, server_url):
         # The rail (shown at desktop widths) sums up each step.
         sums = page.eval_on_selector_all("#steps .gsum", "els => els.map(e => e.textContent)")
         assert re.fullmatch(r"Recorded 0:0\d, cleaned up", sums[0]), sums
-        assert sums[1:] == [f"{notes} notes, pitch fixed", "Chords and a second voice added", "1 version saved"]
+        assert sums[1:] == [f"{notes} notes, chords and a second voice", "1 version saved"]
 
 
 def test_helpers_turned_off_are_not_run_and_the_settings_are_kept(browser, server_url):
@@ -210,7 +253,7 @@ def test_helpers_turned_off_are_not_run_and_the_settings_are_kept(browser, serve
         page.click('#steps [data-step="song"]')
         page.reload()
         page.wait_for_function("!document.body.inert")
-        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Song")
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Your song")
         page.click("#gsettings")
         expect(page.locator('[data-helper="notes"]')).not_to_be_checked()
         expect(page.locator("#gcleanup")).to_have_value("studio")
@@ -228,8 +271,10 @@ def test_every_control_of_the_studio_is_in_the_all_controls_view(browser, server
     ids = [m.group(2) for m in CONTROL.finditer(main)]
     assert len(ids) > 100 and "melodydraw" in ids and "prompt" in ids
     with guided_page(browser, server_url) as page:
-        # Visit every step (the roll and the chat move into them), then show every control.
-        for step in ["notes", "song", "share", "sing"]:
+        # Visit every step and change view (the roll and the chat move into them), then show every control.
+        for view in VIEW_IDS:
+            open_view(page, view)
+        for step in ["share", "sing"]:
             page.click(f'#steps [data-step="{step}"]')
         page.click("#gsettings")
         page.click("#gshowall")
@@ -273,10 +318,10 @@ def test_recording_a_beat_after_singing_keeps_the_sung_song_as_a_version_first(b
         assert page.evaluate("document.getElementById('playtuned').disabled") is False
 
         # A beat take becomes the recording the song uses, so Record a beat asks first, and Cancel leaves everything as it was.
-        page.click('#steps [data-step="song"]')
+        open_view(page, "beat")
         page.click("#gbeat")
         expect(page.locator("#gbeatwarn")).to_be_visible()
-        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Song")
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Your song")
         page.click("#gbeatno")
         expect(page.locator("#gbeatwarn")).to_be_hidden()
 
@@ -307,7 +352,7 @@ def test_without_recording_storage_record_a_beat_says_the_take_is_lost_and_saves
         use_server_transcriber(page)
         page.click('[data-mode="vocal"]')
         record_take(page)
-        page.click('#steps [data-step="song"]')
+        open_view(page, "beat")
         page.click("#gbeat")
         expect(page.locator("#gbeatmsg")).to_have_text(
             "A beat take becomes the recording the song uses; your singing stays as Take 1 only until this page is closed, "
@@ -325,21 +370,24 @@ def test_without_recording_storage_record_a_beat_says_the_take_is_lost_and_saves
         expect(page.locator('[data-mode="rhythm"]')).to_have_attribute("aria-pressed", "true")
         assert page.evaluate("document.getElementById('versionlist').textContent") == "No saved versions yet."
 
-def test_try_an_example_opens_the_notes_step_and_says_how_to_hear_it(browser, server_url):
-    # UX.1: the Sing step has no Play button, so the example opens the Notes step, which has one; the message goes with a step change.
+def test_try_an_example_opens_your_song_with_play_in_view(browser, server_url):
+    # UX.5 (open question 7): the example has no take, so it opens Your song, whose Play is on the first screen.
     with guided_page(browser, server_url) as page:
         page.click("#gdemo")
-        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Notes")
-        expect(page.locator("#gstatus")).to_have_text("Example loaded: tap The notes to hear it.")
-        expect(page.locator("#slot-roll #melodyroll .note")).to_have_count(8)
-        page.click("#gnotes")
-        expect(page.locator("#gstatus")).not_to_have_text("Example loaded: tap The notes to hear it.")
-        page.click("#gstopnotes")
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Your song")
+        expect(page.locator("#gstatus")).to_have_text("Example loaded: tap Play the song to hear it.")
+        box = page.locator("#gplay").bounding_box()
+        assert box["y"] >= 0 and box["y"] + box["height"] < 844 - 70, "Play is on the first screen, above the bottom bar"
+        expect(page.locator("#gtile-notes .gtstate")).to_have_text("8 notes")
+        page.click("#gplay")
+        expect(page.locator("#gstatus")).not_to_have_text("Example loaded: tap Play the song to hear it.")
+        page.wait_for_function("Number(document.getElementById('timeline').dataset.t || 0) > 0.2", timeout=20_000)
+        page.click("#gstop")
         page.click('#steps [data-step="sing"]')
         page.click("#gdemo")
-        expect(page.locator("#gstatus")).to_have_text("Example loaded: tap The notes to hear it.")
-        page.click("#gnext")
-        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Song")
+        expect(page.locator("#gstatus")).to_have_text("Example loaded: tap Play the song to hear it.")
+        page.click("#gtile-notes")
+        expect(page.locator("#slot-roll #melodyroll .note")).to_have_count(8)
         expect(page.locator("#gstatus")).to_have_text("")
         # The studio's own Example button, in the all-controls view, keeps its message: that view has Play.
         page.click("#gsettings")
@@ -348,30 +396,32 @@ def test_try_an_example_opens_the_notes_step_and_says_how_to_hear_it(browser, se
         expect(page.locator("#status")).to_have_text("Example loaded — press Play")
 
 
-def test_the_notes_and_song_steps_send_you_back_to_sing_when_there_is_nothing_yet(browser, server_url):
+def test_your_song_sends_you_back_to_sing_when_there_is_nothing_yet(browser, server_url):
     with guided_page(browser, server_url) as page:
-        for step in ["notes", "song"]:
-            page.click(f'#steps [data-step="{step}"]')
-            empty = page.locator(f'[data-panel="{step}"] .gempty')
-            expect(empty).to_be_visible()
-            expect(empty).to_contain_text("Nothing to work on yet: sing your idea first")
-        # Song: nothing to make chords or a bass line from, so those buttons are off, and no talk of "these notes".
+        page.click('#steps [data-step="song"]')
+        empty = page.locator('[data-panel="song"] .gempty')
+        expect(empty).to_be_visible()
+        expect(empty).to_contain_text("Nothing to work on yet: sing your idea first")
+        # Chords: nothing to make chords or a bass line from, so those buttons are off, and no talk of "these notes".
+        open_view(page, "chords")
         expect(page.locator("#gchords")).to_be_disabled()
         expect(page.locator("#gbass")).to_be_disabled()
-        expect(page.locator("#gvoice2create")).to_be_disabled()
         expect(page.locator("#gharmkey")).not_to_contain_text("these notes")
-        page.click('#steps [data-step="notes"]')
+        open_view(page, "voice2")
+        expect(page.locator("#gvoice2create")).to_be_disabled()
+        open_view(page, "timing")
         for beat in ["gently", "tightly", "swung"]:
             expect(page.locator(f'[data-beat="{beat}"]')).to_be_disabled()
         # Its button goes back to Sing.
-        page.locator('[data-panel="notes"] .gempty button').click()
+        page.click('#steps [data-step="song"]')
+        empty.locator("button").click()
         expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
         # With a tune there is something to work on.
         page.click("#gdemo")
-        expect(page.locator('[data-panel="notes"] .gempty')).to_be_hidden()
+        expect(empty).to_be_hidden()
+        open_view(page, "timing")
         expect(page.locator('[data-beat="tightly"]')).to_be_enabled()
-        page.click("#gnext")
-        expect(page.locator('[data-panel="song"] .gempty')).to_be_hidden()
+        open_view(page, "chords")
         expect(page.locator("#gchords")).to_be_enabled()
         expect(page.locator("#gbass")).to_be_enabled()
         expect(page.locator("#gharmkey")).to_have_text(re.compile(r"^Follows your tune, in "))
@@ -434,24 +484,25 @@ def test_a_tune_take_leaves_the_voice_out_of_the_song(browser, server_url):
         assert voice_muted(page)
 
 
-def test_the_notes_step_listens_first_and_folds_the_expert_tools_on_a_phone(browser, server_url):
-    # UX.2: on a 390 px phone, Listen to comes before the roll, the expert melody tools and the Timeline are folded
-    # (closed), the tools have plain labels, the gear says Settings, and the Share step ends with Show every control.
+def test_the_notes_view_listens_first_and_folds_the_expert_tools_on_a_phone(browser, server_url):
+    # UX.2, UX.5: on a 390 px phone the Notes view's Play comes before the roll, the expert melody tools and the Timeline
+    # are folded (closed), the tools have plain labels, the gear says Settings, and the Share step ends with Show every control.
     with guided_page(browser, server_url) as page:
         page.click("#gdemo")
-        page.click('#steps [data-step="notes"]')
+        open_view(page, "notes")
         page.evaluate("window.scrollTo(0, 0)")
         tops = page.evaluate("""ids => ids.map(id => document.getElementById(id).getBoundingClientRect().top + scrollY)""",
-                             ["glisten", "gvoice", "melodyroll", "melodydraw", "gmoretools", "lyrics", "gtimeline", "gfixcard"])
+                             ["gh-view", "gviewplay", "melodyroll", "melodydraw", "gmoretools", "gtimeline"])
         assert tops == sorted(tops), tops
-        # Listen to is on the first screen, under the key and speed.
-        assert page.locator("#gvoice").bounding_box()["y"] + 44 < 844
+        # Play is on the first screen.
+        assert page.locator("#gviewplay").bounding_box()["y"] + 44 < 844
+        expect(page.locator("#gviewplays")).to_have_text("Plays the notes")
         for fold in ("#gmoretools", "#gtimeline"):
             assert page.eval_on_selector(fold, "d => d.open") is False
         for hidden in ("#melodyoctdown", "#melodyoctup", "#melodykeydown", "#melodykeyup", "#melodyfit", "#practice",
                        "#warmup", "#addwarmup", "#timeline", "#marksection"):
             expect(page.locator(hidden)).to_be_hidden()
-        for shown in ("#melodydraw", "#melodyline", "#melodyall", "#melodydelete", "#melodysemidown", "#melodysemiup", "#lyrics"):
+        for shown in ("#melodydraw", "#melodyline", "#melodyall", "#melodydelete", "#melodysemidown", "#melodysemiup"):
             expect(page.locator(shown)).to_be_visible()
         expect(page.locator("#melodysemidown")).to_have_text("Down a semitone")
         expect(page.locator("#melodysemiup")).to_have_text("Up a semitone")
@@ -567,12 +618,11 @@ def test_a_take_opens_on_your_take_and_plays_while_tandem_works_on_it(browser, s
         page.wait_for_function("Number(document.getElementById('gtakewave').dataset.t || 0) > 0.2")
         assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
 
-        # Keep this take: on to the notes, the playback stopped, the listen row back in the Notes step.
+        # Keep this take: on to Your song, the playback stopped.
         page.click("#gtakekeep")
-        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Notes")
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Your song")
         expect(take).to_be_hidden()
         assert take_t(page) == 0
-        expect(page.locator("#slot-notelisten #glistenrow")).to_be_visible()
 
 
 def test_sing_it_again_keeps_both_takes_and_share_it_as_it_is_goes_to_share(browser, server_url):
@@ -624,3 +674,164 @@ def test_an_imported_take_opens_your_take_and_a_failed_helper_is_named_there(bro
         assert report[1][1] == "failed" and report[1][0].startswith("Could not turn your tune into notes: "), report
         assert report[2] == ["Not done: find the speed", "notrun"], report
         expect(page.locator("#gtakekeep")).to_be_enabled()
+
+
+def tile_state(page, view):
+    return page.locator(f"#gtile-{view} .gtstate").text_content()
+
+
+def done_shows(page, view, line):
+    # Done goes back to Your song, focused on the tile it came from, with the tile's state line and its Changed mark.
+    page.click("#gviewdone")
+    expect(page.locator('[data-panel="song"]')).to_be_visible()
+    expect(page.locator(f"#gtile-{view}")).to_be_focused()
+    expect(page.locator(f"#gtile-{view} .gtstate")).to_have_text(line)
+    expect(page.locator(f"#gtile-{view} .gtused")).to_be_visible()
+
+
+def test_every_change_view_makes_its_edit_and_done_shows_it_on_your_song(browser, server_url):
+    # UX.5: on a 390 px phone each view's own controls are in it and work: one edit from each, then Done back to the hub.
+    # Voice is in the walk above (Fix my singing needs a take). The example: 8 notes at 100 bpm, no chords, beat or words.
+    import tandem_backend as server
+    with guided_page(browser, server_url) as page:
+        page.click("#gdemo")
+        assert page.eval_on_selector_all("#gtiles .gtile", "els => els.map(e => e.dataset.view)") == VIEW_IDS
+        assert page.eval_on_selector_all("#gtiles .glabel", "els => els.map(e => e.textContent)") == ["Fix your tune", "Add to it", "Or ask for it"]
+        expect(page.locator("#gtiles .gtused:visible")).to_have_count(0)
+        expect(page.locator("#gtile-chords")).to_have_attribute("data-suggested", "true")
+        expect(page.locator("#gtile-chords .gtsuggest")).to_be_visible()
+        expect(page.locator("#gtiles .gtsuggest:visible")).to_have_count(1)
+        assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
+
+        def check_view(view):
+            open_view(page, view)
+            expect(page.locator("#gh-view")).to_have_text(VIEW_NAMES[VIEW_IDS.index(view)])
+            assert page.evaluate("document.scrollingElement.scrollWidth") <= 390, view
+
+        check_view("notes")
+        page.locator("#melodyroll .note").first.click()
+        page.click("#melodydelete")
+        done_shows(page, "notes", "7 notes")
+
+        check_view("timing")
+        page.fill("#gbpm", "120")
+        page.locator("#gbpm").press("Tab")
+        done_shows(page, "timing", "120 beats a minute")
+        expect(page.locator("#gspeed")).to_have_text("Speed: 120 beats a minute")
+
+        check_view("words")
+        expect(page.locator(".gview[data-view=words] #lyrics")).to_be_visible()
+        page.fill("#lyrics", "Twin-kle twin-kle lit-tle star")
+        page.locator("#lyrics").press("Tab")
+        expect(page.locator("#melodyroll .note .lyric").first).to_have_text("Twin-")
+        done_shows(page, "words", "4 words")
+
+        check_view("chords")
+        page.click("#gchords")
+        expect(page.locator("#gharmstate")).to_have_text("Chords added")
+        done_shows(page, "chords", "Chords added")
+        # The example already has a beat: with chords in, the suggestion is Share, on the bottom bar.
+        expect(page.locator("#gtiles .gtsuggest:visible")).to_have_count(0)
+        expect(page.locator("#gnext")).to_have_attribute("data-suggested", "true")
+
+        check_view("voice2")
+        page.click("#gvoice2create")
+        page.click("#gvoice2keep")
+        voice = count(page, "voice2count")
+        assert voice > 0
+        done_shows(page, "voice2", f"{voice} notes")
+
+        check_view("beat")
+        page.click("#ggrooveadd")
+        expect(page.locator("#gdrumstate")).to_have_text(re.compile(r"^\d+ hits$"))
+        hits = count(page, "hitcount")
+        done_shows(page, "beat", f"{hits} hits")
+
+        check_view("sound")
+        for menu in ("#ggenre", "#ginstrument", "#gharminst", "#gvoice2inst"):
+            expect(page.locator(menu)).to_be_visible()
+        page.select_option("#ggenre", "jazz")
+        expect(page.locator("#genre")).to_have_value("jazz")
+        melody = page.eval_on_selector("#instrument", "s => s.selectedOptions[0].text")
+        done_shows(page, "sound", f"Jazz, melody on {melody}")
+
+        # Ask Tandem: the chat makes its edit from the view (the model's text canned; the server validates it).
+        check_view("ask")
+        expect(page.locator(".gview[data-view=ask] #chatform")).to_be_visible()
+
+        def answer(route):
+            req = server.ChatRequest.model_validate(json.loads(route.request.post_data))
+            route.fulfill(status=200, json=server.chat_plan(json.dumps({"reply": "Slower.", "actions": [{"type": "set_tempo", "bpm": 90}]}), req))
+        page.route("**/api/chat", answer)
+        page.fill("#prompt", "slower please")
+        page.click("#chatform button[type=submit]")
+        page.wait_for_function("document.getElementById('bpm').value === '90'")
+        done_shows(page, "ask", "Your melody is protected")
+        expect(page.locator("#gtile-timing .gtstate")).to_have_text("90 beats a minute")
+        # Every view was used, Voice aside.
+        assert page.eval_on_selector_all("#gtiles .gtile", "els => els.filter(e => e.dataset.used === 'true').map(e => e.dataset.view)") == VIEW_IDS[1:]
+        page.screenshot(path=str(SHOTS / "ux5-hub.png"), full_page=True)
+
+
+def test_prev_next_and_the_jump_menu_walk_the_views_and_the_roll_is_in_one_view_at_a_time(browser, server_url):
+    with guided_page(browser, server_url) as page:
+        page.click("#gdemo")
+        open_view(page, "voice")
+        expect(page.locator("#gviewprev")).to_be_disabled()
+        expect(page.locator("#gback")).to_be_hidden()
+        expect(page.locator("#gnext")).to_be_hidden()
+        assert page.eval_on_selector_all("#gviewjump option", "els => els.map(e => e.textContent)") == VIEW_NAMES
+        seen = [page.locator("#gh-view").text_content()]
+        while page.locator("#gviewnext").is_enabled():
+            label = page.locator("#gviewnext").text_content()
+            page.click("#gviewnext")
+            seen.append(page.locator("#gh-view").text_content())
+            assert label == seen[-1] + " ›", label
+            expect(page.locator("#gviewprev")).to_have_text("‹ " + seen[-2])
+            expect(page.locator("#gviewjump")).to_have_value(VIEW_IDS[len(seen) - 1])
+            # The roll and the Timeline fold are in the open view when it shows them, and nowhere on screen otherwise.
+            view = VIEW_IDS[len(seen) - 1]
+            if view in ("notes", "timing", "words"):
+                assert page.evaluate("document.getElementById('melodyroll').closest('.gview').dataset.view") == view
+                assert page.evaluate("document.getElementById('gtimeline').closest('.gview').dataset.view") == view
+                expect(page.locator("#melodyroll")).to_be_visible()
+                expect(page.locator("#gtimeline")).to_be_visible()
+            else:
+                expect(page.locator("#melodyroll")).to_be_hidden()
+                expect(page.locator("#gtimeline")).to_be_hidden()
+            assert page.evaluate("document.querySelectorAll('#melodyroll').length") == 1
+            assert page.evaluate("document.scrollingElement.scrollWidth") <= 390, view
+        assert seen == VIEW_NAMES
+        while page.locator("#gviewprev").is_enabled():
+            page.click("#gviewprev")
+        expect(page.locator("#gh-view")).to_have_text("Voice")
+        # The jump menu goes straight to any view.
+        page.select_option("#gviewjump", "words")
+        expect(page.locator("#gh-view")).to_have_text("Words")
+        assert page.evaluate("document.getElementById('melodyroll').closest('.gview').dataset.view") == "words"
+        # The back link and the rail's Your song return to the hub.
+        page.click("#gviewback")
+        expect(page.locator('[data-panel="song"]')).to_be_visible()
+        expect(page.locator("#gtile-words")).to_be_focused()
+        expect(page.locator("#gnext")).to_be_visible()
+        open_view(page, "timing")
+        page.click('#steps [data-step="song"]')
+        expect(page.locator('[data-panel="song"]')).to_be_visible()
+        # Show every control puts the roll and the Timeline back in their lanes; the guided view takes them again.
+        open_view(page, "timing")
+        page.click("#gsettings")
+        page.click("#gshowall")
+        assert page.evaluate("document.getElementById('melodyroll').closest('.lane').dataset.lane") == "melody"
+        assert page.evaluate("!!document.getElementById('transport').closest('#lanes')")
+        page.click("#showguide")
+        assert page.evaluate("document.getElementById('melodyroll').closest('.gview').dataset.view") == "timing"
+        expect(page.locator("#melodyroll")).to_be_visible()
+
+
+def test_a_step_kept_from_before_opens_your_song(browser, server_url):
+    # UX.5: the Notes and Song steps are now Your song; a person who left the guided view on either comes back to it.
+    init = "localStorage.setItem('tandem-guide', JSON.stringify({view: 'guided', step: 'notes'}))"
+    with guided_page(browser, server_url, init=init) as page:
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Your song")
+        expect(page.locator('[data-panel="song"]')).to_be_visible()
+        assert page.eval_on_selector_all("#steps [data-step]", "els => els.map(e => e.dataset.step)") == ["sing", "song", "share"]

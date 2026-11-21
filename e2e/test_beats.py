@@ -9,7 +9,7 @@ from pathlib import Path
 import mido
 from playwright.sync_api import expect
 
-from test_guided import guided_page
+from test_guided import guided_page, open_view
 from test_studio import count, download
 
 SHOTS = Path(os.environ.get("TANDEM_E2E_SHOTS") or tempfile.gettempdir())
@@ -84,9 +84,9 @@ def test_the_beat_replaces_the_drums_unless_they_are_kept_and_can_last_as_long_a
     assert count(page, "hitcount") == 5 * 11 + 1 and ("snare", 0.3) in drum_hits(page)
 
 
-def test_the_guided_song_step_offers_the_starter_beats(browser, server_url):
+def test_the_guided_beat_view_offers_the_starter_beats(browser, server_url):
     with guided_page(browser, server_url) as page:
-        page.click('#steps [data-step="song"]')
+        open_view(page, "beat")
         expect(page.locator("#gdrumstate")).to_have_text("None yet")
         expect(page.locator("#ggroove option")).to_have_count(4)
         page.select_option("#ggroove", "shuffle")

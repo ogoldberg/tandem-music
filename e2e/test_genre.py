@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from playwright.sync_api import expect
 
-from test_guided import guided_page
+from test_guided import guided_page, open_view
 from test_studio import count, download
 
 SHOTS = Path(os.environ.get("TANDEM_E2E_SHOTS") or tempfile.gettempdir())
@@ -173,9 +173,9 @@ def test_a_transcribed_beat_is_read_into_the_genres_groove_and_undo_gives_it_as_
     assert any(abs(g - 0.4) > 0.01 for g in gaps)
 
 
-def test_the_guided_song_step_picks_a_genre(browser, server_url):
+def test_the_guided_sound_view_picks_a_genre(browser, server_url):
     with guided_page(browser, server_url) as page:
-        page.click('#steps [data-step="song"]')
+        open_view(page, "sound")
         expect(page.locator("#ggenre")).to_be_visible()
         expect(page.locator("#ggenreabout")).to_contain_text("None")
         page.select_option("#ggenre", "electronic")

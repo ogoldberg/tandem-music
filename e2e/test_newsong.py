@@ -156,6 +156,7 @@ def test_the_oldest_version_is_kept_until_its_removal_is_confirmed(studio):
 def test_the_guided_view_starts_a_new_song_and_asks_before_the_oldest_version_goes(browser, server_url):
     with guided_page(browser, server_url) as page:
         page.click("#gdemo")
+        page.click("#gtile-words")
         page.locator("#lyrics").fill("la la la")
         page.locator("#lyrics").blur()
         wait_until(page, f"async () => (await ({IDB_GET})('draft'))?.lyrics === 'la la la'", "the words are kept")
