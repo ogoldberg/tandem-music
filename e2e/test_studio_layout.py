@@ -275,6 +275,7 @@ def test_a_refused_token_in_the_guided_view_says_where_the_token_goes(browser, s
     page.wait_for_function("document.getElementById('notecount').textContent !== '' && !document.body.inert")
     expect(page.locator("#guide")).to_be_visible()
     page.click('#steps [data-step="song"]')
+    page.click("#gtile-ask")
     page.fill("#prompt", "Make it brighter")
     page.click("#chatform button[type=submit]")
     expect(page.locator("#chat")).to_contain_text("open Settings, choose Show every control, then pick Song")
