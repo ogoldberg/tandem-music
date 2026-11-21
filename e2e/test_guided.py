@@ -314,65 +314,91 @@ def test_every_control_of_the_studio_is_in_the_all_controls_view(browser, server
         expect(page.locator("#guide")).to_be_visible()
 
 
-def test_recording_a_beat_after_singing_keeps_the_sung_song_as_a_version_first(browser, server_url):
+def record_beat_layer(page):
+    # BEAT.4: Record a beat from the Beat view, with a take already sung, arms a layer over the song on the Sing step.
+    open_view(page, "beat")
+    expect(page.locator("#gdrumstate")).to_have_text("None yet")
+    page.click("#gbeat")
+    expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
+    expect(page.locator("#gstatus")).to_have_text(
+        "Your beat is recorded over the song as a layer of its own and read into the drums: tap Record.")
+    page.locator("#grecopts > summary").scroll_into_view_if_needed()
+    if not page.eval_on_selector("#grecopts", "d => d.open"):
+        page.click("#grecopts > summary")
+    expect(page.locator("#grecopts #reclayer")).to_be_checked()
+    page.click("#grecord")
+    expect(page.locator("#greclabel")).to_have_text("Tap to stop")
+    page.wait_for_timeout(2500)
+    page.click("#grecord")
+    page.wait_for_function("/^Recorded your beat as/.test(document.getElementById('gstatus').textContent)", timeout=90_000)
+    # Back in the Beat view, with the next take a take of the voice again.
+    expect(page.locator('.gview[data-view="beat"]')).to_be_visible()
+    assert page.evaluate("document.getElementById('reclayer').checked") is False
+
+
+def test_record_a_beat_after_singing_records_a_layer_read_into_the_drums(browser, server_url):
+    # BEAT.4: the beat is a layer over the song, read into the drums as one edit; the sung take stays the song's take, so
+    # there is nothing to warn about first.
     with guided_page(browser, server_url) as page:
         use_server_transcriber(page)
         page.click('[data-mode="vocal"]')
         record_take(page)
         assert page.evaluate("document.getElementById('playtuned').disabled") is False
-
-        # A beat take becomes the recording the song uses, so Record a beat asks first, and Cancel leaves everything as it was.
+        record_beat_layer(page)
+        expect(page.locator("#gstatus")).to_have_text(re.compile(
+            r"^Recorded your beat as Layer 2 and read it into the drums: \d+ hits?\. What the drums held before is kept in Undo\.$"))
+        hits = int(page.locator("#gdrumstate").text_content().split()[0])
+        assert hits > 0
+        # One layer, read into the drums and muted, as the drums now play it.
+        layers = page.locator("#layerlanes .lane[data-layer]")
+        expect(layers).to_have_count(1)
+        layer = layers.first.get_attribute("data-layer")
+        expect(page.locator(f"#mute-layer-{layer}")).to_have_attribute("aria-pressed", "true")
+        expect(page.locator(f"#layerinto-{layer}")).to_have_value("drums")
+        # The Beat tile is marked Changed.
+        page.click('#steps [data-step="song"]')
+        expect(page.locator("#gtile-beat .gtused")).to_be_visible()
+        # The sung take is still the one take the song uses, cleaned up and pitch-fixed.
+        open_view(page, "takes")
+        expect(page.locator("#gtakesline")).to_have_text("1 take")
+        expect(page.locator("#glayersline")).to_have_text("1 layer")
+        assert page.evaluate("document.getElementById('playtuned').disabled") is False
+        # One Undo takes the hits off, with the layer they were read from.
+        page.click("#gundo")
         open_view(page, "beat")
-        page.click("#gbeat")
-        expect(page.locator("#gbeatwarn")).to_be_visible()
-        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Your song")
-        page.click("#gbeatno")
-        expect(page.locator("#gbeatwarn")).to_be_hidden()
-
-        page.click("#gbeat")
-        expect(page.locator("#gbeatyes")).to_have_text("Keep a version and record a beat")
-        page.dblclick("#gbeatyes")  # a double tap keeps one version
-        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
-        expect(page.locator('[data-mode="rhythm"]')).to_have_attribute("aria-pressed", "true")
-        expect(page.locator("#gversions")).to_have_text("1 version saved on this device.")
-        expect(page.locator("#gstatus")).to_have_text('Your song is kept as the version "Before the beat". Record your beat.')
-        record_take(page)
-        assert page.evaluate("document.getElementById('playtuned').disabled") is True
-        # TAKE.1: the singing is kept as Take 1 beside the beat take.
-        assert page.evaluate("[...document.querySelectorAll('#takelist .takerow')].map(r => r.dataset.used)") == ["false", "true"]
-
-        # The sung take, cleaned up and pitch-fixed, comes back with the version.
-        page.click("#gsettings")
-        page.click("#gshowall")
-        page.click("#versionlist .version:has-text('Before the beat') >> text=Restore")
-        page.wait_for_function("!document.getElementById('playtuned').disabled")
-        assert page.evaluate("document.getElementById('polished').disabled") is False
+        expect(page.locator("#gdrumstate")).to_have_text("None yet")
+        expect(page.locator("#layerlanes .lane[data-layer]")).to_have_count(0)
+        assert page.evaluate("document.getElementById('playtuned').disabled") is False
 
 
-def test_without_recording_storage_record_a_beat_says_the_take_is_lost_and_saves_no_version(browser, server_url):
-    # No Origin Private File System: versions cannot keep recordings, so no version can keep the voice.
-    # FIX.1 (review of #82): the warning's Download your voice is a button beside it, and the page reports no errors.
-    with guided_page(browser, server_url, init="delete StorageManager.prototype.getDirectory;") as page:
+def test_a_beat_that_cannot_be_read_is_kept_as_a_layer_and_says_so(browser, server_url):
+    busy = "console.error: Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+    with guided_page(browser, server_url, expected_errors=(busy,)) as page:
         use_server_transcriber(page)
         page.click('[data-mode="vocal"]')
         record_take(page)
+        page.route("**/api/analyze?mode=rhythm", lambda route: route.fulfill(
+            status=503, content_type="application/json", body='{"detail": "The server is busy."}'))
+        record_beat_layer(page)
+        expect(page.locator("#gstatus")).to_have_text(re.compile(
+            r"^Recorded your beat as Layer 2, but could not read it into the drums: .+\. "
+            r"Transcribe it into the drums from its lane under Takes\.$"))
+        expect(page.locator("#gdrumstate")).to_have_text("None yet")
+        layers = page.locator("#layerlanes .lane[data-layer]")
+        expect(layers).to_have_count(1)
+        # Not read, so it is heard as recorded.
+        expect(page.locator(f"#mute-layer-{layers.first.get_attribute('data-layer')}")).to_have_attribute("aria-pressed", "false")
+
+
+def test_record_a_beat_with_nothing_sung_records_the_first_take_as_a_beat(browser, server_url):
+    # With no take there is no song to keep: the beat is the first take, read as a beat.
+    with guided_page(browser, server_url) as page:
         open_view(page, "beat")
         page.click("#gbeat")
-        expect(page.locator("#gbeatmsg")).to_have_text(
-            "A beat take becomes the recording the song uses; your singing stays as Take 1 only until this page is closed, "
-            "as this browser cannot keep recordings. Download your voice first if you want to keep it.")
-        expect(page.locator("#gbeatdownload")).to_be_visible()
-        with page.expect_download() as info:
-            page.click("#gbeatdownload")
-        assert info.value.suggested_filename == "Tandem song - my voice.wav"
-        with wave.open(str(info.value.path())) as w:
-            assert w.getnframes() / w.getframerate() > 2
-        expect(page.locator("#gstatus")).to_have_text("Downloaded your voice.")
-        expect(page.locator("#gbeatyes")).to_have_text("Record a beat anyway")
-        page.click("#gbeatyes")
         expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
         expect(page.locator('[data-mode="rhythm"]')).to_have_attribute("aria-pressed", "true")
-        assert page.evaluate("document.getElementById('versionlist').textContent") == "No saved versions yet."
+        assert page.evaluate("document.getElementById('reclayer').checked") is False
+
 
 def test_try_an_example_opens_your_song_with_play_in_view(browser, server_url):
     # UX.5 (open question 7): the example has no take, so it opens Your song, whose Play is on the first screen.

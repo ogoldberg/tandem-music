@@ -17,10 +17,10 @@ TABLE = """async () => { const g = await import('/guide.js');
 
 # Shown only in a state the example song is not in: the Mac app's controls, the MIDI ports (after Connect MIDI), the harmony
 # line trial (after Create harmony), a drawn line's Keep and Cancel, the comp controls (two takes), a chosen section's tools,
-# the practice bar and range, the version limit's question, the beat warning (a take and Record a beat), the sung harmony's
+# the practice bar and range, the version limit's question, the sung harmony's
 # own controls (once it is sung) and the Mac app's folder buttons.
 STATE = set(MAC_APP + MIDI_PORTS + LINE_TRIAL + DRAWN_LINE + TAKES + SECTION_TOOLS + PRACTICE_BAR + RANGE_BOX + VERSION_FULL
-            + ["gvoice2next", "gvoice2keep", "gvoice2cancel", "gbeatdownload", "gbeatyes", "gbeatno", "gopenfolder", "gsavefolder",
+            + ["gvoice2next", "gvoice2keep", "gvoice2cancel", "gopenfolder", "gsavefolder",
                "playvoice2sung", "voice2sungmute", "removevoice2sung", "gsharevoice"])
 
 CHECK = """([ids, controls, holder]) => ids.map(id => {

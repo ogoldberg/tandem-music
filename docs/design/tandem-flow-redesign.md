@@ -136,9 +136,9 @@ All 246 elements with an id that are buttons, inputs, selects, text boxes, folds
 | `ggroove` | select: Starter beat | guided step song | Beat | guided control, kept | gbeat: see open question 4 |
 | `ggrooveadd` | button: Add this beat | guided step song | Beat | guided control, kept | gbeat: see open question 4 |
 | `gnodrums` | button: Remove | guided step song | Beat | guided control, kept | gbeat: see open question 4 |
-| `gbeatdownload` | button: Download your voice | guided step song | Beat | guided control, kept | the warning goes away if Record a beat becomes a layer (open question 4) |
-| `gbeatyes` | button: - | guided step song | Beat | guided control, kept | the warning goes away if Record a beat becomes a layer (open question 4) |
-| `gbeatno` | button: Cancel | guided step song | Beat | guided control, kept | the warning goes away if Record a beat becomes a layer (open question 4) |
+| `gbeatdownload` | button: Download your voice | guided step song | Beat | guided control, kept | removed by BEAT.4: Record a beat records a layer (open question 4) |
+| `gbeatyes` | button: - | guided step song | Beat | guided control, kept | removed by BEAT.4: Record a beat records a layer (open question 4) |
+| `gbeatno` | button: Cancel | guided step song | Beat | guided control, kept | removed by BEAT.4: Record a beat records a layer (open question 4) |
 | `gvoicein` | checkbox: - | guided step song | Your song (the player card: "My voice in it") | guided control, kept | a second mirror of the same switch sits in Voice, as gsharevoice does on Share |
 | `gplay` | button: Play the song | guided step song | Your song (the player card) | guided control, kept |  |
 | `gstop` | button: Stop | guided step song | Your song (the player card) | guided control, kept |  |
@@ -414,7 +414,7 @@ In the order to build them. Each leaves the app working and the all-controls vie
   - **Depends:** UX.7
   - The desktop rail takes the names Sing, Your song, Share. Show every control from a change view opens the studio with the matching part chosen (`showPart`), and Guided steps comes back to that view. At 1100 px and wider the guided view shows the hub on the left and the open view on the right.
   - **Acceptance:** e2e in `e2e/test_studio_layout.py`: the round trip from three views lands on the matching lane and back; at 1440 px the hub and a view are side by side with no control duplicated; the control-inventory test; screenshots at desktop and tablet widths.
-- [ ] **BEAT.4** Record a beat over the song (open question 4, agreed)
+- [x] **BEAT.4** Record a beat over the song (open question 4, agreed)
   - The guided Record a beat replaces the sung take after a warning. Make it record a layer over the song (TRACK.1) that is read into the drums as one edit, and drop the warning and `#gbeatwarn`'s buttons from the path.
   - **Acceptance:** e2e with the fake microphone: after Record a beat from the Beat view the first take is still the song's take, there is one layer, and the drums hold its hits; Undo removes the hits.
 
