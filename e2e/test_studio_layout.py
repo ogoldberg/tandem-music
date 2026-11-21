@@ -246,3 +246,30 @@ def test_a_refused_token_opens_the_connection_fold(page, server_url):
     # Chromium logs the route's 401 answer as a console error; the page itself reported nothing.
     expected = "console.error: Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     assert problems == [expected], "Browser reported errors:\n" + "\n".join(problems)
+
+
+def test_a_refused_token_in_the_guided_view_says_where_the_token_goes(browser, server_url):
+    """UX.3: in the guided view the Connection fold is in the hidden all-controls view, so the hint says how to reach it."""
+    from test_guided import PHONE
+    context = browser.new_context(**PHONE, is_mobile=True, base_url=server_url)
+    page = context.new_page()
+    problems = []
+    page.on("pageerror", lambda exc: problems.append(f"pageerror: {exc}"))
+    page.on("console", lambda msg: problems.append(f"console.{msg.type}: {msg.text}") if msg.type == "error" else None)
+    page.route("**/api/chat", lambda route: route.fulfill(status=401, content_type="application/json",
+                                                          body='{"detail":"Invalid Tandem access token"}'))
+    page.goto("/")
+    page.wait_for_function("document.getElementById('notecount').textContent !== '' && !document.body.inert")
+    expect(page.locator("#guide")).to_be_visible()
+    page.click('#steps [data-step="song"]')
+    page.fill("#prompt", "Make it brighter")
+    page.click("#chatform button[type=submit]")
+    expect(page.locator("#chat")).to_contain_text("open Settings, choose Show every control, then pick Song")
+    # Following the hint finds the fold open on the token.
+    page.click("#gsettings")
+    page.click("#gshowall")
+    page.locator('#rail .railstep[data-part="song"]').click()
+    expect(page.locator("#token")).to_be_visible()
+    context.close()
+    expected = "console.error: Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    assert problems == [expected], "Browser reported errors:\n" + "\n".join(problems)
