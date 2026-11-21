@@ -421,7 +421,7 @@ In the order to build them. Each leaves the app working and the all-controls vie
 ## Risks
 
 - **Moving many elements.** UX.7 moves about a hundred controls between the panels and the views. The existing `relocate` pattern and the inventory test are the safety net; the item extends the test before it moves anything.
-- **Before playback.** Rendering the snapshot with `renderParts` is the offline path Export uses, so Before may take a moment to start on a long song on a phone. The first build can render on first use and keep the buffer until the view's next edit.
+- **Before playback.** Rendering the snapshot with `renderParts` is the offline path Export uses, so Before may take a moment to start on a long song on a phone. The first build can render on first use and keep the buffer until the view's next edit. Built (UX.6): Before is played live through Play's own scheduling from the snapshot's project (`playback({src})`), so it starts at once and there is no buffer to keep.
 - **Twelve views is still twelve.** The hub shows eight tiles and three small buttons. If the first-time person still hesitates, the next cut is to show only the Suggested next and "Fix something" / "Add something" as two doors; the views under them would not change.
 - **This was judged from a desktop emulation.** Tap sizes and scroll feel need the Pixel.
 

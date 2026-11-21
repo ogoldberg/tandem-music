@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHistory, DEFAULT_LIMIT } from "../history.js";
+import { createHistory, DEFAULT_LIMIT, markHistory, editsSince } from "../history.js";
 
 // Drive the history the way the studio does: `state` is the live snapshot, edit() records a change.
 function studio(opts) {
@@ -147,4 +147,83 @@ test("clear empties both stacks", () => {
   s.undo();
   s.h.clear();
   assert.deepEqual(s.h.size, { undo: 0, redo: 0 });
+});
+
+// UX.6: a change view notes where the history stands when it opens (markHistory); editsSince counts the Undo steps
+// back to that point, which is what Put it back takes and what enables Before.
+test("a view counts its edits and Undo and Redo move the count", () => {
+  const s = studio();
+  s.edit("s1", "Before the view");
+  const mark = markHistory(s.h, s.state);
+  assert.deepEqual(mark, { position: 1, snapshot: "s1" });
+  assert.equal(editsSince(s.h, mark), 0);
+  s.edit("s2", "Line up");
+  s.edit("s3", "Speed");
+  assert.equal(editsSince(s.h, mark), 2);
+  s.undo();
+  assert.equal(editsSince(s.h, mark), 1);
+  s.redo();
+  assert.equal(editsSince(s.h, mark), 2);
+  // Undoing past the point the view opened at leaves nothing of this view's to put back.
+  s.undo(); s.undo(); s.undo();
+  assert.equal(s.state, "s0");
+  assert.equal(editsSince(s.h, mark), 0);
+  s.redo();
+  assert.equal(editsSince(s.h, mark), 0);
+  s.redo();
+  assert.equal(editsSince(s.h, mark), 1);
+});
+
+test("an edit the chat makes while the view is open is one of the view's edits", () => {
+  const s = studio();
+  const mark = markHistory(s.h, s.state);
+  s.edit("s1", "Line up");
+  s.edit("s2", "AI edit");
+  assert.equal(editsSince(s.h, mark), 2);
+  // Put it back: as many Undo steps as the view made bring back the state it opened with, and Redo brings them back.
+  for (let n = editsSince(s.h, mark); n > 0; n--) s.undo();
+  assert.equal(s.state, mark.snapshot);
+  assert.equal(editsSince(s.h, mark), 0);
+  s.redo(); s.redo();
+  assert.equal(s.state, "s2");
+  assert.equal(editsSince(s.h, mark), 2);
+});
+
+test("a new edit after undoing past the mark leaves the view nothing to put back", () => {
+  const s = studio();
+  s.edit("s1", "Before the view");
+  const mark = markHistory(s.h, s.state);
+  s.edit("s2", "Line up");
+  s.undo(); s.undo();
+  // A different edit from the state before the view: position 1 is now "x1", not the state the view opened with.
+  s.edit("x1", "Other");
+  s.edit("x2", "Other again");
+  assert.equal(s.h.position, 2);
+  assert.equal(editsSince(s.h, mark), 0);
+});
+
+test("clearing the history or trimming it past the mark leaves the view nothing to put back", () => {
+  const s = studio({ limit: 3 });
+  const mark = markHistory(s.h, s.state);
+  s.edit("s1", "a"); s.edit("s2", "b"); s.edit("s3", "c");
+  assert.equal(editsSince(s.h, mark), 3);
+  // The fourth edit drops the oldest state, the one the view opened with: Undo can no longer reach it.
+  s.edit("s4", "d");
+  assert.equal(s.h.position, 4);
+  assert.equal(editsSince(s.h, mark), 0);
+  const later = markHistory(s.h, s.state);
+  s.edit("s5", "e");
+  assert.equal(editsSince(s.h, later), 1);
+  s.h.clear();
+  assert.equal(editsSince(s.h, later), 0);
+  assert.equal(s.h.position, 5);
+  assert.equal(editsSince(s.h, null), 0);
+});
+
+test("a rewrite that changes the snapshots leaves the view nothing to put back", () => {
+  const s = studio();
+  const mark = markHistory(s.h, s.state);
+  s.edit("s1", "a");
+  s.h.rewrite(x => x + "!", "s1!");
+  assert.equal(editsSince(s.h, mark), 0);
 });

@@ -44,6 +44,15 @@ export function playsText(plays, recorded) {
   return "Plays the song";
 }
 
+// UX.6: the line under the player while Before is chosen (the view's controls are dimmed meanwhile). In Voice, Before is
+// the take as sung; elsewhere it is the song as it was when the view was opened.
+export function beforeText(view) {
+  const v = viewById(view);
+  if (!v) return "";
+  if (v.plays === "voice") return "Before: your take as you sang it. Choose After to hear it as it is now.";
+  return "Before: the song as it was when you opened " + v.name + ". Choose After to change it.";
+}
+
 // The automatic helpers, in the order the settings screen lists them.
 export const HELPERS = Object.freeze([
   Object.freeze({ id: "cleanup", label: "Clean up the sound", detail: "Removes rumble and hiss from your voice and evens the level" }),
