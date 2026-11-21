@@ -10,7 +10,9 @@ export const DEFAULT_LIMIT = 100;
 
 export function createHistory({ limit = DEFAULT_LIMIT } = {}) {
   if (!(Number.isInteger(limit) && limit > 0)) throw Error("History limit must be a positive integer");
-  let undoStack = [], redoStack = [];
+  // floor is the position of undoStack[0]: the number of edits done since the history began, net of undos, that can no
+  // longer be undone (trimmed past the limit or cleared). position = floor + undoStack.length (UX.6).
+  let undoStack = [], redoStack = [], floor = 0;
   const clean = label => String(label ?? "Edit").slice(0, 80) || "Edit";
 
   return {
@@ -20,13 +22,20 @@ export function createHistory({ limit = DEFAULT_LIMIT } = {}) {
     get undoLabel() { return undoStack.at(-1)?.label ?? null; },
     get redoLabel() { return redoStack.at(-1)?.label ?? null; },
     get size() { return { undo: undoStack.length, redo: redoStack.length }; },
+    get position() { return floor + undoStack.length; },
+
+    // The snapshot Undo would reach at `position` (a position below the current one), or null when it is out of reach.
+    snapshotAt(position) {
+      const i = position - floor;
+      return Number.isInteger(i) && i >= 0 && i < undoStack.length ? undoStack[i].snapshot : null;
+    },
 
     // Record an edit that turned `before` into `after`. An edit that changed nothing is not
     // recorded and leaves the redo stack intact. Returns whether the edit was recorded.
     record(before, after, label) {
       if (before === after) return false;
       undoStack.push({ snapshot: before, label: clean(label) });
-      if (undoStack.length > limit) undoStack.splice(0, undoStack.length - limit);
+      if (undoStack.length > limit) floor += undoStack.splice(0, undoStack.length - limit).length;
       redoStack = [];
       return true;
     },
@@ -54,12 +63,25 @@ export function createHistory({ limit = DEFAULT_LIMIT } = {}) {
       const undoMapped = undoStack.map(e => ({ ...e, snapshot: map(e.snapshot) }));
       const redoMapped = redoStack.map(e => ({ ...e, snapshot: map(e.snapshot) }));
       // Undo entry i is the state before the edit leading to entry i+1 (or to `current`).
+      const before = undoStack.length;
       undoStack = undoMapped.filter((e, i) => e.snapshot !== (i + 1 < undoMapped.length ? undoMapped[i + 1].snapshot : current));
       // Redo entries run from the bottom (furthest future) to the top (next state after `current`).
       redoStack = redoMapped.filter((e, i) => e.snapshot !== (i + 1 < redoMapped.length ? redoMapped[i + 1].snapshot : current));
+      floor += before - undoStack.length;
       return this.size;
     },
 
-    clear() { undoStack = []; redoStack = []; },
+    clear() { floor += undoStack.length; undoStack = []; redoStack = []; },
   };
+}
+
+// UX.6: where the history stands when a change view opens, with the state it opened with.
+export const markHistory = (history, current) => ({ position: history.position, snapshot: current });
+
+// The Undo steps that lead back to `mark`: the edits made since it, while Undo can still reach the state it noted
+// (not undone past and edited from, trimmed, cleared or rewritten). Zero when there is nothing of the view's to put back.
+export function editsSince(history, mark) {
+  if (!mark) return 0;
+  const steps = history.position - mark.position;
+  return steps > 0 && history.snapshotAt(mark.position) === mark.snapshot ? steps : 0;
 }

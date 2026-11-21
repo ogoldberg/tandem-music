@@ -15,6 +15,7 @@ import httpx
 from playwright.sync_api import expect
 
 from test_capture import PHONE
+from test_midi import MOCK_MIDI, melody
 from test_studio import IDB_DRAFT, count, wait_until
 
 SHOTS = Path(os.environ.get("TANDEM_E2E_SHOTS") or tempfile.gettempdir())
@@ -861,3 +862,134 @@ def test_a_step_kept_from_before_opens_your_song(browser, server_url):
         expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Your song")
         expect(page.locator('[data-panel="song"]')).to_be_visible()
         assert page.eval_on_selector_all("#steps [data-step]", "els => els.map(e => e.dataset.step)") == ["sing", "song", "share"]
+
+
+def use_midi_output(page):
+    # The playback tests read what Play schedules from a mocked MIDI output; its controls are in the all-controls view.
+    page.evaluate("document.getElementById('midiconnect').click()")
+    page.wait_for_function("document.getElementById('midiinfo').textContent === '1 input, 1 output'")
+    page.evaluate("(() => { const s = document.getElementById('midioutput'); s.value = 'out-1'; s.dispatchEvent(new Event('change')); })()")
+
+
+def played_onsets(page, n):
+    # The first n melody note-ons Play sent, in seconds from the first (drums are on channel 10).
+    page.evaluate("window.__midiSent.length = 0")
+    page.click("#gviewplay")
+    page.wait_for_function(f"window.__midiSent.filter(e => (e.data[0] & 0xf0) === 0x90 && e.data[2] > 0 && (e.data[0] & 15) !== 9).length >= {n}", timeout=10_000)
+    page.click("#gviewstop")
+    due = [e["due"] for e in page.evaluate("window.__midiSent") if (e["data"][0] & 0xF0) == 0x90 and e["data"][2] > 0 and (e["data"][0] & 15) != 9][:n]
+    return [round((d - due[0]) / 1000, 2) for d in due]
+
+
+RAW_DRAFT = f"async () => {{ const d = await ({IDB_DRAFT})(); return typeof d === 'string' ? d : JSON.stringify(d); }}"
+
+
+def from_first(notes):
+    return [round(t - notes[0][1], 2) for _, t in notes]
+
+
+def close(a, b, within=0.02):
+    return len(a) == len(b) and all(abs(x - y) <= within for x, y in zip(a, b))
+
+
+def test_before_and_after_in_timing_play_the_song_as_it_was_and_put_it_back_undoes_the_view(browser, server_url):
+    # UX.6: Before is the project as it was when the view opened, played through the same scheduling as Play; After is
+    # the song now. Put it back takes this view's Undo steps, so the project is byte for byte as it was and Redo returns.
+    with guided_page(browser, server_url, init=MOCK_MIDI) as page:
+        page.click("#gdemo")
+        use_midi_output(page)
+        open_view(page, "timing")
+        expect(page.locator("#gbefore")).to_be_disabled()
+        expect(page.locator("#gputback")).to_be_disabled()
+        expect(page.locator("#gviewplays")).to_have_text("Plays the song")
+        wait_until(page, f"async () => (await ({RAW_DRAFT})()).includes('\"m\":')", "the example in the draft")
+        start, notes_then = page.evaluate(RAW_DRAFT), melody(page)
+        # Lined up on 120's beat the example's notes (on 100's sixteenths) move.
+        page.fill("#gbpm", "120")
+        page.locator("#gbpm").press("Tab")
+        page.click('[data-beat="tightly"]')
+        notes_now = melody(page)
+        assert not close(from_first(notes_now), from_first(notes_then)), (notes_then, notes_now)
+        expect(page.locator("#gbefore")).to_be_enabled()
+        expect(page.locator("#gputback")).to_be_enabled()
+        expect(page.locator("#gputback")).to_have_attribute("title", "Undo the 2 changes made here")
+
+        page.click("#gbefore")
+        expect(page.locator("#gbefore")).to_have_attribute("aria-pressed", "true")
+        expect(page.locator("#gviewplays")).to_have_text("Before: the song as it was when you opened Timing. Choose After to change it.")
+        expect(page.locator('.gview[data-view="timing"]')).to_have_class(re.compile(r"\bdimmed\b"))
+        assert page.eval_on_selector('.gview[data-view="timing"]', "e => e.inert")
+        page.screenshot(path=str(SHOTS / "ux6-timing-before.png"))
+        heard = played_onsets(page, len(notes_then))
+        assert close(heard, from_first(notes_then)), (heard, notes_then)
+        # Comparing changed nothing.
+        assert melody(page) == notes_now
+
+        page.click("#gafter")
+        expect(page.locator("#gafter")).to_have_attribute("aria-pressed", "true")
+        assert not page.eval_on_selector('.gview[data-view="timing"]', "e => e.inert")
+        heard = played_onsets(page, len(notes_now))
+        assert close(heard, from_first(notes_now)), (heard, notes_now)
+
+        page.click("#gputback")
+        expect(page.locator("#status")).to_have_text("Put back the 2 changes made in Timing. Redo brings them back.")
+        assert melody(page) == notes_then
+        page.wait_for_function("document.getElementById('bpm').value === '100'")
+        wait_until(page, f"async () => (await ({RAW_DRAFT})()) === {json.dumps(start)}", "the draft as it was")
+        expect(page.locator("#gbefore")).to_be_disabled()
+        expect(page.locator("#gputback")).to_be_disabled()
+        page.click("#gredo")
+        page.click("#gredo")
+        assert melody(page) == notes_now
+        expect(page.locator("#gputback")).to_be_enabled()
+
+
+def test_switching_while_it_plays_keeps_the_place_and_leaving_the_view_forgets_before(browser, server_url):
+    with guided_page(browser, server_url, init=MOCK_MIDI) as page:
+        page.click("#gdemo")
+        use_midi_output(page)
+        open_view(page, "timing")
+        page.fill("#gbpm", "120")
+        page.locator("#gbpm").press("Tab")
+        page.click("#gbefore")
+        page.click("#gviewplay")
+        page.wait_for_function("Number(document.getElementById('timeline').dataset.t) > 1")
+        page.click("#gafter")
+        expect(page.locator("#status")).to_contain_text("Playing to Test Synth from ")
+        at = float(re.search(r"from ([\d.]+) s", page.locator("#status").text_content()).group(1))
+        assert at >= 1, at
+        page.click("#gviewstop")
+        # Put it back while Before plays leaves nothing to compare: the earlier song stops instead of playing on under After.
+        page.click("#gbefore")
+        page.click("#gviewplay")
+        page.wait_for_function("Number(document.getElementById('timeline').dataset.t) > 0.5")
+        page.click("#gputback")
+        expect(page.locator("#gafter")).to_have_attribute("aria-pressed", "true")
+        page.wait_for_function("document.getElementById('timeline').dataset.t === ''", timeout=5_000)
+        page.click("#gredo")
+        # A view opened again starts from the song as it is then: nothing of its own to compare yet.
+        page.click("#gviewdone")
+        open_view(page, "timing")
+        expect(page.locator("#gbefore")).to_be_disabled()
+        expect(page.locator("#gputback")).to_be_disabled()
+
+
+def test_in_voice_before_plays_the_take_as_sung(browser, server_url):
+    with guided_page(browser, server_url) as page:
+        use_server_transcriber(page)
+        record_take(page)
+        open_view(page, "voice")
+        # The automatic clean-up made the best take; Before is the take as recorded.
+        expect(page.locator("#gbefore")).to_be_enabled()
+        expect(page.locator("#gputback")).to_be_disabled()
+        page.click("#gbefore")
+        expect(page.locator("#gviewplays")).to_have_text("Before: your take as you sang it. Choose After to hear it as it is now.")
+        page.click("#gviewplay")
+        expect(page.locator("#gviewplays")).to_have_attribute("data-take", "original")
+        expect(page.locator("#status")).to_have_text("Playing your take as you sang it")
+        page.wait_for_timeout(800)
+        page.click("#gafter")
+        expect(page.locator("#gviewplays")).to_have_attribute("data-take", "best")
+        expect(page.locator("#status")).to_have_text("Playing your voice")
+        assert float(page.get_attribute("#gviewplays", "data-from")) >= 0.5
+        page.click("#gviewstop")

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   STEPS, HELPERS, DEFAULTS, PITCH_AMOUNTS, BEAT_STYLES, GUIDE_KEY, normalizeSettings, readSettings, writeSettings,
   afterTake, stepSummaries, isChords, speedText, pitchAmountName, nextStep, previousStep, planSentence, pastTense, takeReport,
-  VIEWS, VIEW_GROUPS, viewById, nextView, previousView, playsText, viewSummaries, suggestNext,
+  VIEWS, VIEW_GROUPS, viewById, nextView, previousView, playsText, beforeText, viewSummaries, suggestNext,
 } from "../guide.js";
 import { GENRES } from "../genre.js";
 
@@ -248,4 +248,11 @@ test("takeReport: one plain line per helper, done, skipped, failed or not run", 
     "Not done: line the notes up with the beat",
   ]);
   assert.deepEqual(takeReport([]), []);
+});
+
+test("UX.6: Before names what it plays: the take as sung in Voice, the song as the view opened elsewhere", () => {
+  assert.equal(beforeText("voice"), "Before: your take as you sang it. Choose After to hear it as it is now.");
+  assert.equal(beforeText("timing"), "Before: the song as it was when you opened Timing. Choose After to change it.");
+  assert.equal(beforeText("voice2"), "Before: the song as it was when you opened Second voice. Choose After to change it.");
+  assert.equal(beforeText("nope"), "");
 });
