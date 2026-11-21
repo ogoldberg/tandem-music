@@ -18,6 +18,7 @@ const OLD_STEPS = Object.freeze({ notes: "song" });
 export const VIEW_GROUPS = Object.freeze([
   Object.freeze({ id: "fix", label: "Fix your tune" }),
   Object.freeze({ id: "add", label: "Add to it" }),
+  Object.freeze({ id: "more", label: "More" }),
   Object.freeze({ id: "ask", label: "Or ask for it" }),
 ]);
 export const VIEWS = Object.freeze([
@@ -29,6 +30,10 @@ export const VIEWS = Object.freeze([
   Object.freeze({ id: "voice2", name: "Second voice", group: "add", plays: "song", roll: false }),
   Object.freeze({ id: "beat", name: "Beat", group: "add", plays: "song", roll: false }),
   Object.freeze({ id: "sound", name: "Sound", group: "add", plays: "song", roll: false }),
+  // UX.7: the song's sections on the Timeline, every take and layer, and practising the tune.
+  Object.freeze({ id: "sections", name: "Sections", group: "more", plays: "song", roll: true }),
+  Object.freeze({ id: "takes", name: "Takes", group: "more", plays: "song", roll: false }),
+  Object.freeze({ id: "practise", name: "Practise", group: "more", plays: "both", roll: true }),
   Object.freeze({ id: "ask", name: "Ask Tandem", group: "ask", plays: "song", roll: false }),
 ]);
 export const viewById = id => VIEWS.find(v => v.id === id) ?? null;
@@ -193,8 +198,16 @@ export function viewSummaries(project, { recorded = false, polished = false, tun
     voice2: voice2 ? plural(voice2, "note") + (sung ? ", sung in your voice" : "") : "Not added",
     beat: drums ? plural(drums, "hit") : "Not added",
     sound: (genre ? genre.name : "No genre") + (sounds.melody ? ", melody on " + sounds.melody : ""),
+    sections: p.sections?.length ? plural(p.sections.length, "section") : "No sections yet",
+    takes: takesLine(p.takes?.list?.length ?? (recorded ? 1 : 0), p.layers?.length ?? 0),
+    practise: notes ? "Sing along, note by note" : "Needs a tune first",
     ask: p.melody_locked !== false ? "Your melody is protected" : "Tandem may change your melody",
   };
+}
+
+function takesLine(takes, layers) {
+  if (!takes && !layers) return "Nothing recorded yet";
+  return [takes && plural(takes, "take"), layers && plural(layers, "layer")].filter(Boolean).join(", ");
 }
 
 // UX.5: the one tile marked Suggested next: chords once there is a tune without them, then a beat, then Share.
@@ -232,3 +245,100 @@ export function takeReport(plan, states = {}, notes = {}) {
     return { action, state, text };
   });
 }
+
+// UX.5, UX.7: the studio's own elements the guided view shows, each moved into a slot of a guided screen while the guided view
+// is shown and put back in its place for Show every control (the studio page's relocate). A selector, then the slot's id.
+export const MOVES = Object.freeze([
+  ["#transport", "slot-timeline"], ["#melodyroll", "slot-roll"], ["#melodytools", "slot-roll"], ["#melodymore", "slot-more"],
+  ["#lyricsbox", "slot-words"], ["#wave", "slot-wave"], ["#whatsent", "slot-chat"], ["#chat", "slot-chat"], ["#chatform", "slot-chat"],
+  // Sing: Recording options.
+  ["#recoptions", "slot-recopts"],
+  // Voice: Clean up the sound in view; hear it as recorded, the downloads, the pitch line and Separate under More.
+  ["#polishgroup", "slot-voice"], ["#original", "slot-voice-hear"], ["#playtuned", "slot-voice-hear"], ["#downloadtuned", "slot-voice-hear"],
+  ["#tunelinetools", "slot-voice-more"], ["#vocalnoteeditor", "slot-voice-more"], ["#vocalnoteinfo", "slot-voice-more"],
+  ["#separaterow", "slot-voice-more"], ["#separateinfo", "slot-voice-more"],
+  // Notes: More tools also holds + Note and Clear, the phrases and the MIDI keyboard.
+  ["#notesbar", "slot-notes-more"], ["#phrasegroup", "slot-notes-more"], ["#miditrack", "slot-notes-more"],
+  // Timing: the grid, swing and strength under More.
+  ["#quantizeopts", "slot-timing-more"], ["#quantize", "slot-timing-more"],
+  // Chords: the chord names and Change a chord in view, the chord notes under More.
+  ["#chordstrip", "slot-chords"], ["#chordtools", "slot-chords"], ["#harmonyroll", "slot-chords-more"], ["#harmonyeditgroup", "slot-chords-more"],
+  // Second voice: the sung harmony's own controls in view, the copy and its notes under More.
+  ["#playvoice2sung", "slot-voice2sung"], ["#voice2sungmutebox", "slot-voice2sung"], ["#removevoice2sung", "slot-voice2sung"],
+  ["#voice2copygroup", "slot-voice2-more"], ["#voice2roll", "slot-voice2-more"], ["#voice2editgroup", "slot-voice2-more"],
+  // Beat: the drum roll in view, how long, keep and single hits under More.
+  ["#drumroll", "slot-beat"], ["#grooveopts", "slot-beat-more"], ["#hitsgroup", "slot-beat-more"],
+  // Sound: a mixer strip a part, the Mac app's band and voice as instrument, MIDI out under More.
+  ...["voice", "melody", "harmony", "voice2", "voice2_sung", "drums"].map(part => ['.mixstrip[data-mix="' + part + '"]', "slot-mix-" + part]),
+  ["#bandtrack", "slot-band"], ['.mixstrip[data-mix="band"]', "slot-band"], ["#timbretrack", "slot-timbre"], ['.mixstrip[data-mix="timbre"]', "slot-timbre"],
+  ["#midioutbox", "slot-sound-more"],
+  // Takes, Practise, Ask Tandem, Settings and Share.
+  ["#takes", "slot-takes"], ["#layerlanes", "slot-layers"], ["#practicegroup", "slot-practise"], ["#lockgroup", "slot-ask"],
+  ["#yourai", "slot-aiconn"], ["#connection", "slot-aiconn"], ["#versionlist", "slot-versions"],
+].map(Object.freeze));
+
+// UX.7: the views with a closed More fold holding the rest of their kind's controls.
+export const MORE_VIEWS = Object.freeze(["voice", "notes", "timing", "chords", "voice2", "beat", "sound"]);
+// UX.7: the guided screens and folds, each by the element that holds it.
+export const PLACES = Object.freeze({
+  top: ".gtop", nav: ".gnav", fixed: "body", sing: '[data-panel="sing"]', "sing:options": "#grecopts", take: '[data-panel="take"]',
+  song: '[data-panel="song"]', frame: '[data-panel="view"]', share: '[data-panel="share"]', "share:apps": "#gmoreapps",
+  settings: "#ghelpers", "settings:ai": "#gaiconn",
+  ...Object.fromEntries(VIEWS.map(v => ["view:" + v.id, '.gview[data-view="' + v.id + '"]'])),
+  ...Object.fromEntries(MORE_VIEWS.map(id => ["view:" + id + ":more", id === "notes" ? "#gmoretools" : "#gmore-" + id])),
+  // Only in the studio's layout (its own header and rail), and the file pickers behind their buttons.
+  studio: "#allcontrols", file: "#allcontrols",
+});
+
+// UX.7: every control of index.html (a button, input, select, text box, fold, form or link with an id) and the guided screen
+// or fold that shows it. "a=b" is a studio control the guided view drives from b (a selector) instead of showing it.
+const PLACE_IDS = {
+  fixed: "swupdate audiorescue",
+  top: "gundo gredo gsettings undo=#gundo redo=#gredo",
+  nav: "gback gnext gviewprev gviewdone gviewnext",
+  sing: "grecord gimport gopen gdemo gnewsong gchange gcapture gopenfolder record=#grecord finish=#grecord load=#gopen newsong=#gnewsong " +
+    "demo=#gdemo import=#gimport openfolder=#gopenfolder capturelink=#gcapture mode=[data-mode=melody]",
+  "sing:options": "grecopts countin recclick recsong reclayer calibrate pitchguide",
+  take: "gtakeplay gvoice gnotes gboth gstopnotes gtakekeep gtakeagain gtakeshare",
+  song: "gplay gstop gkey gspeed gvoicein play=#gplay stop=#gstop",
+  frame: "gviewback gviewjump gviewplay gviewstop gbefore gafter gputback",
+  "view:voice": "gpitch gvibrato gfix gmore-voice polishstyle polish polished downloadvocal tunestrength=#gpitch vibrato=#gvibrato tune=#gfix",
+  "view:voice:more": "original playtuned downloadtuned tunekey tunescale detectvocal snapvocal resetvocal separate playvocal playband downloadband usefull",
+  "view:notes": "gmoretools melodydraw melodyline linekeep linecancel melodyall melodydelete melodysemidown melodysemiup",
+  "view:notes:more": "melodyoctdown melodyoctup melodykeydown melodykeyup melodyfit ganalyze addnote clearnotes phraseearlier phraselater " +
+    "phrasedown phraseup phraseoctdown phraseoctup phrasecopy midiconnect midiinput midirecord analyze=#ganalyze",
+  "view:timing": "gbpm gfindspeed gmore-timing bpm=#gbpm detecttempo=#gfindspeed",
+  "view:timing:more": "grid swing qstrength quantize",
+  "view:words": "lyrics",
+  "view:chords": "gkeysel gchords gbass gnoharm gmore-chords chordroot chordquality harmonystyle=#gchords genharmony=#gchords " +
+    "harmonykey=#gkeysel clearharmony=#gnoharm",
+  "view:chords:more": "harmonydraw harmonyall harmonydelete harmonyoctdown harmonyoctup harmonykeydown harmonykeyup harmonysemidown harmonysemiup",
+  "view:voice2": "gvoice2create gsingvoice2 gnovoice2 gvoice2next gvoice2keep gvoice2cancel gmore-voice2 playvoice2sung voice2sungmute " +
+    "removevoice2sung voice2create=#gvoice2create voice2next=#gvoice2next voice2keep=#gvoice2keep voice2cancel=#gvoice2cancel singvoice2=#gsingvoice2",
+  "view:voice2:more": "voice2interval voice2dup clearvoice2 voice2draw voice2all voice2delete voice2octdown voice2octup voice2keydown voice2keyup " +
+    "voice2semidown voice2semiup",
+  "view:beat": "gbeat ggroove ggrooveadd gnodrums gbeatdownload gbeatyes gbeatno gmore-beat groove=#ggroove addgroove=#ggrooveadd",
+  "view:beat:more": "groovebars groovekeep drum addhit clearhits",
+  "view:sound": "ggenre ginstrument gharminst gvoice2inst gmore-sound bandstyle bandfollows banddrums genband playbandtrack bandmute removeband " +
+    "timbreinstrument gentimbre playtimbretrack timbremute removetimbre genre=#ggenre instrument=#ginstrument harmonyinstrument=#gharminst " +
+    "voice2instrument=#gvoice2inst",
+  "view:sound:more": "midioutput midichannel",
+  "view:sections": "gtimeline loop clearloop evolution sectionname marksection sectionrepeat sectionearlier sectionlater sectiondelete sectionunmark",
+  "view:takes": "grecordlayer comptake compfrom compto compin comploop",
+  "view:practise": "practice warmup addwarmup practiceforget practicestop practicekeep practiceask",
+  "view:ask": "melodylock whatsent chatform prompt",
+  settings: "ghelpersback gcleanup gpitchname gtuneengine gtranscriber gbeatstyle gshowall greset transcriber=#gtranscriber tuneengine=#gtuneengine",
+  "settings:ai": "aiprovider aimodel aibaseurl aikey aisave aiforget connection api token connect",
+  share: "gsongname gsharevoice gsharesong gsavebundle gsavefolder gversionname gsaveversion gmoreapps gshareall songname=#gsongname " +
+    "sharesong=#gsharesong savebundle=#gsavebundle savefolder=#gsavefolder versionname=#gversionname saveversion=#gsaveversion " +
+    "versionreplace=[data-press=versionreplace] versionkeep=[data-press=versionkeep] exportevolution=[data-press=exportevolution]",
+  "share:apps": "exportwav=[data-press=exportwav] exportstems=[data-press=exportstems] exportmusicxml=[data-press=exportmusicxml] " +
+    "exportdawproject=[data-press=exportdawproject] exportmidi=[data-press=exportmidi] save=[data-press=save]",
+  studio: "showguide shortcuts backtotracks",
+  file: "audiofile projectfile",
+};
+export const CONTROL_PLACES = Object.freeze(Object.fromEntries(Object.entries(PLACE_IDS).flatMap(([place, ids]) =>
+  ids.split(" ").map(entry => {
+    const i = entry.indexOf("=");
+    return i < 0 ? [entry, Object.freeze({ place, via: null })] : [entry.slice(0, i), Object.freeze({ place, via: entry.slice(i + 1) })];
+  }))));
