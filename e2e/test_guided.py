@@ -232,14 +232,16 @@ def test_every_control_of_the_studio_is_in_the_all_controls_view(browser, server
             if (panel) document.querySelector('#allcontrols [data-part="' + panel.dataset.panelPart + '"]').click();
             // Controls a feature hides where it is not available (the Mac app's, Web MIDI's) and the file pickers.
             if (el.closest('[hidden]') || el.classList.contains('hide')) return [id, 'feature'];
+            // UX.3: Stop recording takes Record's place only while a take records.
+            if (id === 'finish' && el.disabled) return [id, 'feature'];
             const r = el.getBoundingClientRect();
             return [id, r.width > 0 && r.height > 0 ? 'shown' : 'not shown'];
         })""", ids)
         wrong = [r for r in report if r[1] not in ("shown", "feature")]
         assert not wrong, wrong
         # Hidden here only because the feature is not available or not in use: the Mac app's controls, the MIDI ports
-        # (shown after Connect MIDI), the harmony line trial (shown after Create harmony), Keep line and Cancel (shown with a drawn line), the comp controls (shown with two takes), the section tools (shown with a section chosen), the practice bar (shown while practising), the version limit's question (shown at the limit) and the file pickers behind their buttons.
-        assert sorted(r[0] for r in report if r[1] == "feature") == sorted(MAC_APP + MIDI_PORTS + LINE_TRIAL + DRAWN_LINE + TAKES + SECTION_TOOLS + PRACTICE_BAR + RANGE_BOX + VERSION_FULL + ["audiofile", "projectfile"])
+        # (shown after Connect MIDI), the harmony line trial (shown after Create harmony), Keep line and Cancel (shown with a drawn line), the comp controls (shown with two takes), the section tools (shown with a section chosen), the practice bar (shown while practising), the version limit's question (shown at the limit), Stop recording (shown while a take records) and the file pickers behind their buttons.
+        assert sorted(r[0] for r in report if r[1] == "feature") == sorted(MAC_APP + MIDI_PORTS + LINE_TRIAL + DRAWN_LINE + TAKES + SECTION_TOOLS + PRACTICE_BAR + RANGE_BOX + VERSION_FULL + ["audiofile", "projectfile", "finish"])
         # The guided view's own controls are not in the studio's layout, and the roll is back in its place.
         assert page.evaluate("document.getElementById('melodyroll').closest('.lane').dataset.lane === 'melody'")
         assert page.evaluate("document.getElementById('melodytools').closest('[data-panel-part]').dataset.panelPart === 'melody'")
