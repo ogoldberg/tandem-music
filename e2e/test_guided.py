@@ -919,6 +919,7 @@ def test_before_and_after_in_timing_play_the_song_as_it_was_and_put_it_back_undo
         expect(page.locator("#gviewplays")).to_have_text("Before: the song as it was when you opened Timing. Choose After to change it.")
         expect(page.locator('.gview[data-view="timing"]')).to_have_class(re.compile(r"\bdimmed\b"))
         assert page.eval_on_selector('.gview[data-view="timing"]', "e => e.inert")
+        page.screenshot(path=str(SHOTS / "ux6-timing-before.png"))
         heard = played_onsets(page, len(notes_then))
         assert close(heard, from_first(notes_then)), (heard, notes_then)
         # Comparing changed nothing.
@@ -941,7 +942,6 @@ def test_before_and_after_in_timing_play_the_song_as_it_was_and_put_it_back_undo
         page.click("#gredo")
         assert melody(page) == notes_now
         expect(page.locator("#gputback")).to_be_enabled()
-        page.screenshot(path=str(SHOTS / "ux6-timing.png"), full_page=True)
 
 
 def test_switching_while_it_plays_keeps_the_place_and_leaving_the_view_forgets_before(browser, server_url):
