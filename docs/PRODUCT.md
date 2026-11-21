@@ -6,7 +6,7 @@ Last reviewed: 2026-11-16. Status: living specification.
 Tandem is a conversational musical collaborator. Hum a melody, sing imperfectly, beatbox a rhythm, or describe an idea; Tandem helps turn it into editable, playable music. Unlike one-shot prompt-to-song generation, **the person's original musical idea stays central**.
 
 ## Who it is for
-Someone with a song idea who does not know the advanced tools and has little time (operator, 2026-11-13). The guided Sing / Notes / Song / Share flow (UI.1) comes before new features; every advanced control stays reachable but is not in the way.
+Someone with a song idea who does not know the advanced tools and has little time (operator, 2026-11-13). The guided flow (UI.1; since UX.5 Sing / Your song / Share, Your song a hub with one view per kind of change) comes before new features; every advanced control stays reachable but is not in the way.
 
 A second way in (operator idea, 2026-11-15; scope confirmed 2026-11-16 on the recommendation the operator accepted): composing with the sound off, at night, on a train, or for someone who hears little or nothing. It sits beside singing, never replaces it: views that show what the notes and chords are (SILENT.1, SILENT.2) come first and are useful with the sound on too; anything aimed at Deaf and hard-of-hearing musicians beyond them waits until they have been asked (ROADMAP SILENT.5).
 

@@ -5,7 +5,7 @@ The example project is at 100 bpm: 8 melody notes 0.45 s apart (60 64 67 69 67 6
 """
 from playwright.sync_api import expect
 
-from test_guided import guided_page
+from test_guided import guided_page, open_view
 from test_studio import download, wait_until
 
 WORDS = "Twin-kle twin-kle lit-tle _ star"
@@ -103,7 +103,7 @@ def test_export_musicxml_writes_the_words_under_the_melody(studio, tmp_path):
     assert not any(n.lyrics for n in harmony.flatten().notes)
 
 
-def test_the_words_box_is_in_the_guided_notes_step(browser, server_url):
+def test_the_words_box_is_in_the_guided_words_view(browser, server_url):
     with guided_page(browser, server_url) as page:
-        page.click('#steps [data-step="notes"]')
+        open_view(page, "words")
         expect(page.locator("#slot-words #lyrics")).to_be_visible()

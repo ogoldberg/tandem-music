@@ -7,7 +7,7 @@ The example project is at 100 bpm (a 2.4 s bar): 8 melody notes 0.45 s apart (60
 from playwright.sync_api import expect
 
 from conftest import show_part
-from test_guided import guided_page
+from test_guided import guided_page, open_view
 
 NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 C_MAJOR = {0, 2, 4, 5, 7, 9, 11}
@@ -93,7 +93,7 @@ def test_fit_colours_the_melody_on_its_chords_marks_phrase_endings_and_follows_a
 def test_fit_shows_in_the_guided_notes_step(browser, server_url):
     with guided_page(browser, server_url) as page:
         page.click("#gdemo")
-        page.click('#steps [data-step="notes"]')
+        open_view(page, "notes")
         # UX.2: Fit is one of the tools folded under More tools.
         fit = page.locator("#gmoretools #melodyfit")
         expect(fit).to_be_hidden()
