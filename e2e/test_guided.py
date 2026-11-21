@@ -959,6 +959,14 @@ def test_switching_while_it_plays_keeps_the_place_and_leaving_the_view_forgets_b
         at = float(re.search(r"from ([\d.]+) s", page.locator("#status").text_content()).group(1))
         assert at >= 1, at
         page.click("#gviewstop")
+        # Put it back while Before plays leaves nothing to compare: the earlier song stops instead of playing on under After.
+        page.click("#gbefore")
+        page.click("#gviewplay")
+        page.wait_for_function("Number(document.getElementById('timeline').dataset.t) > 0.5")
+        page.click("#gputback")
+        expect(page.locator("#gafter")).to_have_attribute("aria-pressed", "true")
+        page.wait_for_function("document.getElementById('timeline').dataset.t === ''", timeout=5_000)
+        page.click("#gredo")
         # A view opened again starts from the song as it is then: nothing of its own to compare yet.
         page.click("#gviewdone")
         open_view(page, "timing")
