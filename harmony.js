@@ -100,8 +100,9 @@ export function chordsForKey(key) {
   });
 }
 
-// SONG.3: the key's tonic triad for an ending, voiced like the generated chords: near `previous` (the chord before
-// it), at or below `ceiling` (the melody's lowest note over it, HARM.4).
+// SONG.3: the key's tonic chord for an ending, voiced like the generated chords: near `previous` (the chord before
+// it), at or below `ceiling` (the melody's lowest note over it, HARM.4). Like them, under a very low melody it
+// leaves out the chord tones that do not fit below the ceiling (C and E only under an E2), and with none it throws.
 export function tonicChord(key, { previous = null, ceiling = CHORD_RANGE[1] } = {}) {
   const notes = voice(chordsForKey(key)[0], previous, ceiling);
   if (!notes.length) throw new Error("The tune ends too low for a chord under it.");

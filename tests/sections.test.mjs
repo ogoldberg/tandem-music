@@ -240,4 +240,33 @@ test("SONG.3: the ending is at least a bar, needs a tune and a key, leaves a son
   // A chord held into the ending stops where it starts.
   const into = addEnding({ ...p, harmony: [{ m: 48, t: 4, d: 4 }] }, { key: C });
   assert.deepEqual(into.harmony.filter(n => n.t < 6), [{ m: 48, t: 4, d: 2 }]);
+  // Nothing after the ending is there: `later` is null.
+  assert.equal(addEnding(p, { key: C }).later, null);
+});
+
+test("SONG.3: Add ending changes only its own bar: the chords, drums, harmony voice and sections after it stay and are reported", () => {
+  const p = arranged();
+  // An instrumental Solo after the tune, 8 to 12 s: chords, a beat and a harmony voice note, and a Verse running across the ending.
+  const solo = {
+    ...p,
+    harmony: [...p.harmony, { m: 53, t: 8, d: 2 }, { m: 55, t: 10, d: 2 }],
+    drums: [...p.drums, { k: "kick", t: 8 }, { k: "snare", t: 9 }, { k: "hat", t: 11.5 }],
+    voice2: [...p.voice2, { m: 72, t: 9, d: 1 }],
+    sections: [{ name: "Verse", from: 4, to: 9 }, { name: "Solo", from: 9, to: 12 }],
+  };
+  const r = addEnding(solo, { key: C });
+  assert.deepEqual(r.harmony.filter(n => n.t >= 8), [{ m: 53, t: 8, d: 2 }, { m: 55, t: 10, d: 2 }]);
+  assert.deepEqual(r.drums.filter(h => h.t >= 8), [{ k: "kick", t: 8 }, { k: "snare", t: 9 }, { k: "hat", t: 11.5 }]);
+  assert.deepEqual(r.drums.filter(h => h.t >= 6 && h.t < 8), [{ k: "kick", t: 6 }, { k: "snare", t: 6 }]);
+  assert.deepEqual(r.voice2, solo.voice2);
+  // The Verse keeps its parts on both sides of the Outro; the Solo stays.
+  assert.deepEqual(r.sections, [
+    { name: "Verse", from: 4, to: 6 }, { name: "Outro", from: 6, to: 8 }, { name: "Verse", from: 8, to: 9 }, { name: "Solo", from: 9, to: 12 },
+  ]);
+  assert.equal(r.index, 1);
+  // The music after the ending runs to 12 s, which the studio tells the person.
+  assert.equal(r.later, 12);
+  // Again: nothing changes.
+  const again = addEnding({ ...solo, ...r }, { key: C });
+  for (const k of ["notes", "harmony", "voice2", "drums", "sections"]) assert.deepEqual(again[k], r[k], k);
 });

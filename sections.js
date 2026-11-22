@@ -234,28 +234,45 @@ export function addEnding(project, { key } = {}) {
   const from = round3(Math.max(0, origin + Math.floor((last.t - origin) / bar + 1e-6) * bar));
   const to = round3(Math.max(from + bar, origin + Math.ceil((last.t + last.d - origin) / bar - 1e-6) * bar));
   if (to > MAX_TIME + EPS) throw Error(`The song would go past ${MAX_TIME} seconds.`);
+  // Only the ending's own bar changes: a section across its edges keeps its parts outside it, and the chords,
+  // drums, harmony voice and sections after it stay where they are (`later` says how far they run).
   const list = cleanSections(project.sections);
-  const kept = [];
+  const kept = [], after = [];
   for (const x of list) {
     if (x.to <= from + EPS) kept.push(x);
     else if (x.from < from - EPS && from - x.from >= MIN_SECTION_SECONDS - EPS) kept.push({ ...x, to: from });
+    if (x.to > to + EPS) {
+      const start = Math.max(x.from, to);
+      if (x.to - start >= MIN_SECTION_SECONDS - EPS) after.push({ ...x, from: start });
+    }
   }
-  if (kept.length >= MAX_SECTIONS) throw Error(`A song can have at most ${MAX_SECTIONS} sections.`);
-  const before = (Array.isArray(project.harmony) ? project.harmony : []).filter(n => n.t < from - EPS)
+  if (kept.length + after.length >= MAX_SECTIONS) throw Error(`A song can have at most ${MAX_SECTIONS} sections.`);
+  const chords = Array.isArray(project.harmony) ? project.harmony : [];
+  const before = chords.filter(n => n.t < from - EPS)
     .map(n => (n.t + n.d > from + EPS ? { ...n, d: round3(from - n.t) } : { ...n }));
+  const chordsAfter = chords.filter(n => n.t >= to - EPS).map(n => ({ ...n }));
   const lastStart = before.reduce((t, n) => Math.max(t, n.t), -Infinity);
   const previous = before.filter(n => Math.abs(n.t - lastStart) < 0.03).map(n => n.m).sort((a, b) => a - b);
   const over = tune.filter(n => n.t < to - EPS && n.t + n.d > from + EPS).map(n => n.m);
   const chord = tonicChord(key, { previous: previous.length ? previous : null, ceiling: Math.min(...over) });
-  const harmony = [...before, ...chord.map(m => ({ m, t: from, d: round3(to - from) }))];
+  const harmony = [...before, ...chord.map(m => ({ m, t: from, d: round3(to - from) })), ...chordsAfter];
   const beat = Array.isArray(project.drums) ? project.drums : [];
-  const drums = beat.length ? [...beat.filter(h => h.t < from - EPS).map(h => ({ ...h })), { k: "kick", t: from }, { k: "snare", t: from }] : [];
+  const drums = beat.length ? [
+    ...beat.filter(h => h.t < from - EPS).map(h => ({ ...h })), { k: "kick", t: from }, { k: "snare", t: from },
+    ...beat.filter(h => h.t >= to - EPS).map(h => ({ ...h })),
+  ] : [];
   checkLimits("harmony", harmony);
   checkLimits("drums", drums);
-  const sections = cleanSections([...kept, { name: "Outro", from, to }]);
+  const voice2 = (project.voice2 || []).map(n => ({ ...n }));
+  const sections = cleanSections([...kept, { name: "Outro", from, to }, ...after]);
+  const ends = [
+    ...chordsAfter.map(n => n.t + n.d), ...drums.filter(h => h.t >= to - EPS).map(h => h.t),
+    ...voice2.filter(n => n.t + n.d > to + EPS).map(n => n.t + n.d), ...after.map(x => x.to),
+  ];
   return {
     notes: (project.notes || []).map(n => ({ ...n })),
-    harmony, voice2: (project.voice2 || []).map(n => ({ ...n })), drums,
-    placed: cleanPlaced(project.placed), sections, index: sections.length - 1,
+    harmony, voice2, drums,
+    placed: cleanPlaced(project.placed), sections, index: kept.length,
+    later: ends.length ? round3(Math.max(...ends)) : null,
   };
 }

@@ -335,6 +335,25 @@ def test_an_intro_and_an_ending_are_one_edit_each_and_in_the_midi_file(studio, t
     expect(page.locator("#status")).to_contain_text("The song has an intro already")
 
 
+def test_the_ending_keeps_the_music_after_it_and_says_so(studio, tmp_path):
+    """The beat runs two bars past the tune: the ending changes only its own bar, keeps those bars and says how far they run."""
+    page = studio
+    song = dict(SONG3, drums=SONG3["drums"] + [{"k": "hat", "t": 8 + q * 0.5} for q in range(8)])
+    project = tmp_path / "later.json"
+    project.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": 120, "instrument": "piano",
+                                   "melody_locked": True, **song}))
+    page.set_input_files("#projectfile", str(project))
+    expect(page.locator("#status")).to_have_text("Project opened")
+    page.select_option("#harmonykey", "0:major")
+    page.click("#addending")
+    expect(page.locator("#status")).to_have_text(
+        "Add an ending. The music after it still plays, to 11.5 s: delete its sections to end the song there.")
+    assert sections(page) == [{"name": "Outro", "from": 6, "to": 8}]
+    drums = midi_drum_ticks(download(page, "#exportmidi", tmp_path).read_bytes())
+    # The beat before the ending (12 hits), its one kick and snare, and the 8 hats after it.
+    assert len(drums) == 12 + 2 + 8 and sorted(drums)[-8:] == [4 * BAR + q * BAR // 4 for q in range(8)]
+
+
 def test_the_guided_sections_view_adds_an_intro_and_an_ending(browser, server_url, tmp_path):
     with guided_page(browser, server_url) as page:
         open_song3(page, tmp_path)
