@@ -17,6 +17,8 @@ import zipfile
 import numpy as np
 from playwright.sync_api import expect
 
+from conftest import export_gain
+
 RATE = 44100
 STAGES = ["original", "polished", "melody", "harmony", "drums"]
 LABELS = {"original": "Your take, as recorded", "polished": "Cleaned up", "melody": "The melody on an instrument",
@@ -84,7 +86,11 @@ def test_the_song_turns_from_the_take_into_the_mix_section_by_section(studio, tm
 
     stems_zip = zipfile.ZipFile(io.BytesIO(download(page, "#exportstems")))
     stems = {k: samples(stems_zip.read(name)) for k, name in STEMS.items()}
-    mix = samples(stems_zip.read("mix.wav"))
+    # MIX.2: Export stems levels the parts and the mix by one gain; How it grew is not levelled.
+    g = export_gain(page)
+    for k in ("melody", "harmony", "drums"):
+        stems[k] = stems[k] / g
+    mix = samples(stems_zip.read("mix.wav")) / g
     evolution = samples(download(page, "#exportevolution"))
     expect(page.locator("#status")).to_contain_text(
         "Exported how the song grew: " + ", then ".join(LABELS[k] for k in STAGES))

@@ -118,6 +118,12 @@ ACTIONS = ["click", "dblclick", "tap", "fill", "type", "press", "press_sequentia
            "select_option", "hover", "focus", "clear", "select_text", "scroll_into_view_if_needed"]
 
 
+def export_gain(page):
+    """MIX.2: the one gain the last Export WAV, Export stems or Share levelled the mix and the part stems by
+    (`#status`'s `data-gain`); divide a stem by it to read the level it was rendered at."""
+    return float(page.get_attribute("#status", "data-gain"))
+
+
 def show_part(page, part):
     """Pick a part's track lane (or step) in the studio, so its settings show in the side panel."""
     page.click(f'#allcontrols [data-part="{part}"] >> nth=0')

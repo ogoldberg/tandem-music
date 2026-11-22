@@ -18,7 +18,7 @@ import zipfile
 import numpy as np
 import pytest
 from playwright.sync_api import expect
-from conftest import show_part
+from conftest import export_gain, show_part
 
 import tandem_desktop as desk
 from tandem_desktop import models, timbre
@@ -187,7 +187,7 @@ def test_the_voice_is_played_as_an_instrument_kept_played_undone_and_exported(pa
     files = stems(page)
     assert {"mix.wav", "melody.wav", "drums.wav", "timbre.wav", "vocal-original.wav"} <= set(files), list(files)
     y, rate = samples_of(files["timbre.wav"])
-    assert rate == 44100 and abs(np.max(np.abs(y[:rate * SECONDS])) - 0.2) < 0.02 and np.argmax(np.abs(y) > 0.05) < 0.005 * rate
+    assert rate == 44100 and abs(np.max(np.abs(y[:rate * SECONDS])) / export_gain(page) - 0.2) < 0.02 and np.argmax(np.abs(y) > 0.05) < 0.005 * rate
     mix, _ = samples_of(files["mix.wav"])
     melody, _ = samples_of(files["melody.wav"])
     drums, _ = samples_of(files["drums.wav"])

@@ -141,6 +141,52 @@ export function sumStems(stems, frames) {
   return out;
 }
 
+// MIX.2: every export peaks at EXPORT_PEAK_DB (dB below full scale), so a song comes out as loud as the
+// last one and never clips; a quiet song is raised at most MAX_EXPORT_RAISE_DB, so a near-silent one is not
+// turned into noise.
+export const EXPORT_PEAK_DB = -1;
+export const MAX_EXPORT_RAISE_DB = 18;
+const SILENT = 1e-6;
+
+// The largest absolute sample.
+export function peakOf(samples) {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) { const a = Math.abs(samples[i]); if (a > peak) peak = a; }
+  return peak;
+}
+
+// The one gain for a set of signals (the mix and its stems): the loudest of them peaks at EXPORT_PEAK_DB,
+// raised at most MAX_EXPORT_RAISE_DB; 1 when they are all silent.
+export function exportGain(signals) {
+  const peak = signals.reduce((p, s) => Math.max(p, peakOf(s)), 0);
+  if (!(peak > SILENT)) return 1;
+  return Math.min(10 ** (MAX_EXPORT_RAISE_DB / 20), 10 ** (EXPORT_PEAK_DB / 20) / peak);
+}
+
+const times = (samples, gain) => gain === 1 ? samples : Float32Array.from(samples, x => x * gain);
+
+// The parts (summed into the mix) and the layer stems (`[{samples, ...}]`) levelled by one gain, so the
+// stems still sum to the mix: `mix` is the levelled sum, `frames` long, and `peak` its peak after.
+export function levelExport({ parts = {}, layers = [] }, frames) {
+  const mix = sumStems(Object.values(parts), frames);
+  const gain = exportGain([mix, ...Object.values(parts), ...layers.map(l => l.samples)]);
+  const out = Object.fromEntries(Object.entries(parts).map(([k, s]) => [k, times(s, gain)]));
+  return { parts: out, layers: layers.map(l => ({ ...l, samples: times(l.samples, gain) })), mix: times(mix, gain), gain, peak: peakOf(mix) * gain };
+}
+
+const db = x => (Math.round(Math.abs(x) * 10) / 10).toFixed(1).replace(/\.0$/, "");
+
+// The export status's sentence for a levelling `gain` that left the mix peaking at `peak`; "" for silence.
+export function levelLine(gain, peak) {
+  if (!(peak > SILENT)) return "";
+  const change = 20 * Math.log10(gain), at = 20 * Math.log10(peak);
+  if (Math.abs(change) < 0.05) return " It peaks at −" + db(at) + " dB.";
+  if (change < 0 && at < EXPORT_PEAK_DB - 0.05) return " Turned down " + db(change) + " dB so the loudest stem does not clip; the mix peaks at −" + db(at) + " dB.";
+  if (change < 0) return " Turned down " + db(change) + " dB to peak at −" + db(at) + " dB, so it does not clip.";
+  if (change > MAX_EXPORT_RAISE_DB - 0.05) return " Turned up " + db(change) + " dB, the most Tandem raises a quiet song; it peaks at −" + db(at) + " dB.";
+  return " Turned up " + db(change) + " dB to peak at −" + db(at) + " dB.";
+}
+
 // A decoded AudioBuffer mixed down to mono.
 export function monoOf(buffer) {
   return monoSamples(buffer);

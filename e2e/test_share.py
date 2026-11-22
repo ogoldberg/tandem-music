@@ -13,7 +13,7 @@ from playwright.sync_api import expect
 
 from test_capture import PHONE, open_capture, phone_page, record
 from test_studio import IDB_GET, OPFS_FILES, count, download, import_recording, tone_wav
-from conftest import ALL_CONTROLS
+from conftest import ALL_CONTROLS, export_gain
 
 # navigator.share with files, as on iOS Safari and Android Chrome: the shared file is kept for the test.
 SHARE_STUB = """(() => {
@@ -258,7 +258,7 @@ def test_a_project_with_only_a_harmony_voice_exports_stems_and_is_kept_as_a_vers
     expect(page.locator("#voice2count")).to_have_text("8 notes")
 
     path = download(page, "#exportstems", tmp_path)
-    expect(page.locator("#status")).to_have_text("Exported 1 stem (harmony voice) and the MIDI file")
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Exported 1 stem \(harmony voice\) and the MIDI file\. (It peaks|Turned (up|down) [0-9.]+ dB).*\.$"))
     with zipfile.ZipFile(path) as z:
         assert "harmony-voice.wav" in z.namelist()
         mid = mido.MidiFile(file=io.BytesIO(z.read("tandem.mid")))

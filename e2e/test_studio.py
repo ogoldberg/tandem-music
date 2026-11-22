@@ -10,7 +10,7 @@ import mido
 import pytest
 import numpy as np
 from playwright.sync_api import expect
-from conftest import ALL_CONTROLS
+from conftest import ALL_CONTROLS, export_gain
 
 # A4, C5, E5: what the server melody analyzer must find in the imported recording.
 TONES = [(440.0, 69), (523.25, 72), (659.25, 76)]
@@ -811,7 +811,7 @@ def test_export_wav_does_not_hang_when_sample_requests_stall(browser, server_url
     with wave.open(str(info.value.path())) as w:
         samples = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float)
     assert 1000 < np.abs(samples).max() < 32000
-    expect(page.locator("#status")).to_have_text("Exported the WAV with synthesized Marimba, drums (samples still loading)")
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Exported the WAV with synthesized Marimba, drums \(samples still loading\)\. (It peaks|Turned (up|down) [0-9.]+ dB).*\.$"))
     assert not problems, problems
     context.close()
 
@@ -847,11 +847,11 @@ def test_the_export_status_names_the_voices_that_were_not_ready_when_the_render_
         page.wait_for_timeout(3000)
         page.evaluate("window.__holdRender = false; window.__release()")
     info.value.path()
-    expect(page.locator("#status")).to_have_text("Exported the WAV with synthesized Marimba, drums (samples still loading)")
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Exported the WAV with synthesized Marimba, drums \(samples still loading\)\. (It peaks|Turned (up|down) [0-9.]+ dB).*\.$"))
     # ... and the next export uses the samples and says nothing about synthesized voices.
     with page.expect_download(timeout=40_000):
         page.click("#exportwav")
-    expect(page.locator("#status")).to_have_text("Exported the WAV")
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Exported the WAV\. (It peaks|Turned (up|down) [0-9.]+ dB).*\.$"))
     assert not problems, problems
     context.close()
 
@@ -1456,7 +1456,7 @@ def test_stems_line_up_with_the_mix_and_the_midi_has_a_track_per_part(studio, tm
     path = download(page, "#exportstems", tmp_path)
     assert path.name == "Tandem song - stems.zip"
     expect(page.locator("#status")).to_have_text(
-        "Exported 5 stems (melody, harmony, drums, original vocal, polished vocal) and the MIDI file")
+        re.compile(r"^Exported 5 stems \(melody, harmony, drums, original vocal, polished vocal\) and the MIDI file\. (It peaks|Turned (up|down) [0-9.]+ dB).*\.$"))
     stems = {}
     with zipfile.ZipFile(path) as z:
         assert z.namelist() == STEMS + ["tandem.mid"]
@@ -1784,7 +1784,7 @@ def test_harmony_voice_duplicates_the_melody_a_third_up_and_is_heard_exported_an
     page = studio
     page.click("#demo")
     melody = roll_notes(page)
-    plain = wav_samples(download(page, "#exportwav", tmp_path))
+    plain = wav_samples(download(page, "#exportwav", tmp_path)) / export_gain(page)
     page.click("#genharmony")
     expect(page.locator("#harmonycount")).to_have_text("6 notes")
     chords = roll_notes(page, "harmonyroll")
@@ -1832,6 +1832,7 @@ def test_harmony_voice_duplicates_the_melody_a_third_up_and_is_heard_exported_an
     page.click("#clearharmony")
     with_voice = wav_samples(download(page, "#exportwav", tmp_path))
     assert np.abs(with_voice).max() < 32000
+    with_voice = with_voice / export_gain(page)
     e4, c4 = 329.63, 261.63
     assert band_level(with_voice, 44100, 0.05, 0.35, e4) > 5 * band_level(plain, 44100, 0.05, 0.35, e4)
     assert band_level(with_voice, 44100, 0.05, 0.35, c4) == pytest.approx(band_level(plain, 44100, 0.05, 0.35, c4), rel=0.2)

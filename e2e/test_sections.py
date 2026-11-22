@@ -16,6 +16,7 @@ import numpy as np
 from playwright.sync_api import expect
 
 from test_playhead import drag_loop
+from conftest import export_gain
 from test_studio import IDB_DRAFT, wait_for_draft_audio, wait_until
 
 RATE = 44100
@@ -215,7 +216,8 @@ def test_a_repeated_chorus_repeats_the_voice_in_play_and_the_stems_and_no_record
     page.click("#mute-voice")
     expect(page.locator("#mute-voice")).to_have_attribute("aria-pressed", "false")
     stems = stem_files(page)
-    voice, original = stems["voice.wav"], stems["vocal-original.wav"]
+    # MIX.2: the voice stem is levelled with the mix; the take as recorded is not.
+    voice, original = stems["voice.wav"] / export_gain(page), stems["vocal-original.wav"]
     assert len(voice) >= 5.2 * RATE
     for x in (voice, original):
         assert abs(level_at(x, 3.0) - take_level(1.8)) < 0.01 and abs(level_at(x, 4.5) - take_level(3.3)) < 0.01
