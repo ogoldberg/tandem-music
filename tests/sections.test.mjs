@@ -266,6 +266,10 @@ test("SONG.3: Add ending changes only its own bar: the chords, drums, harmony vo
   assert.equal(r.index, 1);
   // The music after the ending runs to 12 s, which the studio tells the person.
   assert.equal(r.later, 12);
+  // A section after the ending that runs on past every note and hit counts too.
+  assert.equal(addEnding({ ...solo, sections: [{ name: "Solo", from: 9, to: 14 }] }, { key: C }).later, 14);
+  // A section alone after the ending, with no notes there, is reported as well.
+  assert.equal(addEnding({ ...p, sections: [{ name: "Solo", from: 8, to: 10 }] }, { key: C }).later, 10);
   // Again: nothing changes.
   const again = addEnding({ ...solo, ...r }, { key: C });
   for (const k of ["notes", "harmony", "voice2", "drums", "sections"]) assert.deepEqual(again[k], r[k], k);

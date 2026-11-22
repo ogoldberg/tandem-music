@@ -347,7 +347,7 @@ def test_the_ending_keeps_the_music_after_it_and_says_so(studio, tmp_path):
     page.select_option("#harmonykey", "0:major")
     page.click("#addending")
     expect(page.locator("#status")).to_have_text(
-        "Add an ending. The music after it still plays, to 11.5 s: delete its sections to end the song there.")
+        "Add an ending. The music after it still plays, to 11.5 s: mark it as a section and delete it to end the song there.")
     assert sections(page) == [{"name": "Outro", "from": 6, "to": 8}]
     drums = midi_drum_ticks(download(page, "#exportmidi", tmp_path).read_bytes())
     # The beat before the ending (12 hits), its one kick and snare, and the 8 hats after it.
