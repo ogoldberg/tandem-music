@@ -148,9 +148,13 @@ export function withFills(drums, id, { bpm, origin = 0, sections = [] }) {
   const old = (drums || []).map(h => ({ ...h }));
   if (!old.length) throw Error("Add a beat first: a fill replaces the end of a bar of drums.");
   const end = Math.max(...old.map(h => h.t));
+  // Hit times are rounded to the microsecond, so the windows are worked out from rounded times too, with a
+  // tolerance above the rounding: a hit on the window's edge must fall inside it at any tempo.
+  const eps = 2e-6, from = t => round6(t - half), upto = t => round6(t), after = t => round6(t + half);
+  const inWindow = (h, a, b) => h.t >= a - eps && h.t < b - eps;
   const lines = fillLines({ bpm, origin, sections, end }).filter(t =>
-    old.some(h => h.t >= t - half - 1e-9 && h.t < t - 1e-9) && old.some(h => h.t >= t - 1e-9 && h.t < t + half - 1e-9));
-  let out = old.filter(h => !lines.some(t => h.t >= t - half - 1e-9 && h.t < t - 1e-9));
+    old.some(h => inWindow(h, from(t), upto(t))) && old.some(h => inWindow(h, upto(t), after(t))));
+  let out = old.filter(h => !lines.some(t => inWindow(h, from(t), upto(t))));
   for (const t of lines) for (const [k, beats] of Object.entries(f.half)) for (const x of beats) {
     const at = round6(t - half + x * beat);
     if (at >= 0 && at <= MAX_TIME) out.push({ k, t: at });

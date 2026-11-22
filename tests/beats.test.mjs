@@ -162,6 +162,17 @@ test("BEAT.2: without sections a fill goes before every fourth bar where the bea
   assert.deepEqual(withFills(out, "roll", { bpm }).drums, out);
 });
 
+test("BEAT.2: at any tempo a fill replaces the half bar, never doubles a hit, and adding it again changes nothing", () => {
+  for (let bpm = 60; bpm <= 180; bpm += 5) for (const fill of ["build", "roll", "light", "triplet", "break", "riser"]) {
+    const drums = grooveHits("straight", { bpm, bars: 12 });
+    const { drums: out, lines } = withFills(drums, fill, { bpm });
+    assert.equal(lines.length, 2, bpm + " bpm");
+    const keys = out.map(h => h.k + "@" + h.t);
+    assert.equal(new Set(keys).size, keys.length, bpm + " bpm " + fill + ": a hit doubled");
+    assert.deepEqual(withFills(out, fill, { bpm }).drums, out, bpm + " bpm " + fill + ": not idempotent");
+  }
+});
+
 test("BEAT.2: the grid's origin moves the four-bar lines", () => {
   const bpm = 100, bar = barSeconds(bpm), origin = 0.3, drums = grooveHits("straight", { bpm, bars: 9, from: origin });
   assert.deepEqual(withFills(drums, "build", { bpm, origin }).lines, [origin + 4 * bar, origin + 8 * bar].map(t => Math.round(t * 1e6) / 1e6));
