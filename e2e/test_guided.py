@@ -314,7 +314,11 @@ def test_every_control_of_the_studio_is_in_the_all_controls_view(browser, server
         expect(page.locator("#guide")).to_be_visible()
 
 
-def record_beat_layer(page):
+BEAT_LINE = "When you stop, Tandem keeps your beat as a layer over the song and reads it into the drums."
+LAYER_LINE = "When you stop, Tandem keeps the take as a layer over the song. The take the song uses stays as it is."
+
+
+def arm_beat(page):
     # BEAT.4: Record a beat from the Beat view, with a take already sung, arms a layer over the song on the Sing step.
     open_view(page, "beat")
     expect(page.locator("#gdrumstate")).to_have_text("None yet")
@@ -322,6 +326,13 @@ def record_beat_layer(page):
     expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
     expect(page.locator("#gstatus")).to_have_text(
         "Your beat is recorded over the song as a layer of its own and read into the drums: tap Record.")
+    # FIX.11: the plan line says what happens to a beat, not what the take helpers would do, and has no Change.
+    expect(page.locator("#gplanline")).to_have_text(BEAT_LINE)
+    expect(page.locator("#gchange")).to_be_hidden()
+
+
+def record_beat_layer(page, lands="beat"):
+    arm_beat(page)
     page.locator("#grecopts > summary").scroll_into_view_if_needed()
     if not page.eval_on_selector("#grecopts", "d => d.open"):
         page.click("#grecopts > summary")
@@ -331,8 +342,8 @@ def record_beat_layer(page):
     page.wait_for_timeout(4000)  # past the count-in, so the beat holds the fake microphone's beeps
     page.click("#grecord")
     page.wait_for_function("/^Recorded your beat as/.test(document.getElementById('gstatus').textContent)", timeout=90_000)
-    # Back in the Beat view, with the next take a take of the voice again.
-    expect(page.locator('.gview[data-view="beat"]')).to_be_visible()
+    # Back in the Beat view (in Takes, where its lane is, when it could not be read), with the next take a take of the voice again.
+    expect(page.locator(f'.gview[data-view="{lands}"]')).to_be_visible()
     assert page.evaluate("document.getElementById('reclayer').checked") is False
 
 
@@ -349,6 +360,12 @@ def test_record_a_beat_after_singing_records_a_layer_read_into_the_drums(browser
             r"^Recorded your beat as Layer 2 and read it into the drums: \d+ hits?\. What the drums held before is kept in Undo\.$"))
         hits = int(page.locator("#gdrumstate").text_content().split()[0])
         assert hits > 0
+        # FIX.11: the next take is a take of the voice again, so the Sing step's line is the helpers' plan once more.
+        page.click('#steps [data-step="sing"]')
+        back_to_record(page)
+        expect(page.locator("#gplanline")).to_have_text(re.compile(r"^When you stop, Tandem will "))
+        expect(page.locator("#gchange")).to_be_visible()
+        open_view(page, "beat")
         # One layer, read into the drums and muted, as the drums now play it.
         layers = page.locator("#layerlanes .lane[data-layer]")
         expect(layers).to_have_count(1)
@@ -379,10 +396,15 @@ def test_a_beat_that_cannot_be_read_is_kept_as_a_layer_and_says_so(browser, serv
         record_take(page)
         page.route("**/api/analyze?mode=rhythm", lambda route: route.fulfill(
             status=503, content_type="application/json", body='{"detail": "The server is busy."}'))
-        record_beat_layer(page)
+        record_beat_layer(page, lands="takes")
         expect(page.locator("#gstatus")).to_have_text(re.compile(
             r"^Recorded your beat as Layer 2, but could not read it into the drums: .+\. "
             r"Transcribe it into the drums from its lane under Takes\.$"))
+        # FIX.11: the drums did not change, so the Beat tile is not marked Changed; the layer is, under Takes.
+        page.click('#steps [data-step="song"]')
+        expect(page.locator("#gtile-beat .gtused")).to_be_hidden()
+        expect(page.locator("#gtile-takes .gtused")).to_be_visible()
+        open_view(page, "beat")
         expect(page.locator("#gdrumstate")).to_have_text("None yet")
         layers = page.locator("#layerlanes .lane[data-layer]")
         expect(layers).to_have_count(1)
@@ -397,10 +419,72 @@ def test_a_beat_with_no_hits_heard_leaves_the_drums_as_they_were(browser, server
         record_take(page)
         page.route("**/api/analyze?mode=rhythm", lambda route: route.fulfill(
             status=200, content_type="application/json", body='{"notes": [], "drums": []}'))
-        record_beat_layer(page)
+        record_beat_layer(page, lands="takes")
         expect(page.locator("#gstatus")).to_have_text(re.compile(
             r"^Recorded your beat as Layer 2, but could not read it into the drums: no drum hits were heard in it\. "))
         expect(page.locator("#layerlanes .lane[data-layer]")).to_have_count(1)
+
+
+def record_in_studio(page):
+    page.click("#record")
+    expect(page.locator("#finish")).to_be_visible()
+    page.wait_for_timeout(4000)
+    page.click("#finish")
+    page.wait_for_function("/^Recorded /.test(document.getElementById('status').textContent)", timeout=90_000)
+
+
+def test_record_a_beat_is_forgotten_once_you_leave_the_sing_step(browser, server_url):
+    # FIX.11: Record a beat arms the next take as a beat only while the Sing step it opened is shown. Left without
+    # recording, a later layer (here and in the all-controls view) is a layer, not read into the drums.
+    with guided_page(browser, server_url) as page:
+        use_server_transcriber(page)
+        page.click('[data-mode="vocal"]')
+        record_take(page)
+        arm_beat(page)
+        # Unticking the layer box forgets it too: ticked again, the next take is a plain layer.
+        page.locator("#grecopts > summary").scroll_into_view_if_needed()
+        if not page.eval_on_selector("#grecopts", "d => d.open"):
+            page.click("#grecopts > summary")
+        page.uncheck("#grecopts #reclayer")
+        expect(page.locator("#gplanline")).to_have_text(re.compile(r"^When you stop, Tandem will "))
+        expect(page.locator("#gchange")).to_be_visible()
+        page.check("#grecopts #reclayer")
+        expect(page.locator("#gplanline")).to_have_text(LAYER_LINE)
+        # Armed again, then the Sing step left for Your song and back: still a layer, no longer a beat.
+        arm_beat(page)
+        page.click('#steps [data-step="song"]')
+        page.click('#steps [data-step="sing"]')
+        expect(page.locator("#gplanline")).to_have_text(LAYER_LINE)
+        page.click("#grecord")
+        page.wait_for_timeout(4000)
+        page.click("#grecord")
+        page.wait_for_function("/^Recorded Layer 2 as a track of its own/.test(document.getElementById('gstatus').textContent)", timeout=90_000)
+        # Armed again, then Show every control from the Sing step: a layer recorded there is a layer too.
+        arm_beat(page)
+        page.click("#gsettings")
+        page.click("#gshowall")
+        expect(page.locator("#reclayer")).to_be_checked()
+        record_in_studio(page)
+        expect(page.locator("#status")).to_have_text(re.compile(r"^Recorded Layer 3 as a track of its own\."))
+        page.click("#showguide")
+        open_view(page, "beat")
+        expect(page.locator("#gdrumstate")).to_have_text("None yet")
+
+
+def test_a_beat_read_on_the_device_says_what_it_reads(browser, server_url):
+    # FIX.11: the on-device read named the recording "your beat", so it said "Reading the beat in your beat".
+    with guided_page(browser, server_url) as page:
+        use_server_transcriber(page)
+        page.click('[data-mode="vocal"]')
+        record_take(page)
+        # The beat is read with the studio's transcriber (the take's helpers set it to the server's): This device.
+        page.evaluate("document.getElementById('transcriber').value = 'basic-pitch'")
+        page.evaluate("""() => { window.seen = []; new MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) seen.push(n.textContent) })
+            .observe(document.getElementById('status'), {childList: true, characterData: true, subtree: true}) }""")
+        record_beat_layer(page)
+        seen = page.evaluate("window.seen")
+        assert "Reading the beat in your recording on this device…" in seen, " | ".join(seen)
+        assert not any("in your beat" in s for s in seen), seen
 
 
 def test_record_a_beat_with_nothing_sung_records_the_first_take_as_a_beat(browser, server_url):
@@ -411,6 +495,20 @@ def test_record_a_beat_with_nothing_sung_records_the_first_take_as_a_beat(browse
         expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
         expect(page.locator('[data-mode="rhythm"]')).to_have_attribute("aria-pressed", "true")
         assert page.evaluate("document.getElementById('reclayer').checked") is False
+
+
+def test_keep_it_says_once_that_no_version_is_saved(browser, server_url):
+    # FIX.11: the Keep it card said both "No versions saved yet." and "No saved versions yet.".
+    with guided_page(browser, server_url) as page:
+        page.click("#gdemo")
+        page.click('#steps [data-step="share"]')
+        card = page.locator('[data-panel="share"]')
+        expect(card.locator("#versionlist")).to_have_text("No saved versions yet.")
+        expect(page.locator("#gversions")).to_have_text("")
+        assert card.inner_text().count("ersions saved yet") + card.inner_text().count("saved versions yet") == 1
+        page.fill("#gversionname", "First go")
+        page.click("#gsaveversion")
+        expect(page.locator("#gversions")).to_have_text("1 version saved on this device.")
 
 
 def test_try_an_example_opens_your_song_with_play_in_view(browser, server_url):

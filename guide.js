@@ -267,6 +267,13 @@ export function planSentence(plan) {
   return "When you stop, Tandem will " + list(plan.map(a => lower(a.label))) + ", then let you hear it.";
 }
 
+// FIX.11: the Sing step's line while the next take is a layer over the song: the take helpers never run on a layer.
+export function layerSentence(beat) {
+  return beat
+    ? "When you stop, Tandem keeps your beat as a layer over the song and reads it into the drums."
+    : "When you stop, Tandem keeps the take as a layer over the song. The take the song uses stays as it is.";
+}
+
 // UX.4: What Tandem did, one line per helper of the plan after the take, from the states runHelpers gave each
 // (done, skipped, failed; none when it never ran) and the sentence it left (notes[action]).
 const PAST = Object.freeze({ Clean: "Cleaned", Fix: "Fixed", Turn: "Turned", Write: "Wrote", Find: "Found", Line: "Lined" });

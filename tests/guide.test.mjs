@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   STEPS, HELPERS, DEFAULTS, PITCH_AMOUNTS, BEAT_STYLES, GUIDE_KEY, normalizeSettings, readSettings, writeSettings,
-  afterTake, stepSummaries, isChords, speedText, pitchAmountName, nextStep, previousStep, planSentence, pastTense, takeReport,
+  afterTake, stepSummaries, isChords, speedText, pitchAmountName, nextStep, previousStep, planSentence, layerSentence, pastTense, takeReport,
   VIEWS, VIEW_GROUPS, viewById, nextView, previousView, playsText, beforeText, viewSummaries, suggestNext, MOVES, PLACES, CONTROL_PLACES,
   MORE_VIEWS, songLines, VIEW_PARTS, PART_VIEWS, studioPart, guidedPlace,
 } from "../guide.js";
@@ -347,4 +347,10 @@ test("UX.9: Show every control opens the part that holds the place, and Guided s
   assert.deepEqual(guidedPlace("song", { step: "sing" }), { step: "song", view: "ask" });
   assert.deepEqual(guidedPlace("share", timing), { step: "share" });
   assert.deepEqual(guidedPlace("voice", { step: "share" }), { step: "song", view: "voice" });
+});
+
+test("FIX.11: the Sing step's line for a layer says what happens to it, and a beat is read into the drums", () => {
+  assert.equal(layerSentence(true), "When you stop, Tandem keeps your beat as a layer over the song and reads it into the drums.");
+  assert.equal(layerSentence(false), "When you stop, Tandem keeps the take as a layer over the song. The take the song uses stays as it is.");
+  assert.doesNotMatch(layerSentence(false), /drums/);
 });
