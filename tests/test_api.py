@@ -669,6 +669,15 @@ def test_placement_module_is_served_and_precached(client):
     assert "from './placement.js'" in run(client("GET","/")).text
     assert "'./placement.js'" in run(client("GET","/sw.js")).text
 
+def test_tap_module_is_served_and_precached(client):
+    # TEMPO.1: the studio and the capture page import tap.js statically.
+    js=run(client("GET","/tap.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function tapTempo" in js.text
+    assert "from './tap.js'" in run(client("GET","/")).text
+    assert "from './tap.js'" in run(client("GET","/capture")).text
+    assert "'./tap.js'" in run(client("GET","/sw.js")).text
+
 def test_chat_project_mirrors_where_recordings_are_placed():
     # GROW.3: placed mirrors placement.js cleanPlaced: channels keyed like the mixer, clips in song order, not
     # overlapping, within 600 s, at most 64 a channel; `uses` may name it.

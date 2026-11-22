@@ -276,6 +276,10 @@ def takes_js():
 def actions_js():
     return FileResponse(Path(__file__).resolve().parent / "actions.js", media_type="text/javascript")
 
+@app.get("/tap.js", include_in_schema=False)
+def tap_js():
+    return FileResponse(Path(__file__).resolve().parent / "tap.js", media_type="text/javascript")
+
 @app.get("/placement.js", include_in_schema=False)
 def placement_js():
     return FileResponse(Path(__file__).resolve().parent / "placement.js", media_type="text/javascript")

@@ -342,7 +342,7 @@ const PLACE_IDS = {
   fixed: "swupdate audiorescue",
   top: "gundo gredo gsettings undo=#gundo redo=#gredo",
   nav: "gback gnext gviewprev gviewdone gviewnext",
-  sing: "grecord gimport gopen gdemo gnewsong gchange gcapture gopenfolder record=#grecord finish=#grecord load=#gopen newsong=#gnewsong " +
+  sing: "grecord gimport gopen gdemo gnewsong gchange gcapture gopenfolder gtap taptempo=#gtap record=#grecord finish=#grecord load=#gopen newsong=#gnewsong " +
     "demo=#gdemo import=#gimport openfolder=#gopenfolder capturelink=#gcapture mode=[data-mode=melody]",
   "sing:options": "grecopts countin recclick recsong reclayer calibrate pitchguide",
   take: "gtakeplay gvoice gnotes gboth gstopnotes gtakekeep gtakeagain gtakeshare",
