@@ -640,7 +640,7 @@ def test_chat_project_accepts_a_pinned_grid_inside_the_first_bar_and_known_uses(
     # A bar at 200 beats a minute is 1.2 s, so an origin that fits at 100 does not.
     with pytest.raises(Exception):
         server.ChatProject(bpm=200,grid={"origin":1.37})
-    for bad in (["placed"],["grid","comp-src"],"grid",[1]):
+    for bad in (["comp-src"],["grid","comp-src"],"grid",[1]):
         with pytest.raises(Exception):
             server.ChatProject(uses=bad)
 
@@ -660,6 +660,44 @@ def test_chat_gets_a_project_without_a_grid_as_before_and_one_with_it(client, mo
     without,none_sent,pinned=seen
     assert without==none_sent and '"grid"' not in without and '"uses"' not in without
     assert '"grid": {"origin": 0.4}' in pinned
+
+def test_placement_module_is_served_and_precached(client):
+    # GROW.3: sections.js, layers.js and the studio import placement.js statically.
+    js=run(client("GET","/placement.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function placeSamples" in js.text
+    assert "from './placement.js'" in run(client("GET","/")).text
+    assert "'./placement.js'" in run(client("GET","/sw.js")).text
+
+def test_chat_project_mirrors_where_recordings_are_placed():
+    # GROW.3: placed mirrors placement.js cleanPlaced: channels keyed like the mixer, clips in song order, not
+    # overlapping, within 600 s, at most 64 a channel; `uses` may name it.
+    assert server.ChatProject().placed is None
+    clips=[{"from":0,"to":4,"at":0},{"from":2,"to":6,"at":4}]
+    got=server.ChatProject(placed={"voice":clips,"band":[],"layer-abc123":[{"from":1,"to":2,"at":9}]},uses=["placed"])
+    assert [(c.from_,c.to,c.at) for c in got.placed.voice]==[(0,4,0),(2,6,4)] and got.uses==["placed"]
+    assert got.placed.model_dump(by_alias=True,exclude_none=True)["layer-abc123"]==[{"from":1,"to":2,"at":9}]
+    for bad in ({"melody":clips},{"layer-UP":clips},{"voice":[{"from":0,"to":2}]},{"voice":[{"from":2,"to":2,"at":0}]},
+                {"voice":[{"from":0,"to":2,"at":0,"x":1}]},{"voice":[{"from":0,"to":2,"at":1},{"from":0,"to":2,"at":2}]},
+                {"voice":[{"from":0,"to":2,"at":599}]},{"voice":[{"from":0,"to":1,"at":i} for i in range(65)]},
+                {"layer-abc":[{"from":0,"to":1,"at":i} for i in range(65)]},{"layer-abc":[{"from":0,"to":2,"at":1},{"from":0,"to":2,"at":2}]}):
+        with pytest.raises(Exception):
+            server.ChatProject(placed=bad)
+
+def test_chat_prompt_leaves_out_where_recordings_play(client, monkeypatch):
+    # GROW.3: placed is accepted from the page but never written into the prompt, which stays as before.
+    monkeypatch.setenv("TANDEM_PROVIDER","openai-compatible")
+    seen=[]
+    async def fake(messages, config=None):
+        seen.append(messages[-1]["content"])
+        return '{"reply":"ok","actions":[]}'
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    project={"bpm":100,"notes":[{"m":60,"t":0,"d":0.5}],"drums":[]}
+    for extra in ({},{"placed":None},{"placed":{"voice":[{"from":0,"to":2,"at":0},{"from":1,"to":2,"at":2}]},"uses":["placed"]}):
+        r=run(client("POST","/api/chat",json={"message":"hi","project":{**project,**extra}}))
+        assert r.status_code==200, r.text
+    without,none_sent,placed=seen
+    assert without==none_sent and '"placed"' not in placed and '"from_"' not in placed
 
 def test_new_instruments_are_accepted_everywhere():
     # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.

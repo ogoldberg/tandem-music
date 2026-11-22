@@ -138,3 +138,18 @@ test("projectXml and metadataXml still write the fixture tests/test_dawproject.p
   assert.equal(projectXml(project, { audio, rate: 44100 }), await readFile(new URL("./fixtures/dawproject-project.xml", import.meta.url), "utf8"));
   assert.equal(metadataXml({ title, key }), await readFile(new URL("./fixtures/dawproject-metadata.xml", import.meta.url), "utf8"));
 });
+
+test("a placed recording is laid out where it plays, the take's slots by the voice's clips (GROW.3)", async () => {
+  const rate = 8000, ramp = n => Float32Array.from({ length: n }, (_, i) => i / n);
+  const placed = { voice: [{ from: 0, to: 2, at: 0 }, { from: 1, to: 2, at: 2 }], band: [] };
+  const files = await unzipFiles(dawProject({
+    project: { bpm: 100, notes: [], drums: [], placed }, rate,
+    audio: { original: { samples: ramp(rate * 2) }, tuned: { samples: ramp(rate * 2) }, band: { samples: ramp(rate), gain: 0.8, muted: false } },
+  }));
+  // Both voice slots are 3 s long (the second second played twice); the band plays nowhere, so it has no track.
+  assert.equal(files.get("audio/vocal-original.wav").length, 44 + rate * 3 * 2);
+  assert.equal(files.get("audio/vocal-tuned.wav").length, 44 + rate * 3 * 2);
+  assert.ok(!files.has("audio/band.wav"));
+  const p = readProject(new TextDecoder().decode(files.get(DAWPROJECT_FILES.project)));
+  assert.equal(p.lanes[p.byName("Vocal (tuned)").id].audio.duration, "3");
+});

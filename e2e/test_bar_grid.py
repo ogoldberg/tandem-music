@@ -191,7 +191,7 @@ def test_a_file_made_with_a_newer_tandem_is_refused(studio, tmp_path):
     page = studio
     project = tmp_path / "newer.json"
     project.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": BPM, "instrument": "piano",
-                                   "melody_locked": True, "notes": LATER, "drums": [], "uses": ["grid", "placed"],
+                                   "melody_locked": True, "notes": LATER, "drums": [], "uses": ["grid", "comp-src"],
                                    "grid": PINNED}))
     page.set_input_files("#projectfile", str(project))
     expect(page.locator("#status")).to_contain_text("This song was made with a newer Tandem. Update, then open it again.")

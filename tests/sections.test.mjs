@@ -1,5 +1,6 @@
 // SONG.1: song sections. Named stretches of the song, and repeating, moving and deleting one across every
-// note part at once (melody, chords, harmony voice, drums); recordings are not touched.
+// note part at once (melody, chords, harmony voice, drums); given no recording lengths, nothing is placed (GROW.3's
+// clips are tested in tests/placement.test.mjs).
 import test from "node:test";
 import assert from "node:assert/strict";
 import {

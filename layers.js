@@ -8,6 +8,8 @@
 // older project or Tandem file opens, saves and exports exactly as before.
 // DOM-free so Node tests import it directly; tandem_backend.py's ProjectLayer mirrors cleanLayers.
 
+import { placedSeconds } from "./placement.js";
+
 export const MAX_LAYERS = 8;
 export const LAYER_TARGETS = Object.freeze(["melody", "harmony", "drums"]);
 export const MAX_LAYER_NAME = 40;
@@ -101,9 +103,10 @@ export function layerStemFile(layers, id) {
 }
 
 // The lengths of the project's layers, for how long the song is. With heard, a layer muted in the mixer is
-// left out (the arrangement's length for Export WAV); the timeline shows every layer, muted or not.
+// left out (the arrangement's length for Export WAV); the timeline shows every layer, muted or not. GROW.3: a
+// placed layer lasts until the end of its last clip (placement.js placedSeconds).
 export function layerSeconds(project, { heard = false } = {}) {
   const layers = Array.isArray(project?.layers) ? project.layers : [];
   const mix = isObject(project?.mix) ? project.mix : {};
-  return layers.filter(l => l && Number.isFinite(l.seconds) && ID.test(l.id) && !(heard && mix[layerKey(l.id)]?.mute === true)).map(l => l.seconds);
+  return layers.filter(l => l && Number.isFinite(l.seconds) && ID.test(l.id) && !(heard && mix[layerKey(l.id)]?.mute === true)).map(l => placedSeconds(project.placed, layerKey(l.id), l.seconds));
 }

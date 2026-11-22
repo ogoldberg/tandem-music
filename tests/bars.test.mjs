@@ -177,13 +177,21 @@ test("a project without the new fields saves byte for byte as before, and one wi
   assert.deepEqual(pinned.grid, { origin: 1.37 });
   assert.deepEqual(pinned.uses, ["grid"]);
   assert.deepEqual(usesOf(state), []);
+  // GROW.3: a placed recording is written with `uses` naming it; an empty placement is not written.
+  const voice = [{ from: 0, to: 4, at: 0 }, { from: 2, to: 6, at: 4 }];
+  const placed = projectFromState({ ...state, placed: { voice } });
+  assert.deepEqual([placed.placed, placed.uses], [{ voice }, ["placed"]]);
+  assert.deepEqual(projectFromState({ ...state, grid: { origin: 1 }, placed: { voice } }).uses, ["grid", "placed"]);
+  for (const none of [null, {}]) assert.equal(JSON.stringify(projectFromState({ ...state, placed: none })), JSON.stringify(projectFromState(state)));
 });
 
 test("a file whose uses names a feature this Tandem does not know is refused", () => {
-  assert.deepEqual(KNOWN_USES, ["grid"]);
+  // GROW.3 added placed.
+  assert.deepEqual(KNOWN_USES, ["grid", "placed"]);
   assert.deepEqual(checkUses(undefined), []);
   assert.deepEqual(checkUses(["grid"]), ["grid"]);
-  for (const newer of [["placed"], ["grid", "comp-src"]]) assert.throws(() => checkUses(newer), e => e.message === NEWER_TANDEM);
+  assert.deepEqual(checkUses(["placed"]), ["placed"]);
+  for (const newer of [["comp-src"], ["grid", "comp-src"]]) assert.throws(() => checkUses(newer), e => e.message === NEWER_TANDEM);
   assert.equal(NEWER_TANDEM, "This song was made with a newer Tandem. Update, then open it again.");
   for (const bad of ["grid", [1], {}]) assert.throws(() => checkUses(bad), /uses must be a list/);
   // The backend knows the same names.

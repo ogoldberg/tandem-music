@@ -69,16 +69,20 @@ export function projectFromState(state) {
     // GROW.1: the pinned bar grid, when it is pinned (bars.js cleanGrid), and `uses` naming it, so a Tandem that does
     // not know it refuses the file instead of opening it with its bars guessed.
     ...(state.grid && typeof state.grid === "object" ? { grid: state.grid } : {}),
+    // GROW.3: where each recording plays, once a section edit moved one (placement.js cleanPlaced), named in `uses`
+    // too, since a Tandem that does not know it would play every recording once from zero.
+    ...(hasPlaced(state) ? { placed: state.placed } : {}),
     ...usesPart(state),
   };
 }
 
 // GROW.1: `uses` lists the optional features a file needs, by name. A file naming one this Tandem does not know was
 // made by a newer Tandem, whose song this one would open wrongly, so it is refused (checkUses) with NEWER_TANDEM.
-export const KNOWN_USES = Object.freeze(["grid"]);
+export const KNOWN_USES = Object.freeze(["grid", "placed"]);
 export const NEWER_TANDEM = "This song was made with a newer Tandem. Update, then open it again.";
+const hasPlaced = state => !!state?.placed && typeof state.placed === "object" && Object.keys(state.placed).length > 0;
 export function usesOf(state) {
-  return KNOWN_USES.filter(name => name === "grid" && state?.grid && typeof state.grid === "object");
+  return KNOWN_USES.filter(name => (name === "grid" && state?.grid && typeof state.grid === "object") || (name === "placed" && hasPlaced(state)));
 }
 function usesPart(state) {
   const uses = usesOf(state);

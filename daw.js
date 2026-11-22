@@ -8,6 +8,7 @@ import { encodeWav, zipFiles } from "./bundle.js";
 import { detectKey, MODES } from "./harmony.js";
 import { monoSamples } from "./recordings.js";
 import { isLayerKey, layerSeconds } from "./layers.js";
+import { placedSeconds } from "./placement.js";
 
 // 960 ticks per quarter note, the same resolution the single-track export used for its timing.
 export const TICKS_PER_BEAT = 960;
@@ -128,7 +129,7 @@ export function midiFile(project, { key = null } = {}) {
 export function arrangementSeconds(project) {
   const ends = [...(project.notes || []), ...(project.harmony || []), ...(Array.isArray(project.voice2) ? project.voice2 : [])].map(n => n.t + n.d + 1)
     .concat((project.drums || []).map(h => h.t + 1))
-    .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [project[k].seconds] : []))
+    .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [placedSeconds(project.placed, k, project[k].seconds)] : []))
     .concat(layerSeconds(project, { heard: true }));
   return Math.max(4, ...ends) + 1;
 }

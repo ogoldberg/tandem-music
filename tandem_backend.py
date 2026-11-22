@@ -2,7 +2,7 @@
 import base64, hashlib, hmac, io, json, os, re, wave
 from email.utils import formatdate
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 import httpx
 import numpy as np
 from scipy import signal
@@ -11,7 +11,7 @@ from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response, FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 from request_guards import RequestGuardMiddleware, AUDIO_BODY_MAX_BYTES, LOCAL_AUDIO_BODY_MAX_BYTES, is_local, from_this_computer
 
 app = FastAPI(title="Tandem API", version="0.2.0")
@@ -276,6 +276,9 @@ def takes_js():
 def actions_js():
     return FileResponse(Path(__file__).resolve().parent / "actions.js", media_type="text/javascript")
 
+@app.get("/placement.js", include_in_schema=False)
+def placement_js():
+    return FileResponse(Path(__file__).resolve().parent / "placement.js", media_type="text/javascript")
 @app.get("/bars.js", include_in_schema=False)
 def bars_js():
     return FileResponse(Path(__file__).resolve().parent / "bars.js", media_type="text/javascript")
@@ -410,7 +413,7 @@ GENRES={
 }
 GENRE_IDS=tuple(GENRES)
 # GROW.1: the optional features a project file may name in `uses`; must be versions.js KNOWN_USES (a Node test checks).
-KNOWN_USES=("grid",)
+KNOWN_USES=("grid","placed")
 class ProjectNote(BaseModel):
     model_config=ConfigDict(extra="forbid")
     m: int = Field(ge=0,le=127)
@@ -556,6 +559,41 @@ class ProjectGrid(BaseModel):
     project's tempo (ChatProject checks that). No AI action edits it."""
     model_config=ConfigDict(extra="forbid")
     origin: float = Field(ge=0,le=600,allow_inf_nan=False)
+class PlacedClip(BaseModel):
+    """GROW.3: the stretch from..to of a recording (seconds) playing from song time `at` (placement.js cleanClips)."""
+    model_config=ConfigDict(extra="forbid",populate_by_name=True)
+    from_: float = Field(alias="from",ge=0,le=600,allow_inf_nan=False)
+    to: float = Field(gt=0,le=600,allow_inf_nan=False)
+    at: float = Field(ge=0,le=600,allow_inf_nan=False)
+def _clips_in_order(clips):
+    end=0.0
+    for c in clips:
+        if c.to<=c.from_:
+            raise ValueError("A placed clip must end after it starts")
+        if c.at+c.to-c.from_>600.001:
+            raise ValueError("A placed clip goes past 600 seconds")
+        if c.at<end-0.001:
+            raise ValueError("Placed clips must be in order and not overlap")
+        end=c.at+c.to-c.from_
+    return clips
+PlacedClips=Annotated[list[PlacedClip],Field(max_length=64),AfterValidator(_clips_in_order)]
+_PLACED_CLIPS=TypeAdapter(PlacedClips)
+class ProjectPlaced(BaseModel):
+    """GROW.3 (ADR-018): where each recording plays in the song (placement.js cleanPlaced), by channel, keyed like
+    the mixer: the voice (the take and what is made from it), band, timbre, voice2_sung and each layer-<id>. No
+    entry is the whole recording from zero. No AI action edits it."""
+    model_config=ConfigDict(extra="allow")
+    @model_validator(mode="after")
+    def _layer_channels(self):
+        for key,value in list((self.model_extra or {}).items()):
+            if not LAYER_KEY.match(key):
+                raise ValueError(f"Unknown placed channel: {key}")
+            self.model_extra[key]=_PLACED_CLIPS.validate_python(value)
+        return self
+    voice: PlacedClips | None = None
+    band: PlacedClips | None = None
+    timbre: PlacedClips | None = None
+    voice2_sung: PlacedClips | None = None
 class ProjectMix(BaseModel):
     """MIX.1: the mixer, only the parts that differ from the defaults. No AI action edits it. TRACK.1: each
     recorded layer's channel is under its key, layer-<id>, with a level, a mute and a solo."""
@@ -599,6 +637,8 @@ class ChatProject(BaseModel):
     takes: ProjectTakes | None = None
     # GROW.1: the pinned bar grid, when it is pinned, and the optional features a file needs (versions.js KNOWN_USES).
     grid: ProjectGrid | None = None
+    # GROW.3: where each recording plays in the song, once a section edit moved one (placement.js cleanPlaced).
+    placed: ProjectPlaced | None = None
     uses: list[Literal[KNOWN_USES]] = Field(default_factory=list,max_length=16)
     @model_validator(mode="after")
     def _grid_in_first_bar(self):
@@ -870,6 +910,9 @@ def chat_messages(req: ChatRequest):
     if project["genre"] is None: del project["genre"]
     # GROW.1: so is a project whose bar grid is not pinned.
     if project["grid"] is None: del project["grid"]
+    # GROW.3: where the recordings play is for the studio's audio, not something the model reads or changes.
+    del project["placed"]
+    project["uses"]=[u for u in project["uses"] if u!="placed"]
     if not project["uses"]: del project["uses"]
     prior=[{"role":m.role,"content":m.content} for m in req.history[-10:]]
     genre=("Genre: "+GENRES[req.project.genre]+"\n") if req.project.genre else ""
