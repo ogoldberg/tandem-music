@@ -918,8 +918,9 @@ def test_generated_harmony_is_editable_undoable_exported_and_saved(studio, tmp_p
     page.select_option("#harmonystyle", "bass")
     page.select_option("#harmonykey", "9:minor")
     page.click("#genharmony")
-    expect(page.locator("#status")).to_have_text("Generate bass line in A minor: C Am")
-    assert [(n["m"], n["t"]) for n in draft(page)["harmony"]] == [(36, 0), (43, 1.2), (45, 2.4), (52, 3.6)]
+    # HARM.4: the tune starts and ends on A minor's tonic, which its notes allow (C E G A, then G E D C).
+    expect(page.locator("#status")).to_have_text("Generate bass line in A minor: Am Am")
+    assert [(n["m"], n["t"]) for n in draft(page)["harmony"]] == [(45, 0), (52, 1.2), (45, 2.4), (52, 3.6)]
     expect(page.locator("#harmonyinstrument")).to_have_value("organ")
 
     # Versions and saved projects carry the harmony part.
@@ -1864,7 +1865,8 @@ def test_create_harmony_offers_lines_plays_each_and_keeps_one_as_one_edit(studio
     expect(page.locator("#voice2trial")).to_have_text("Line 1 of 5: Thirds above in C major")
     expect(page.locator("#status")).to_have_text("Playing composition")
     expect(page.locator("#voice2roll")).to_have_class(re.compile(r"\btrial\b"))
-    thirds = [(64, 0.0), (67, 0.45), (76, 0.9), (72, 1.35), (76, 1.8), (67, 2.25), (65, 2.7), (64, 3.15)]
+    # HARM.4: the line moves by step with the tune, a third above (B over G) rather than leaping to the sixth and back.
+    thirds = [(64, 0.0), (67, 0.45), (71, 0.9), (72, 1.35), (76, 1.8), (72, 2.25), (71, 2.7), (69, 3.15)]
     assert roll_notes(page, "voice2roll") == thirds
     # On trial only: the project, the draft and the history are unchanged.
     expect(page.locator("#voice2count")).to_have_text("0 notes")

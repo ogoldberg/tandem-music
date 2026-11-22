@@ -260,7 +260,10 @@ test("a pickup does not move the bar lines of a free-time tune", () => {
   // On the beat from 1.37 s (off the zero grid) with a half-beat pickup at 1.07 s: the bars start at 1.37 s.
   const notes = [1.07, 1.37, 1.97, 2.57, 3.17, 3.77, 4.37, 4.97, 5.57].map((t, i) => ({ m: [65, 67, 72, 71, 72, 74, 76, 74, 72][i], t, d: 0.25 }));
   const h = generateHarmony({ bpm: 100, notes }, { key: { tonic: 0, mode: "major" } });
-  assert.deepEqual(h.chords.map(c => c.t), [1.37, 3.77]);
+  // HARM.4: a bar may change chord at its half; the bars themselves start at 1.37 s and 3.77 s.
+  const barOf = t => Math.round((1.37 + Math.floor((t - 1.37) / 2.4 + 1e-6) * 2.4) * 1000) / 1000;
+  assert.deepEqual([...new Set(h.chords.map(c => barOf(c.t)))], [1.37, 3.77]);
+  assert.ok(h.chords.every(c => Math.abs(((c.t - 1.37) / 1.2) - Math.round((c.t - 1.37) / 1.2)) < 1e-3), "every chord starts on a bar or half bar");
 });
 
 test("quantize moves the chords and the harmony voice with the melody, on one grid", () => {

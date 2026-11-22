@@ -103,67 +103,145 @@ export function chordsForKey(key) {
 // How well each chord fits the melody inside [start, end): overlap in beats counts +1 for a chord
 // tone, -0.5 for another note of the key and -1 for a note outside it. A note sounding on the
 // downbeat counts double.
-function fit(chord, notes, start, end, beat, scalePcs, prior = PRIOR) {
+function fit(chord, notes, start, end, beat, scalePcs, prior = PRIOR, downbeat = true) {
   let score = 0;
   for (const n of notes) {
     const overlap = Math.min(end, n.t + n.d) - Math.max(start, n.t);
     if (overlap <= 0) continue;
-    const w = (overlap / beat) * (n.t <= start + 1e-6 && n.t + n.d > start ? 2 : 1);
+    const w = (overlap / beat) * (downbeat && n.t <= start + 1e-6 && n.t + n.d > start ? 2 : 1);
     const p = pc(n.m);
     score += chord.pcs.includes(p) ? w : scalePcs.includes(p) ? -0.5 * w : -w;
   }
   return score + (prior[chord.degree] || 0);
 }
 
-// Voice a triad inside CHORD_RANGE as close as possible to the previous voicing (smallest total
-// movement); the first chord is placed nearest the middle of the range.
-function voice(chord, previous) {
-  const [lo, hi] = CHORD_RANGE, target = previous ? null : (lo + hi) / 2;
-  let best = null, bestCost = Infinity;
-  for (let bass = lo; bass <= hi; bass++) {
-    if (!chord.pcs.includes(pc(bass))) continue;
-    // Close position starting on this chord tone.
+// HARM.4: no chord note sounds above the melody's lowest note in its bar (`ceiling`), so the chords sit
+// under a low hummed tune instead of on top of it. Chord notes go no lower than FLOOR (the lowest note the
+// studio's rolls and the AI accept). A chord is voiced in its usual place when that fits under the ceiling,
+// else lower; when even its lowest voicing does not fit, the notes above the ceiling are left out.
+const FLOOR = 36;
+const mean = xs => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+// Close position on each chord tone from FLOOR up to the top of CHORD_RANGE.
+function closePositions(pcs) {
+  const out = [];
+  for (let bass = FLOOR; bass <= CHORD_RANGE[1]; bass++) {
+    if (!pcs.includes(pc(bass))) continue;
     const notes = [bass];
-    while (notes.length < chord.pcs.length) {
+    while (notes.length < pcs.length) {
       let m = notes[notes.length - 1] + 1;
-      while (!chord.pcs.includes(pc(m)) || notes.some(x => pc(x) === pc(m))) m++;
+      while (!pcs.includes(pc(m)) || notes.some(x => pc(x) === pc(m))) m++;
       notes.push(m);
     }
-    if (notes[notes.length - 1] > hi) continue;
-    const cost = previous
-      ? notes.reduce((s, m, i) => s + Math.abs(m - previous[i]), 0)
-      : Math.abs((notes[0] + notes[2]) / 2 - target);
-    if (cost < bestCost - 1e-9) { best = notes; bestCost = cost; }
+    out.push(notes);
+  }
+  return out;
+}
+
+// The candidate under the ceiling with the least cost, taken from the usual band when one there fits.
+function pick(candidates, inBand, ceiling, cost) {
+  const fits = candidates.filter(v => v[v.length - 1] <= ceiling);
+  const pool = fits.some(inBand) ? fits.filter(inBand) : fits;
+  if (!pool.length) {
+    // Nothing fits whole: the lowest voicing without the notes above the ceiling (none when the melody
+    // goes below every chord tone).
+    return (candidates[0] || []).filter(m => m <= ceiling);
+  }
+  let best = null, bestCost = Infinity;
+  for (const v of pool) {
+    const c = cost(v);
+    if (c < bestCost - 1e-9) { best = v; bestCost = c; }
   }
   return best;
+}
+
+// Voice a triad (or a seventh chord) in close position as near the previous voicing as it can (smallest
+// total movement); the first chord nearest the middle of CHORD_RANGE, or a little under the ceiling when
+// that is lower. The usual band is CHORD_RANGE.
+function voice(chord, previous, ceiling = CHORD_RANGE[1]) {
+  const [lo, hi] = CHORD_RANGE, top = Math.min(hi, ceiling), target = Math.min((lo + hi) / 2, top - 4);
+  const cost = previous && previous.length
+    ? v => v.reduce((s, m, i) => s + Math.abs(m - (previous[i] ?? previous[previous.length - 1])), 0)
+    : v => Math.abs((v[0] + v[v.length - 1]) / 2 - target);
+  return pick(closePositions(chord.pcs), v => v[0] >= lo, top, cost);
 }
 
 // GENRE.1 voicings (genre.js VOICINGS). "triad" is voice() above. "seventh" adds the key's seventh above
 // the root (a scale tone 10 or 11 semitones up: maj7, m7 or 7) in close position. "power" is the root, the
 // fifth and the octave, the root in E2..F3; "open" the root, the fifth and the third an octave up (a tenth),
-// the root in F2..E3. Each is placed nearest the previous chord (the first nearest the middle).
+// the root in F2..E3. Each is placed nearest the previous chord (the first nearest the middle), lower when
+// the melody is (HARM.4).
 const RHYTHM_STRIKES = { bar: 1, half: 2, beats: 4 };
 const POWER_ROOTS = [40, 53], OPEN_ROOTS = [41, 52];
 function seventhOf(chord, scalePcs) {
   const s = [10, 11].map(x => (chord.root + x) % 12).find(p => scalePcs.includes(p));
   return s === undefined ? chord : { ...chord, pcs: [...chord.pcs, s] };
 }
-function spread(chord, previous, [lo, hi], shape) {
-  const target = previous ? previous.reduce((a, b) => a + b, 0) / previous.length : null;
-  let best = null, bestCost = Infinity;
-  for (let r = lo; r <= hi; r++) {
-    if (pc(r) !== chord.root) continue;
-    const notes = shape(r), mean = notes.reduce((a, b) => a + b, 0) / notes.length;
-    const cost = target === null ? Math.abs(r - (lo + hi) / 2) : Math.abs(mean - target);
-    if (cost < bestCost - 1e-9) { best = notes; bestCost = cost; }
-  }
-  return best;
+function spread(chord, previous, [lo, hi], shape, ceiling) {
+  const candidates = [];
+  for (let r = FLOOR; r <= hi; r++) if (pc(r) === chord.root) candidates.push(shape(r));
+  const cost = previous && previous.length ? v => Math.abs(mean(v) - mean(previous)) : v => Math.abs(v[0] - (lo + hi) / 2);
+  return pick(candidates, v => v[0] >= lo, ceiling, cost);
 }
-function voiceFor(chord, previous, voicing, scalePcs) {
-  if (voicing === "seventh") return voice(seventhOf(chord, scalePcs), previous);
-  if (voicing === "power") return spread(chord, previous, POWER_ROOTS, r => [r, r + 7, r + 12]);
-  if (voicing === "open") return spread(chord, previous, OPEN_ROOTS, r => [r, r + 7, r + (chord.quality === "major" ? 16 : 15)]);
-  return voice(chord, previous);
+function voiceFor(chord, previous, voicing, scalePcs, ceiling = CHORD_RANGE[1]) {
+  if (voicing === "seventh") return voice(seventhOf(chord, scalePcs), previous, ceiling);
+  if (voicing === "power") return spread(chord, previous, POWER_ROOTS, r => [r, r + 7, r + 12], ceiling);
+  if (voicing === "open") return spread(chord, previous, OPEN_ROOTS, r => [r, r + 7, r + (chord.quality === "major" ? 16 : 15)], ceiling);
+  return voice(chord, previous, ceiling);
+}
+
+// HARM.4: chords that go somewhere. The chords are chosen for the whole song at once (Viterbi over half
+// bars) instead of bar by bar: besides how well a chord fits the melody (fit), a chord change at a bar line
+// scores the move (MOVES: V to I, ii to V and IV to V go somewhere; V back to IV or ii does not), holding a
+// chord into a second, third or fourth bar costs STAY more each time, a change in the middle of a bar must
+// fit HALF_CHANGE beats better to be worth it (the downbeat doubling of fit is the bar's, not beat 3's), the
+// first half bar leans to the tonic by START and the last one by ENDING, when their notes allow. A genre (genre.js) adds its own moves and scales the stay and half-bar costs.
+const MOVES = Object.freeze({
+  "V>I": 1, "ii>V": 0.8, "IV>V": 0.6, "I>IV": 0.5, "vi>IV": 0.5, "vi>ii": 0.5, "I>V": 0.4, "I>vi": 0.4, "IV>I": 0.4,
+  "iii>vi": 0.4, "V>vi": 0.3, "IV>ii": 0.3, "I>ii": 0.3, "V>IV": -0.4, "V>ii": -0.5, "ii>I": -0.2, "iii>IV": 0.2,
+  "V>i": 1, "iv>V": 0.6, "VI>V": 0.5, "i>iv": 0.5, "VII>III": 0.5, "i>V": 0.4, "i>VI": 0.4, "VI>iv": 0.4, "iv>i": 0.3,
+  "III>iv": 0.3, "i>VII": 0.3, "VII>i": 0.3, "III>VI": 0.3, "V>iv": -0.4, "V>III": -0.4,
+});
+const STAY = Object.freeze([0.2, 0.6, 1.2]);
+const HALF_CHANGE = 2;
+const START = 1, ENDING = 2.5;
+const TONIC = new Set(["I", "i"]);
+
+// The chord of each half bar: `fits[u][c]` is how well chord c fits half bar u, `empty[u]` that no melody
+// sounds there (no change is made in it), `barLine[u]` that it starts a bar. Returns chord indexes.
+function progression(chords, fits, empty, barLine, { moves = {}, stay = 1, split = 1 } = {}) {
+  const C = chords.length, R = STAY.length + 1, U = fits.length;
+  const move = (a, b) => (MOVES[chords[a].roman + ">" + chords[b].roman] || 0) + (moves[chords[a].roman + ">" + chords[b].roman] || 0);
+  // score[c * R + r]: the best total ending in chord c held for r + 1 bars (capped).
+  let score = new Float64Array(C * R).fill(-Infinity);
+  const back = [];
+  for (let c = 0; c < C; c++) score[c * R] = fits[0][c];
+  for (let u = 1; u < U; u++) {
+    const next = new Float64Array(C * R).fill(-Infinity), from = new Int32Array(C * R).fill(-1);
+    const offer = (state, value, prev) => { if (value > next[state] + 1e-9) { next[state] = value; from[state] = prev; } };
+    for (let a = 0; a < C; a++) for (let r = 0; r < R; r++) {
+      const s = score[a * R + r];
+      if (s === -Infinity) continue;
+      // Holding the chord: free inside a bar and through a bar with no melody.
+      if (!barLine[u] || empty[u]) offer(a * R + r, s + fits[u][a], a * R + r);
+      else offer(a * R + Math.min(r + 1, R - 1), s + fits[u][a] - STAY[Math.min(r, STAY.length - 1)] * stay, a * R + r);
+      if (empty[u]) continue;
+      for (let b = 0; b < C; b++) {
+        if (b === a) continue;
+        offer(b * R, s + fits[u][b] + move(a, b) - (barLine[u] ? 0 : HALF_CHANGE * split), a * R + r);
+      }
+    }
+    back.push(from);
+    score = next;
+  }
+  let state = 0;
+  for (let k = 1; k < C * R; k++) if (score[k] > score[state] + 1e-9) state = k;
+  const out = new Array(U);
+  for (let u = U - 1; u >= 0; u--) {
+    out[u] = Math.floor(state / R);
+    if (u > 0) state = back[u - 1][state];
+  }
+  return out;
 }
 
 // GENRE.1 bass patterns (genre.js BASS_PATTERNS) for one bar from t: [offset in beats, length in beats,
@@ -182,14 +260,18 @@ function bassBar(pattern, chord, next) {
   return [[0, 2, 0], [2, 2, 7]];
 }
 
-// Generate an accompaniment for the melody, one chord per 4/4 bar at the project tempo.
+// Generate an accompaniment for the melody in 4/4 bars at the project tempo.
 // The bars are groove.js barOrigin's (FIX.3), the grid the starter beat and quantize use: from zero
 // when the melody and drums sit on it, else from the first downbeat the onsets agree on; the first
 // bar is the one the first melody note falls in, so a pickup does not move the bar lines, and a pickup
-// (a first note in the second half of its bar) is left unaccompanied. Each bar takes the chord of the key that best fits the melody notes it
-// overlaps (see fit); a bar with no melody keeps the previous chord. style "chords" holds a
-// voiced triad for the bar; "bass" plays the root on beat 1 and the fifth on beat 3. key defaults to detectKey(notes).
-// feel (GENRE.1, genre.js harmonyStyle) is a genre's {prior, voicing, rhythm, bass}; null keeps all of the above.
+// (a first note in the second half of its bar) is left unaccompanied. The chords are chosen for the whole
+// song at once (HARM.4, progression): each bar takes a chord of the key, or two for its halves where the
+// second fits much better, so the chords move like a progression and end on the tonic when the last notes
+// allow; a bar with no melody keeps the previous chord. style "chords" holds a voiced triad, under the
+// melody's lowest note in the bar; "bass" plays the root on beat 1 and the fifth on beat 3 (the root alone
+// for a half-bar chord). key defaults to detectKey(notes).
+// feel (GENRE.1, genre.js harmonyStyle) is a genre's {prior, voicing, rhythm, bass, moves, stay, split};
+// null keeps Tandem's own.
 // Returns {key, chords:[{t,d,name,roman}], notes:[{m,t,d}]}; the input is unchanged.
 export function generateHarmony(project, { style = "chords", key = null, feel = null } = {}) {
   if (!STYLES.includes(style)) throw new Error(`Unknown accompaniment style: ${style}`);
@@ -201,7 +283,7 @@ export function generateHarmony(project, { style = "chords", key = null, feel = 
   if (!useKey) throw new Error("The melody needs at least three notes with two different pitches to find its key; choose a key instead.");
   const chords = chordsForKey(useKey);
   const scalePcs = SCALE_STEPS[useKey.mode].map(x => (useKey.tonic + x) % 12);
-  const bar = barSeconds(bpm), beat = bar / BEATS_PER_BAR;
+  const bar = barSeconds(bpm), beat = bar / BEATS_PER_BAR, half = bar / 2;
   const grid = barOrigin({ bpm, notes: melody, drums: project?.drums || [], grid: project?.grid ?? null });
   const end = Math.max(...melody.map(n => n.t + n.d));
   const first = grid + Math.floor((melody[0].t - grid) / bar + 1e-6) * bar;
@@ -215,51 +297,69 @@ export function generateHarmony(project, { style = "chords", key = null, feel = 
   }
   const bars = Math.max(1, Math.ceil((end - origin) / bar - 1e-6));
 
-  const picked = [];
+  // Two half bars a bar; the prior is shared between them, as it was a bar's.
+  const prior = feel ? feel.prior : PRIOR, fits = [], empty = [], barLine = [];
+  const sounds = (start, stop) => melody.some(n => n.t < stop && n.t + n.d > start);
   for (let b = 0; b < bars; b++) {
-    const start = origin + b * bar, stop = start + bar;
-    const sounding = melody.some(n => n.t < stop && n.t + n.d > start);
-    if (!sounding && picked.length) { picked.push(picked[picked.length - 1]); continue; }
-    let best = null, bestScore = -Infinity;
-    for (const c of chords) {
-      const s = fit(c, melody, start, stop, beat, scalePcs, feel ? feel.prior : PRIOR);
-      if (s > bestScore + 1e-9) { best = c; bestScore = s; }
+    const start = origin + b * bar, silentBar = !sounds(start, start + bar);
+    for (let h = 0; h < 2; h++) {
+      const s = start + h * half;
+      fits.push(chords.map(c => fit(c, melody, s, s + half, beat, scalePcs, {}, h === 0) + (prior[c.degree] || 0) / 2));
+      empty.push(silentBar || (h === 1 && !sounds(s, s + half)));
+      barLine.push(h === 0);
     }
-    picked.push(best);
+  }
+  // The song starts at home when its first notes allow, and its last half bar with melody leans to the tonic.
+  const lastSung = empty.lastIndexOf(false), tonic = chords.findIndex(c => TONIC.has(c.roman));
+  // "Allow": the tonic fits those notes better than not (a last B, the leading tone, is not pulled to I).
+  const allows = u => fits[u][tonic] - (prior[chords[tonic].degree] || 0) / 2 > 0;
+  const starts = allows(0), ends = lastSung >= 0 && allows(lastSung);
+  if (starts) fits[0][tonic] += START;
+  if (ends) fits[lastSung][tonic] += ENDING;
+  const path = progression(chords, fits, empty, barLine, feel || {});
+
+  // One chord a bar, or one a half bar where the halves differ.
+  const spans = [];
+  for (let b = 0; b < bars; b++) {
+    const [a, z] = [path[2 * b], path[2 * b + 1]], at = origin + b * bar;
+    if (a === z) spans.push({ c: chords[a], t: at, d: bar, bar: b });
+    else spans.push({ c: chords[a], t: at, d: half, bar: b }, { c: chords[z], t: at + half, d: half, bar: b });
+  }
+  // The melody's lowest note in each bar; a bar with no melody keeps the last one.
+  const ceilings = [];
+  for (let b = 0; b < bars; b++) {
+    const start = origin + b * bar, under = melody.filter(n => n.t < start + bar - 1e-6 && n.t + n.d > start + 1e-6);
+    ceilings.push(under.length ? Math.min(...under.map(n => n.m)) : (ceilings[b - 1] ?? Math.min(...melody.map(n => n.m))));
   }
 
   const notes = [], chordList = [];
   let previous = null;
-  picked.forEach((c, b) => {
-    const t = round3(origin + b * bar);
-    chordList.push({ t, d: round3(bar), name: c.name, roman: c.roman });
-    if (feel) {
-      const at = origin + b * bar;
-      if (style === "chords") {
-        const voiced = voiceFor(c, previous, feel.voicing, scalePcs), strikes = RHYTHM_STRIKES[feel.rhythm] || 1, each = bar / strikes;
-        previous = voiced;
-        for (let k = 0; k < strikes; k++) for (const m of voiced) notes.push({ m, t: round3(at + k * each), d: round3(each * RELEASE) });
-      } else {
-        const root = BASS_LOW + ((c.root - BASS_LOW) % 12 + 12) % 12;
-        for (const [off, len, up] of bassBar(feel.bass, c, picked[b + 1] || picked[0])) notes.push({ m: root + up, t: round3(at + off * beat), d: round3(len * beat * RELEASE) });
-      }
-      return;
-    }
+  spans.forEach((s, i) => {
+    const { c, t: at, d } = s;
+    chordList.push({ t: round3(at), d: round3(d), name: c.name, roman: c.roman });
     if (style === "chords") {
-      const voiced = voice(c, previous);
-      previous = voiced;
-      for (const m of voiced) notes.push({ m, t, d: round3(bar * RELEASE) });
+      const voiced = feel ? voiceFor(c, previous, feel.voicing, scalePcs, ceilings[s.bar]) : voice(c, previous, ceilings[s.bar]);
+      if (voiced.length) previous = voiced;
+      const strikes = Math.max(1, Math.round((feel ? RHYTHM_STRIKES[feel.rhythm] || 1 : 1) * d / bar)), each = d / strikes;
+      for (let k = 0; k < strikes; k++) for (const m of voiced) notes.push({ m, t: round3(at + k * each), d: round3(each * RELEASE) });
     } else {
-      const root = BASS_LOW + ((c.root - BASS_LOW) % 12 + 12) % 12;
-      const half = bar / 2;
-      notes.push({ m: root, t, d: round3(half * RELEASE) });
-      notes.push({ m: root + 7, t: round3(origin + b * bar + half), d: round3(half * RELEASE) });
+      const root = BASS_LOW + ((c.root - BASS_LOW) % 12 + 12) % 12, next = (spans[i + 1] || spans[0]).c;
+      const from = (at - (origin + s.bar * bar)) / beat, to = from + d / beat;
+      for (const [off, len, up] of bassSpan(feel ? feel.bass : "rootfifth", c, next, from, to)) notes.push({ m: root + up, t: round3(at + (off - from) * beat), d: round3(len * beat * RELEASE) });
     }
   });
   if (notes.length > MAX_HARMONY_NOTES) {
     throw new Error(`The melody is too long for a harmony part: ${bars} bars would need ${notes.length} notes, over the ${MAX_HARMONY_NOTES}-note limit.`);
   }
   return { key: { tonic: useKey.tonic, mode: useKey.mode }, chords: chordList, notes };
+}
+
+// A bar's bass pattern for the beats [from, to) of it (the whole bar, or the half a half-bar chord has):
+// the pattern's notes starting there, cut at `to`, and the root at `from` when none starts there.
+function bassSpan(pattern, chord, next, from, to) {
+  const events = bassBar(pattern, chord, next).filter(([off]) => off >= from - 1e-9 && off < to - 1e-9).map(([off, len, up]) => [off, Math.min(len, to - off), up]);
+  if (!events.length || events[0][0] > from + 1e-9) events.unshift([from, (events[0]?.[0] ?? to) - from, 0]);
+  return events;
 }
 
 // HARM.2: harmony lines for the harmony voice (ADR-014). The first is the default; Try another steps
@@ -316,7 +416,8 @@ function thirdsAbove(melody, pcs, chords) {
     for (const [steps, bias] of [[2, 0], [5, 0.5]]) {
       const m = stepsInKey(n.m, pcs, steps);
       if (m === null) continue;
-      const cost = (chord.size && !chord.has(pc(m)) ? 10 : 0) + bias + (prev === null ? 0 : Math.abs(m - prev) * 0.1);
+      const leap = prev === null ? 0 : Math.abs(m - prev);
+      const cost = (chord.size && !chord.has(pc(m)) ? 10 : 0) + bias + leap * 0.1 + (leap > LEAP ? LEAP_COST + leap : 0);
       if (cost < bestCost - 1e-9) { best = m; bestCost = cost; }
     }
     if (best === null) continue;
@@ -349,7 +450,7 @@ function counterMelody(melody, pcs, chords, bpm) {
     let best = null, bestCost = Infinity;
     for (let m = lo; m <= hi; m++) {
       if (!allowed.includes(pc(m))) continue;
-      let cost = prev === null ? Math.abs(m - (lo + hi) / 2) : m === prev ? 3.5 : Math.abs(m - prev);
+      let cost = prev === null ? Math.abs(m - (lo + hi) / 2) : m === prev ? 3.5 : Math.abs(m - prev) + (Math.abs(m - prev) > LEAP ? LEAP_COST : 0);
       if (prev !== null && prevMel !== null && mel !== prevMel && Math.sign(mel - prevMel) === Math.sign(m - prev)) {
         cost += 1;
         const iv0 = pc(prevMel - prev), iv1 = pc(mel - m);
@@ -365,6 +466,9 @@ function counterMelody(melody, pcs, chords, bpm) {
   return out;
 }
 const MIN_LINE = 36;
+// HARM.4: a harmony line moving more than a fourth from one note to the next costs more than a note
+// outside the chord, so a line follows a stepwise tune by step instead of leaping a seventh and back.
+const LEAP = 5, LEAP_COST = 15;
 
 // Every harmony line for the melody in `key`, against `chords` (the harmony part's notes; when there
 // are none, the chords generateHarmony works out from the melody). Lines that come out the same as
@@ -379,7 +483,8 @@ export function harmonyLines(project, { key = null, chords = null } = {}) {
   const build = {
     thirds: () => thirds,
     sixth_below: () => shifted(-5),
-    octave: () => melody.filter(n => pcs.includes(pc(n.m))).map(n => ({ m: n.m - 12 >= MIN_LINE ? n.m - 12 : n.m + 12, t: n.t, d: n.d })),
+    // The whole line an octave down, or up when the tune is too low for that, so it never jumps between the two.
+    octave: () => { const kept = melody.filter(n => pcs.includes(pc(n.m))), by = kept.length && Math.min(...kept.map(n => n.m)) - 12 >= MIN_LINE ? -12 : 12; return kept.map(n => ({ m: n.m + by, t: n.t, d: n.d })); },
     counter: () => counterMelody(melody, pcs, context, Number(project.bpm) || 100),
     stack: () => [...thirds, ...shifted(-2)].sort((a, b) => a.t - b.t || a.m - b.m),
   };
