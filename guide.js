@@ -363,7 +363,7 @@ const PLACE_IDS = {
     "removevoice2sung voice2create=#gvoice2create voice2next=#gvoice2next voice2keep=#gvoice2keep voice2cancel=#gvoice2cancel singvoice2=#gsingvoice2",
   "view:voice2:more": "voice2interval voice2dup clearvoice2 voice2draw voice2all voice2delete voice2octdown voice2octup voice2keydown voice2keyup " +
     "voice2semidown voice2semiup",
-  "view:beat": "gbeat ggroove ggrooveadd gnodrums gmore-beat groove=#ggroove addgroove=#ggrooveadd",
+  "view:beat": "gbeat ggroove ggrooveadd gfill gfilladd gnodrums gmore-beat groove=#ggroove addgroove=#ggrooveadd fill=#gfill addfills=#gfilladd",
   "view:beat:more": "groovebars groovekeep drum addhit clearhits",
   "view:sound": "ggenre ginstrument gharminst gvoice2inst gmore-sound bandstyle bandfollows banddrums genband playbandtrack bandmute removeband " +
     "timbreinstrument gentimbre playtimbretrack timbremute removetimbre genre=#ggenre instrument=#ginstrument harmonyinstrument=#gharminst " +

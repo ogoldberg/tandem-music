@@ -104,3 +104,62 @@ export function cleanBeat(beat) {
   const bpm = Number(beat.bpm);
   return Number.isFinite(bpm) && bpm >= MIN_BPM && bpm <= MAX_BPM ? { id: beat.id, bpm } : null;
 }
+
+// BEAT.2: drum fills. A fill is half a bar of kick, snare and hi-hat (the beat, 0 up to 2, each drum is hit on in
+// that half bar) that replaces the last half bar of the beat before a section starts or ends, or every four bars
+// from the bar grid's origin when there are no sections, wherever the drums play on both sides of that line.
+export const FILL_BARS = 4;
+const sixteenths = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75];
+export const FILLS = Object.freeze([
+  { id: "build", name: "Build", about: "Pop: the snare picks up into the next bar over two kicks", half: { kick: [0, 1], snare: [0.5, 1, 1.5, 1.75], hat: [0] } },
+  { id: "roll", name: "Snare roll", about: "Rock: a kick, then the snare on every sixteenth", half: { kick: [0], snare: sixteenths } },
+  { id: "light", name: "Light", about: "Folk: a few soft snare notes and the hi-hat", half: { kick: [0], snare: [1, 1.5, 1.75], hat: [0.5] } },
+  { id: "triplet", name: "Triplet", about: "Jazz: the snare in triplets after a kick", half: { kick: [0], snare: [1 / 3, 2 / 3, 1, 4 / 3, 5 / 3], hat: [0] } },
+  { id: "break", name: "Break", about: "Hip-hop: a syncopated kick and snare, the hi-hat at the end", half: { kick: [0, 0.75], snare: [0.5, 1.25, 1.5], hat: [1.75] } },
+  { id: "riser", name: "Riser", about: "Electronic: kicks on the eighths under a snare that speeds up", half: { kick: [0, 0.5, 1, 1.5], snare: [1, 1.25, 1.5, 1.75] } },
+].map(f => Object.freeze({ ...f, half: Object.freeze(f.half) })));
+
+export function fillById(id) {
+  const f = FILLS.find(x => x.id === id);
+  if (!f) throw Error(`There is no drum fill called ${id}.`);
+  return f;
+}
+
+// The lines a fill leads into, in time order: each section's start and end (else every FILL_BARS bars from
+// `origin`), each at least half a bar into the song, a line within half a bar of the one before left out.
+export function fillLines({ bpm, origin = 0, sections = [], end }) {
+  const bar = barSeconds(bpm), half = bar / 2, lines = [];
+  if (sections.length) for (const s of sections) lines.push(s.from, s.to);
+  else for (let t = origin + FILL_BARS * bar; t <= end + 1e-9; t += FILL_BARS * bar) lines.push(t);
+  const out = [];
+  for (const t of [...new Set(lines.map(round6))].sort((a, c) => a - c)) {
+    if (t - half < -1e-9 || t > MAX_TIME) continue;
+    if (out.length && t - out[out.length - 1] < half - 1e-9) continue;
+    out.push(t);
+  }
+  return out;
+}
+
+// The drum part with the fill before each line where the drums play in the half bar before it and in the half
+// bar after it (a fill leads from the beat into more of it, never out of silence or into it); `lines` says
+// where they went. Fills replace whatever was in their half bar, so adding them again gives the same drums.
+export function withFills(drums, id, { bpm, origin = 0, sections = [] }) {
+  const f = fillById(id), bar = barSeconds(bpm), half = bar / 2, beat = bar / BEATS_PER_BAR;
+  const old = (drums || []).map(h => ({ ...h }));
+  if (!old.length) throw Error("Add a beat first: a fill replaces the end of a bar of drums.");
+  const end = Math.max(...old.map(h => h.t));
+  // Hit times are rounded to the microsecond, so the windows are worked out from rounded times too, with a
+  // tolerance above the rounding: a hit on the window's edge must fall inside it at any tempo.
+  const eps = 2e-6, from = t => round6(t - half), upto = t => round6(t), after = t => round6(t + half);
+  const inWindow = (h, a, b) => h.t >= a - eps && h.t < b - eps;
+  const lines = fillLines({ bpm, origin, sections, end }).filter(t =>
+    old.some(h => inWindow(h, from(t), upto(t))) && old.some(h => inWindow(h, upto(t), after(t))));
+  let out = old.filter(h => !lines.some(t => inWindow(h, from(t), upto(t))));
+  for (const t of lines) for (const [k, beats] of Object.entries(f.half)) for (const x of beats) {
+    const at = round6(t - half + x * beat);
+    if (at >= 0 && at <= MAX_TIME) out.push({ k, t: at });
+  }
+  out.sort((a, c) => a.t - c.t || ORDER[a.k] - ORDER[c.k]);
+  if (out.length > MAX_HITS) throw new Error(`The drums would have more than ${MAX_HITS} hits.`);
+  return { drums: out, lines };
+}

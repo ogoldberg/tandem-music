@@ -11,14 +11,14 @@
 // - the quantize grid, strength and swing the studio's controls start on (`beat`);
 // - the tempo range Detect tempo searches (`tempo`), so a song is not read at double or half speed;
 // - the melody and harmony instruments (`instruments`), set when the genre is chosen;
-// - the starter beat offered (`groove`, a beats.js groove);
+// - the starter beat offered (`groove`, a beats.js groove) and the drum fill (`fill`, a beats.js fill, BEAT.2);
 // - the band's style text, filled in when the band's box is empty (`band`);
 // - context for the AI chat: the project's `genre` goes with it, and tandem_backend.py GENRES gives the
 //   model a line about the genre (same ids in the same order, which a Node test checks).
 
 import { TEMPO_RANGE } from "./groove.js";
 import { INSTRUMENTS } from "./voices.js";
-import { GROOVES } from "./beats.js";
+import { GROOVES, FILLS } from "./beats.js";
 
 export const VOICINGS = Object.freeze(["triad", "seventh", "power", "open"]);
 export const RHYTHMS = Object.freeze({ bar: 1, half: 2, beats: 4 });
@@ -36,7 +36,7 @@ export const GENRES = Object.freeze([
     harmony: { prior: { 0: 0.3, 5: 0.25, 7: 0.25, 9: 0.25, 8: 0.2, 10: 0.2 }, voicing: "triad", rhythm: "half", bass: "rootfifth",
       moves: { "I>V": 0.5, "V>vi": 0.7, "vi>IV": 0.6, "IV>I": 0.3, "i>VI": 0.5, "VI>III": 0.5, "III>VII": 0.5, "VII>i": 0.3 }, stay: 1, split: 1 },
     beat: { division: 4, strength: 0.75, swing: 0 }, tempo: [80, 140],
-    instruments: { melody: "piano", harmony: "piano" }, groove: "straight",
+    instruments: { melody: "piano", harmony: "piano" }, groove: "straight", fill: "build",
     band: "bright pop band with piano, bass and drums",
   },
   {
@@ -44,7 +44,7 @@ export const GENRES = Object.freeze([
     harmony: { prior: { 0: 0.3, 5: 0.25, 7: 0.25, 10: 0.25, 8: 0.15 }, voicing: "power", rhythm: "beats", bass: "roots",
       moves: { "IV>I": 0.6, "V>IV": 1, "I>IV": 0.3, "i>VII": 0.6, "VII>VI": 0.5, "VI>VII": 0.4, "VII>i": 0.5 }, stay: 1, split: 1.3 },
     beat: { division: 4, strength: 1, swing: 0 }, tempo: [90, 170],
-    instruments: { melody: "guitar", harmony: "guitar" }, groove: "straight",
+    instruments: { melody: "guitar", harmony: "guitar" }, groove: "straight", fill: "roll",
     band: "driving rock band with electric guitars, bass and drums",
   },
   {
@@ -52,7 +52,7 @@ export const GENRES = Object.freeze([
     harmony: { prior: { 0: 0.35, 2: -0.4, 4: -0.5, 5: 0.25, 7: 0.25, 9: -0.4, 3: -0.3, 8: -0.3, 10: -0.3 }, voicing: "open", rhythm: "half", bass: "rootfifth",
       moves: { "I>IV": 0.3, "IV>I": 0.4, "V>I": 0.3, "I>V": 0.3, "i>iv": 0.3, "iv>i": 0.3, "V>i": 0.3 }, stay: 0.7, split: 1.2 },
     beat: { division: 2, strength: 0.75, swing: 0 }, tempo: [70, 130],
-    instruments: { melody: "flute", harmony: "guitar" }, groove: "straight",
+    instruments: { melody: "flute", harmony: "guitar" }, groove: "straight", fill: "light",
     band: "warm acoustic folk band with guitar, upright bass and light percussion",
   },
   {
@@ -60,7 +60,7 @@ export const GENRES = Object.freeze([
     harmony: { prior: { 2: 0.3, 7: 0.3, 0: 0.2, 5: 0.15 }, voicing: "seventh", rhythm: "half", bass: "walk",
       moves: { "ii>V": 1, "vi>ii": 0.7, "I>vi": 0.5, "iii>vi": 0.5, "IV>ii": 0.4, "I>ii": 0.3, "ii>I": -0.4, "VI>iv": 0.4, "iv>V": 0.5, "III>VI": 0.4 }, stay: 1.5, split: 0.5 },
     beat: { division: 2, strength: 0.75, swing: 1 }, tempo: [90, 200],
-    instruments: { melody: "piano", harmony: "organ" }, groove: "shuffle",
+    instruments: { melody: "piano", harmony: "organ" }, groove: "shuffle", fill: "triplet",
     band: "small jazz combo with piano, upright bass and brushed drums",
   },
   {
@@ -68,7 +68,7 @@ export const GENRES = Object.freeze([
     harmony: { prior: { 0: 0.3, 9: 0.2, 5: 0.2, 3: 0.2, 8: 0.2 }, voicing: "seventh", rhythm: "bar", bass: "held",
       moves: { "I>vi": 0.5, "vi>IV": 0.6, "IV>I": 0.4, "i>VI": 0.6, "VI>VII": 0.5, "VII>i": 0.5, "i>iv": 0.3 }, stay: 0.4, split: 1.5 },
     beat: { division: 4, strength: 1, swing: 0.25 }, tempo: [70, 110],
-    instruments: { melody: "marimba", harmony: "piano" }, groove: "halftime",
+    instruments: { melody: "marimba", harmony: "piano" }, groove: "halftime", fill: "break",
     band: "laid-back hip-hop beat with dusty drums, deep bass and mellow keys",
   },
   {
@@ -76,7 +76,7 @@ export const GENRES = Object.freeze([
     harmony: { prior: { 0: 0.3, 9: 0.25, 5: 0.2, 8: 0.2, 3: 0.15 }, voicing: "open", rhythm: "beats", bass: "octaves",
       moves: { "vi>IV": 0.7, "IV>I": 0.5, "I>V": 0.5, "V>vi": 0.7, "i>VI": 0.6, "VI>III": 0.5, "III>VII": 0.5, "VII>i": 0.5 }, stay: 0.8, split: 1.2 },
     beat: { division: 4, strength: 1, swing: 0 }, tempo: [110, 140],
-    instruments: { melody: "chip", harmony: "strings" }, groove: "four",
+    instruments: { melody: "chip", harmony: "strings" }, groove: "four", fill: "riser",
     band: "electronic dance track with synth pads, pulsing bass and four-on-the-floor drums",
   },
 ].map(g => Object.freeze({
@@ -109,6 +109,9 @@ export const tempoRange = id => genreById(id)?.tempo ?? TEMPO_RANGE;
 // The quantize grid (divisions a beat), strength 0..1 and swing 0..1 the controls start on, or null to leave them.
 export const beatFor = id => genreById(id)?.beat ?? null;
 
+// BEAT.2: the drum fill the Fills menu starts on; Build without a genre.
+export const fillFor = id => genreById(id)?.fill ?? "build";
+
 // The project fields choosing the genre changes in one edit: the genre and its instruments.
 // Choosing no genre only clears the field; the instruments stay as they are.
 export function genreChanges(id) {
@@ -123,6 +126,7 @@ export function checkGenres() {
   for (const g of GENRES) {
     if (!INSTRUMENTS.includes(g.instruments.melody) || !INSTRUMENTS.includes(g.instruments.harmony)) throw Error(`${g.id}: unknown instrument`);
     if (!grooves.includes(g.groove)) throw Error(`${g.id}: unknown groove`);
+    if (!FILLS.some(f => f.id === g.fill)) throw Error(`${g.id}: unknown fill`);
     if (!VOICINGS.includes(g.harmony.voicing) || !(g.harmony.rhythm in RHYTHMS) || !BASS_PATTERNS.includes(g.harmony.bass)) throw Error(`${g.id}: unknown harmony style`);
     if (!Object.keys(g.harmony.moves).every(k => k.split(">").length === 2 && k.split(">").every(r => ROMANS.includes(r))) || !(g.harmony.stay > 0) || !(g.harmony.split > 0)) throw Error(`${g.id}: unknown chord moves`);
     // The studio's quantize controls: the grid menu (1/4, 1/8, 1/16), the strength menu, the swing slider in 5% steps.
