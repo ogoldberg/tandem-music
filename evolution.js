@@ -29,7 +29,7 @@ export const FADE = 1;
 // A drum hit counts as sounding this long.
 const DRUM_SECONDS = 0.25;
 
-// How long the song plays: the end of the last note, drum hit, take or generated part (the band, the
+// How long the song plays: the end of the last note, drum hit, take (`takeSeconds` long, as placed) or generated part (the band, the
 // voice as instrument, the sung harmony unless muted, and only when its audio is in `available`, if
 // given). The rendered audio runs on a little after it so
 // the last notes ring; the sections cover the song, not that tail.
@@ -39,7 +39,8 @@ export function contentSeconds(project, takeSeconds = 0, available = null) {
     .concat((project.drums || []).map(h => h.t + DRUM_SECONDS))
     .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && (!available || available.includes(k)) && Number.isFinite(project[k].seconds) ? [placedSeconds(project.placed, k, project[k].seconds)] : []))
     .concat(available ? [] : layerSeconds(project, { heard: true }));
-  return Math.max(0, takeSeconds || 0, ...ends);
+  const take = takeSeconds > 0 ? placedSeconds(project.placed, "voice", takeSeconds) : 0;
+  return Math.max(0, take, ...ends);
 }
 
 // The stages the song has (`available`: the keys with audio), each with an equal section of a song

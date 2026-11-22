@@ -107,6 +107,11 @@ test("the song lasts to the end of its last note, hit, take or unmuted generated
   assert.equal(contentSeconds({ ...p, band: { seconds: 9, muted: false } }), 9);
   assert.equal(contentSeconds({ ...p, band: { seconds: 9, muted: true } }), 3.25);
   assert.equal(contentSeconds({ notes: [], drums: [] }), 0);
+  // GROW.3: the take plays as long as its placement does; a placement without a take adds nothing.
+  const placed = { voice: [{ from: 0, to: 4, at: 0 }, { from: 2, to: 6, at: 4 }] };
+  assert.equal(contentSeconds({ ...p, placed }, 6), 8);
+  assert.equal(contentSeconds({ ...p, placed: { voice: [{ from: 0, to: 2, at: 0 }] } }, 6), 3.25);
+  assert.equal(contentSeconds({ ...p, placed }, 0), 3.25);
   // A generated part counts only when its audio is there to play (review of #90).
   const band = { ...p, band: { seconds: 9, muted: false } };
   assert.equal(contentSeconds(band, 0, ["melody", "drums"]), 3.25);
