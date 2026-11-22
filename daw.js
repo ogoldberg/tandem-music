@@ -181,6 +181,7 @@ export function levelLine(gain, peak) {
   if (!(peak > SILENT)) return "";
   const change = 20 * Math.log10(gain), at = 20 * Math.log10(peak);
   if (Math.abs(change) < 0.05) return " It peaks at −" + db(at) + " dB.";
+  if (change < 0 && at < EXPORT_PEAK_DB - 0.05) return " Turned down " + db(change) + " dB so the loudest stem does not clip; the mix peaks at −" + db(at) + " dB.";
   if (change < 0) return " Turned down " + db(change) + " dB to peak at −" + db(at) + " dB, so it does not clip.";
   if (change > MAX_EXPORT_RAISE_DB - 0.05) return " Turned up " + db(change) + " dB, the most Tandem raises a quiet song; it peaks at −" + db(at) + " dB.";
   return " Turned up " + db(change) + " dB to peak at −" + db(at) + " dB.";

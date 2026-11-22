@@ -258,7 +258,7 @@ def test_a_project_with_only_a_harmony_voice_exports_stems_and_is_kept_as_a_vers
     expect(page.locator("#voice2count")).to_have_text("8 notes")
 
     path = download(page, "#exportstems", tmp_path)
-    expect(page.locator("#status")).to_have_text(re.compile(r"^Exported 1 stem \(harmony voice\) and the MIDI file\. (It peaks|Turned (up|down) [0-9.]+ dB)[^.]*\.$"))
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Exported 1 stem \(harmony voice\) and the MIDI file\. (It peaks|Turned (up|down) [0-9.]+ dB).*\.$"))
     with zipfile.ZipFile(path) as z:
         assert "harmony-voice.wav" in z.namelist()
         mid = mido.MidiFile(file=io.BytesIO(z.read("tandem.mid")))

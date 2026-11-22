@@ -223,6 +223,8 @@ test("an export is levelled by one gain: the mix peaks at the target under full 
   assert.equal(levelLine(faint.gain, faint.peak), " Turned up 18 dB, the most Tandem raises a quiet song; it peaks at −42 dB.");
   assert.equal(levelLine(1, target), " It peaks at −1 dB.");
   assert.equal(levelLine(1, 0), "");
+  // A loud stem left out of the mix (a muted layer) sets the gain: the mix itself was nowhere near clipping.
+  assert.equal(levelLine(10 ** (-4.5 / 20), 10 ** (-24.5 / 20)), " Turned down 4.5 dB so the loudest stem does not clip; the mix peaks at −24.5 dB.");
 });
 
 test("monoOf averages the channels of a decoded buffer", () => {
