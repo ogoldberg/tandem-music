@@ -92,6 +92,11 @@ test("placeSamples lays stretches out where they play, crossing over at joins wi
   assert.equal(gapped[1500], 0);
   assert.equal(gapped[2000], 0);
   assert.equal(gapped[2500], 2500);
+  // A clip cut from inside the recording fades in even when it starts the song.
+  const moved = placeSamples([{ from: 2, to: 4, at: 0 }, { from: 0, to: 6, at: 2 }], src, rate);
+  assert.equal(moved[0], 0);
+  assert.ok(Math.abs(moved[5] - 2005 * (5 / (PLACE_FADE * rate))) < 1e-6);
+  assert.equal(moved[1000], 3000);
 });
 
 test("placeNotes carries notes read from a recording to every clip, cut at its end", () => {

@@ -153,8 +153,8 @@ export function edgeGain(i, edge, half, rising) {
 // The recording's samples (`samples` at `rate`) laid along the song by `clips`; null clips are the recording as it
 // is (the same array). Where one clip ends as the next begins, the two cross over with equal-power curves over
 // `fade` seconds centred on the join, each reading its recording on past its edge; any other edge cut out of the
-// recording fades over `fade` inside the clip, so nothing clicks. A clip starting at the recording's start or ending
-// at its end keeps that edge as it is.
+// recording fades over `fade` inside the clip, so nothing clicks, the song's first clip too. A clip starting at the
+// recording's start or ending at its end keeps that edge as it is.
 export function placeSamples(clips, samples, rate, fade = PLACE_FADE) {
   if (clips == null) return samples;
   if (!(rate > 0)) throw Error("Invalid sample rate");
@@ -165,7 +165,7 @@ export function placeSamples(clips, samples, rate, fade = PLACE_FADE) {
     const a = c.at * rate, b = (c.at + lengthOf(c)) * rate, offset = Math.round((c.from - c.at) * rate);
     const prev = list[n - 1], next = list[n + 1];
     const joinIn = !!prev && Math.abs(prev.at + lengthOf(prev) - c.at) < EPS, joinOut = !!next && Math.abs(c.at + lengthOf(c) - next.at) < EPS;
-    const cutIn = !joinIn && c.from > EPS && c.at > EPS, cutOut = !joinOut && c.to * rate < srcEnd - EPS * rate;
+    const cutIn = !joinIn && c.from > EPS, cutOut = !joinOut && c.to * rate < srcEnd - EPS * rate;
     const lo = Math.max(0, Math.floor(joinIn ? a - half : a)), hi = Math.min(total, Math.ceil(joinOut ? b + half : b));
     for (let i = lo; i < hi; i++) {
       const j = i + offset;

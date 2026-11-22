@@ -231,6 +231,21 @@ def test_a_repeated_chorus_repeats_the_voice_in_play_and_the_stems_and_no_record
     page.click("#redo")
     expect(page.locator("#notecount")).to_have_text("11 notes")
     assert json.loads(page.get_attribute("#lanefill-voice", "data-clips")) == clips
+    # Move a verse after the first chorus: the voice follows, the chorus (take 1.2..2.4) now starting the song.
+    mark(page, "Verse", 0, 1.2)
+    expect(page.locator('.secblock[data-section="0"]')).to_have_attribute("aria-pressed", "true")
+    page.click("#sectionlater")
+    moved = [{"from": 1.2, "to": 2.4, "at": 0}, {"from": 0, "to": 4, "at": 1.2}]
+    wait_until(page, f"() => {{ const c = document.getElementById('lanefill-voice').dataset.clips; return !!c && JSON.stringify(JSON.parse(c)) === {json.dumps(json.dumps(moved, separators=(',', ':')))} }}", "the voice moves with the verse")
+    got = scheduled_voice(page, 5.2)
+    assert got["count"] == 1
+    assert abs(got["at"][0] - take_level(2.2)) < 0.01 and abs(got["at"][1] - take_level(0.6)) < 0.01
+    assert abs(got["at"][2] - take_level(1.8)) < 0.01 and abs(got["at"][3] - take_level(3.3)) < 0.01
+    assert page.evaluate(OPFS_HASHES) == files
+    page.click("#undo")  # the move
+    page.click("#undo")  # the verse
+    assert json.loads(page.get_attribute("#lanefill-voice", "data-clips")) == clips
+    expect(page.locator(".secblock")).to_have_count(2)
     page.click('.secblock[data-section="1"]')
     page.click("#sectiondelete")
     expect(page.locator("#notecount")).to_have_text("8 notes")
