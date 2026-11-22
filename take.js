@@ -7,7 +7,10 @@ import { COUNT_IN_BEATS } from "./midi.js";
 
 // One 4/4 bar, the MIDI keyboard's count-in (EXP.4).
 export { COUNT_IN_BEATS };
-export const BEATS_PER_BAR = 4;
+import { BEATS_PER_BAR } from "./bars.js";
+
+// GROW.1: bars.js owns the bar.
+export { BEATS_PER_BAR };
 
 const round6 = x => Math.round(x * 1e6) / 1e6;
 

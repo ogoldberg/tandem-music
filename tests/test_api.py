@@ -620,6 +620,47 @@ def test_chat_is_told_the_genre_and_a_project_without_one_is_sent_as_before(clie
     assert none_sent==without and none_sent.startswith("Current project: ") and '"genre"' not in none_sent
     assert jazz.startswith("Genre: "+server.GENRES["jazz"]+"\nCurrent project: ") and '"genre": "jazz"' in jazz
 
+def test_bars_module_is_served_and_precached(client):
+    # GROW.1: the studio's module script imports bars.js statically, so it cannot start offline without it.
+    js=run(client("GET","/bars.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function barGrid" in js.text
+    assert "from './bars.js'" in run(client("GET","/")).text
+    assert "'./bars.js'" in run(client("GET","/sw.js")).text
+
+def test_chat_project_accepts_a_pinned_grid_inside_the_first_bar_and_known_uses():
+    # GROW.1: grid {origin} mirrors bars.js cleanGrid: at least 0 and under one bar at the project's tempo.
+    assert server.ChatProject().grid is None and server.ChatProject().uses==[]
+    got=server.ChatProject(bpm=100,grid={"origin":1.37},uses=["grid"])
+    assert got.grid.origin==1.37 and got.uses==["grid"]
+    assert server.ChatProject(bpm=100,grid={"origin":0}).grid.origin==0
+    for bad in ({"origin":2.4},{"origin":-0.1},{"origin":1,"extra":1},{},{"origin":"x"}):
+        with pytest.raises(Exception):
+            server.ChatProject(bpm=100,grid=bad)
+    # A bar at 200 beats a minute is 1.2 s, so an origin that fits at 100 does not.
+    with pytest.raises(Exception):
+        server.ChatProject(bpm=200,grid={"origin":1.37})
+    for bad in (["placed"],["grid","comp-src"],"grid",[1]):
+        with pytest.raises(Exception):
+            server.ChatProject(uses=bad)
+
+def test_chat_gets_a_project_without_a_grid_as_before_and_one_with_it(client, monkeypatch):
+    monkeypatch.setenv("TANDEM_PROVIDER","openai-compatible")
+    seen=[]
+    async def fake(messages, config=None):
+        seen.append(messages[-1]["content"])
+        return '{"reply":"ok","actions":[]}'
+    monkeypatch.setattr(server,"invoke_llm",fake)
+    project={"bpm":100,"notes":[{"m":60,"t":0,"d":0.5}],"drums":[]}
+    for extra in ({},{"grid":None},{"grid":{"origin":0.4}}):
+        r=run(client("POST","/api/chat",json={"message":"hi","project":{**project,**extra}}))
+        assert r.status_code==200, r.text
+    r=run(client("POST","/api/chat",json={"message":"hi","project":{**project,"grid":{"origin":3}}}))
+    assert r.status_code==422
+    without,none_sent,pinned=seen
+    assert without==none_sent and '"grid"' not in without and '"uses"' not in without
+    assert '"grid": {"origin": 0.4}' in pinned
+
 def test_new_instruments_are_accepted_everywhere():
     # The project schema, AI action filter and system prompt all use the one INSTRUMENTS list.
     for name in ("organ","guitar","flute"):

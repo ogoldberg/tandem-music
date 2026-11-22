@@ -7,7 +7,7 @@
 // run the studio's own generators; the model never writes the harmony's notes.
 import { detectKey, readChords, generateHarmony } from "./harmony.js";
 import { grooveHits } from "./beats.js";
-import { barOrigin } from "./groove.js";
+import { barOrigin, speedChange } from "./bars.js";
 import { genreChanges, harmonyStyle } from "./genre.js";
 
 const clampPitch = m => Math.max(36, Math.min(96, m));
@@ -26,7 +26,8 @@ const utf8Bytes = text => new TextEncoder().encode(text).length;
 // applyActions inside one edit(), so a reply's actions are one undo step. A handler that cannot run throws before
 // it changes anything (AI.6's generators work out the new part first and then assign it).
 export const HANDLERS = Object.freeze({
-  set_tempo(p, a) { p.bpm = a.bpm; },
+  // GROW.1: with the bar grid pinned only a doubled or halved speed is taken (speedChange says why otherwise).
+  set_tempo(p, a) { Object.assign(p, speedChange(p, a.bpm)); },
   set_instrument(p, a) { p.instrument = a.instrument; },
   transpose(p, a) { p.notes = p.notes.map(n => ({ ...n, m: clampPitch(n.m + a.semitones) })); },
   add_note(p, a) { p.notes.push({ m: a.pitch, t: a.start, d: a.duration }); },
@@ -47,7 +48,7 @@ export const HANDLERS = Object.freeze({
     p.harmony = h.notes;
   },
   add_beat(p, a) {
-    const from = barOrigin({ bpm: p.bpm, notes: p.notes, drums: [], harmony: p.harmony, voice2: p.voice2 });
+    const from = barOrigin({ bpm: p.bpm, notes: p.notes, drums: [], harmony: p.harmony, voice2: p.voice2, grid: p.grid ?? null });
     const drums = grooveHits(a.groove, { bpm: p.bpm, bars: a.bars, from });
     fitsChat(drums, "beat");
     p.drums = drums;

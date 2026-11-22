@@ -3,7 +3,10 @@
 // other stretch of the melody. Pure functions: the studio adds the notes to the melody as one edit.
 import { SCALES, noteName } from "./contour.js";
 
-export const BEATS_PER_BAR = 4;
+import { BEATS_PER_BAR, barSeconds } from "./bars.js";
+
+// GROW.1: bars.js owns the bar.
+export { BEATS_PER_BAR };
 // A project's notes end by 600 s (tandem_backend.py's note fields, sections.js MAX_TIME).
 export const MAX_SECONDS = 600;
 export const EXERCISES = Object.freeze([
@@ -62,7 +65,7 @@ function scaleInRange(key, range) {
 // Where an exercise starts: at 0 in an empty song, else on the first whole bar at least a bar after `after` seconds (the
 // end of the song), so the exercise is heard on its own.
 export function exerciseStart(after, bpm) {
-  const bar = BEATS_PER_BAR * 60 / bpm;
+  const bar = barSeconds(bpm);
   if (!(after > 0)) return 0;
   return round3((Math.ceil(after / bar - 1e-9) + 1) * bar);
 }

@@ -7,6 +7,8 @@
 // A project with no sections has no `sections` field, so an older project opens, saves and exports as before.
 // DOM-free so Node tests import it directly; tandem_backend.py's ProjectSection mirrors cleanSections.
 
+import { beatSeconds } from "./bars.js";
+
 export const MAX_SECTIONS = 32;
 export const MAX_SECTION_NAME = 40;
 export const MAX_TIME = 600;
@@ -50,9 +52,7 @@ export function cleanSections(sections) {
 // A time at the nearest beat of the project tempo, so a section marked by dragging on the Timeline
 // starts and ends on the beat.
 export function snapToBeat(t, bpm) {
-  const b = Number(bpm);
-  if (!Number.isFinite(b) || b <= 0) throw Error("Set a tempo before marking sections.");
-  const beat = 60 / b;
+  const beat = beatSeconds(bpm, "Set a tempo before marking sections.");
   return round3(Math.max(0, Math.round(t / beat) * beat));
 }
 

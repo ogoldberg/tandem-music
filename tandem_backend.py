@@ -276,6 +276,9 @@ def takes_js():
 def actions_js():
     return FileResponse(Path(__file__).resolve().parent / "actions.js", media_type="text/javascript")
 
+@app.get("/bars.js", include_in_schema=False)
+def bars_js():
+    return FileResponse(Path(__file__).resolve().parent / "bars.js", media_type="text/javascript")
 @app.get("/genre.js", include_in_schema=False)
 def genre_js():
     return FileResponse(Path(__file__).resolve().parent / "genre.js", media_type="text/javascript")
@@ -406,6 +409,8 @@ GENRES={
     "electronic":"The song is electronic dance music: four on the floor, tight sixteenths, an octave bass.",
 }
 GENRE_IDS=tuple(GENRES)
+# GROW.1: the optional features a project file may name in `uses`; must be versions.js KNOWN_USES (a Node test checks).
+KNOWN_USES=("grid",)
 class ProjectNote(BaseModel):
     model_config=ConfigDict(extra="forbid")
     m: int = Field(ge=0,le=127)
@@ -546,6 +551,11 @@ def _sections_in_order(sections):
             raise ValueError("Sections must be in order and not overlap")
         end=s.to
     return sections
+class ProjectGrid(BaseModel):
+    """GROW.1: the pinned bar grid (bars.js cleanGrid): where a bar starts, at least 0 and under one bar at the
+    project's tempo (ChatProject checks that). No AI action edits it."""
+    model_config=ConfigDict(extra="forbid")
+    origin: float = Field(ge=0,le=600,allow_inf_nan=False)
 class ProjectMix(BaseModel):
     """MIX.1: the mixer, only the parts that differ from the defaults. No AI action edits it. TRACK.1: each
     recorded layer's channel is under its key, layer-<id>, with a level, a mute and a solo."""
@@ -587,6 +597,14 @@ class ChatProject(BaseModel):
     layers: list[ProjectLayer] = Field(default_factory=list,max_length=8)
     # TAKE.1: the kept takes and the comp of them the song uses, once there is a second take.
     takes: ProjectTakes | None = None
+    # GROW.1: the pinned bar grid, when it is pinned, and the optional features a file needs (versions.js KNOWN_USES).
+    grid: ProjectGrid | None = None
+    uses: list[Literal[KNOWN_USES]] = Field(default_factory=list,max_length=16)
+    @model_validator(mode="after")
+    def _grid_in_first_bar(self):
+        if self.grid is not None and self.grid.origin>=4*60/self.bpm-1e-6:
+            raise ValueError("The bar grid must start within the first bar")
+        return self
     # SONG.1: the song's named sections (verse, chorus...), in time order, when there are any.
     sections: list[ProjectSection] = Field(default_factory=list,max_length=32)
     @field_validator("sections")
@@ -850,6 +868,9 @@ def chat_messages(req: ChatRequest):
     project=req.project.model_dump()
     # GENRE.1: a project without a genre is sent to the model exactly as before.
     if project["genre"] is None: del project["genre"]
+    # GROW.1: so is a project whose bar grid is not pinned.
+    if project["grid"] is None: del project["grid"]
+    if not project["uses"]: del project["uses"]
     prior=[{"role":m.role,"content":m.content} for m in req.history[-10:]]
     genre=("Genre: "+GENRES[req.project.genre]+"\n") if req.project.genre else ""
     # AI.5: every model tried melody edits under the lock when it was only a key in the project JSON,

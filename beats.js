@@ -2,7 +2,10 @@
 // drum part) at the project tempo, so they play, edit, quantize and export like beatboxed drums.
 // Pure, DOM-free: index.html, capture.html (REC.3: the beat it records over), bundle.js and the Node tests import it.
 
-export const BEATS_PER_BAR = 4;
+import { BEATS_PER_BAR, barSeconds as bars } from "./bars.js";
+
+// GROW.1: bars.js owns the bar.
+export { BEATS_PER_BAR };
 export const BAR_CHOICES = Object.freeze([4, 8, 16, 32]);
 // How many bars a beat may have: at the slowest tempo (45 bpm) 64 bars is about six minutes.
 export const MAX_BARS = 64;
@@ -38,8 +41,7 @@ export function grooveById(id) {
 }
 
 export function barSeconds(bpm) {
-  if (!(Number(bpm) > 0)) throw Error("Set a tempo before adding a beat.");
-  return (BEATS_PER_BAR * 60) / Number(bpm);
+  return bars(bpm, "Set a tempo before adding a beat.");
 }
 
 // Enough whole bars to cover `seconds` of song, at least `min`.
