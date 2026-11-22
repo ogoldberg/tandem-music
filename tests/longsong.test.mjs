@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { MAX_EVENTS, repeatSection, cleanSections } from "../sections.js";
 import { MAX_MELODY_NOTES, copyPhraseToEnd, detectPhrases } from "../phrases.js";
 import { MAX_HARMONY_NOTES, readChords } from "../harmony.js";
-import { MAX_BARS, grooveHits } from "../beats.js";
+import { MAX_BARS, MAX_HITS, grooveHits, withBeat } from "../beats.js";
 import { quantizeProject, GRID_DIVISIONS } from "../groove.js";
 import { midiFile } from "../daw.js";
 import { musicXml } from "../notation.js";
@@ -144,4 +144,16 @@ test("the chords of a 4,092-note chords part are read in time for every redraw",
   assert.ok(read.every(c => c.indices.length === 12));
   // About 10 ms on an M-series Mac; reading every bar from every note took about 400 ms (GROW.2).
   assert.ok(ms < 150, `${ms.toFixed(0)} ms`);
+});
+
+test("a starter beat kept with the drums is refused past 4,096 hits", () => {
+  assert.equal(MAX_HITS, MAX_EVENTS);
+  const beat = grooveHits("straight", { bpm: 100, bars: 256 });
+  // Hits on the sixteenths between the beat's eighths (0.3 s apart at 100 bpm), so none of the beat's is merged away.
+  const own = n => Array.from({ length: n }, (_, i) => ({ k: "snare", t: Math.round((0.15 + i * 0.3) * 1000) / 1000 }));
+  const room = MAX_HITS - beat.length;
+  assert.equal(withBeat(own(room), beat, { keep: true }).length, MAX_HITS);
+  assert.throws(() => withBeat(own(room + 1), beat, { keep: true }), /The drums would have more than 4096 hits/);
+  // In place of the drums it is the beat alone, whatever was there.
+  assert.equal(withBeat(own(4000), beat).length, beat.length);
 });
