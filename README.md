@@ -48,7 +48,7 @@ A checked box means the feature is **implemented in code**, not that it has been
 - [x] Named project versions saved in this browser: save, list, restore (undoable) and delete (EDIT.2).
 - [x] Detect tempo from the notes and drums, and quantize to a 1/4, 1/8 or 1/16 grid with swing and strength (ARR.1a).
 - [x] Pitch-contour editor: drag, resize and step note targets over the sung pitch line, key/scale snapping, keep vibrato (VOX.3; not yet judged by ear, VOX.2).
-- [ ] AI edits with your own key, kept in the macOS Keychain by the Mac app (AI.4), verified with a real model (AI.2); the hosted model on Vercel (AI.1) is optional.
+- [ ] AI edits with your own key, kept in the macOS Keychain by the Mac app (AI.4), verified end to end with a local model (AI.2a) and on the deployed app with a real key (AI.2b); the hosted model on Vercel (AI.1) is optional.
 - [x] Richer instrument voices, generated chord/bass harmony and phrase move/copy/transpose (ARR.1; not yet judged by ear on real devices).
 - [x] Local-first storage with no accounts (ADR-011): the draft, versions and recordings are kept on the device (STORE.2a; not yet tried in Safari or on real devices).
 - [~] Sampled instruments: recorded General MIDI samples for melody, harmony and drums, with the synthesized voices as a fallback (SND.1; not yet judged by ear on real speakers).

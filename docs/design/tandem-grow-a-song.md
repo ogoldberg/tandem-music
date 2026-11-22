@@ -209,13 +209,13 @@ In build order. Each leaves the app working. GROW.1 to GROW.3 are the reworks an
 3. **GROW.3** Recordings follow the song: placed, never cut. `placement.js`, `placed`, ADR-018.
 4. **GROW.4** Song shape: the song as blocks, and Play it again. Depends UX.7.
 5. **GROW.5** Change one Verse, change them all.
-6. **SEQ.1** The beat as a grid of steps. Depends UX.5.
+6. **SEQ.1** The beat as a grid of steps. Depends UX.5. DYN.1 (a level on every note and hit, filed 2026-11-22) comes before it, and BEAT.3 (the fuller kit, now only the kinds and the classifier) before LOOP.2; the grid keeps a hit's other fields.
 7. **GROW.6** Add a new part and sing it. Record from a time; `src` in the comp.
 8. **LOOP.1** Round and round until it is right: keep the best pass.
 9. **LOOP.2** Build a part in layers while it goes round. Depends BEAT.4.
 10. **GROW.7** Make it a song: a whole shape proposed in one tap. Depends SONG.3, BEAT.2.
 11. **GROW.8** The shape in the files: section names in MIDI, MusicXML and DAWproject.
-12. **GROW.9** Ask Tandem to shape the song. Depends AI.2.
+12. **GROW.9** Ask Tandem to shape the song. Depends AI.2a (a local model; AI.2 was split on 2026-11-22).
 
 ## Risks
 
