@@ -367,3 +367,32 @@ def test_at_1440_the_hub_and_the_open_view_sit_side_by_side(browser, server_url)
         expect(page.locator('.gview[data-view="beat"]')).to_be_visible()
         page.set_viewport_size({"width": 1440, "height": 900})
         expect(page.locator('[data-panel="song"]')).to_be_visible()
+
+
+def test_at_1440_the_hub_beside_a_long_view_scrolls_on_its_own_and_one_play_shows(browser, server_url):
+    # FIX.11: the sticky hub column was taller than the window, so its lower tiles sat under the fixed bottom bar until the
+    # view beside it was scrolled to its end; and the hub's Play the song showed beside the view's own Play.
+    with guided_page(browser, server_url, **DESKTOP) as page:
+        page.click("#gdemo")
+        open_view(page, "notes")
+        # A little way down, the hub is held at the top of the window and ends above the bottom bar.
+        page.evaluate("window.scrollTo(0, 150)")
+        top = page.evaluate("window.scrollY")
+        assert top > 0, top
+        nav_top = page.evaluate("document.querySelector('.gnav').getBoundingClientRect().top")
+        hub = page.locator('[data-panel="song"]')
+        assert hub.bounding_box()["y"] + hub.bounding_box()["height"] <= nav_top, (hub.bounding_box(), nav_top)
+        for tile in page.locator("#gtiles .gtile").all():
+            tile.evaluate("t => t.scrollIntoView({block: 'nearest'})")
+            box = tile.bounding_box()
+            assert page.evaluate("window.scrollY") == top, "the hub scrolls, not the page"
+            assert box["y"] >= 0 and box["y"] + box["height"] <= nav_top, (tile.get_attribute("id"), box, nav_top)
+        # The last tile can be pressed with the view still at its top.
+        page.click("#gtile-ask")
+        expect(page.locator('.gview[data-view="ask"]')).to_be_visible()
+        # One Play: the view's. The hub's comes back once the view is closed.
+        expect(page.locator("#gviewplay")).to_be_visible()
+        expect(page.locator("#gplay")).to_be_hidden()
+        expect(page.locator("#gstop")).to_be_hidden()
+        page.click("#gviewdone")
+        expect(page.locator("#gplay")).to_be_visible()
