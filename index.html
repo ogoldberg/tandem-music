@@ -80,7 +80,7 @@ import {EXERCISES,exerciseNotes,exerciseStart} from './exercises.js';
 import {trackPass,scorePass,passSummary,passText,noteScoreText,practiceSpan,createPassSplitter,heldNotes,trackInSlices,phraseKey,phraseLabel,createPracticeStore,vocalRange,rangeText,phraseHistory,progressText} from './practice.js';
 import {cleanSections,markSection,unmarkSection,repeatSection,deleteSection,moveSection,snapToBeat,SECTION_NAMES,SECTION_PARTS} from './sections.js';
 import {evolutionPlan,stageAt,mixEvolution,contentSeconds} from './evolution.js';
-const $=id=>document.getElementById(id), state={bpm:100,instrument:'piano',notes:[],drums:[],melody_locked:true,harmony:[],harmony_instrument:'piano',voice2:[],voice2_instrument:'piano',band:null,timbre:null,voice2_sung:null,mix:{},layers:[],takes:null,sections:[],lyrics:'',genre:null};
+const $=id=>document.getElementById(id), state={bpm:100,instrument:'piano',notes:[],drums:[],melody_locked:true,harmony:[],harmony_instrument:'piano',voice2:[],voice2_instrument:'piano',band:null,timbre:null,voice2_sung:null,mix:{},layers:[],takes:null,sections:[],lyrics:'',genre:null,grid:null};
 // SONG.1: the section chosen in the Sections band (an index into state.sections), or -1. Studio state, not in the project.
 let selSection=-1;
 // HARM.2: the harmony lines on offer ({lines, i, key}) while trying them, else null. Not part of the project: Keep writes the shown line into voice2 as one edit, and any edit, undo or redo ends the trial.
@@ -1495,7 +1495,7 @@ async function openIdea(id){
   const blob=await recordings.get(idea.audio);if(!blob){status('The recording of '+title+' is no longer on this device.');return}
   const kept=await keepDraft(title);
   // REC.3: an idea recorded over a starter beat opens at its tempo with the beat as its drums (bundle.js ideaProject).
-  const {format,version,...start}=ideaProject(idea);newProject();edit('Open idea: '+title,()=>Object.assign(state,{voice2:[],voice2_instrument:'piano',band:null,timbre:null,voice2_sung:null,mix:{},layers:[],takes:null,sections:[],lyrics:'',genre:null},start));
+  const {format,version,...start}=ideaProject(idea);newProject();edit('Open idea: '+title,()=>Object.assign(state,{voice2:[],voice2_instrument:'piano',band:null,timbre:null,voice2_sung:null,mix:{},layers:[],takes:null,sections:[],lyrics:'',genre:null,grid:null},start));
   await loadAudio(blob);await saveDraftAudio();$('mode').value='melody';setSongName(title);
   status('Opened '+title+(idea.beat?', with its beat as the drums':'')+'. Transcribe it to turn it into notes.'+kept);
 }
