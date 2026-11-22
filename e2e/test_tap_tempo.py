@@ -72,6 +72,26 @@ def test_taps_then_record_at_once_record_at_the_tapped_speed(browser, server_url
         assert info["beat"] == pytest.approx(60 / bpm)
 
 
+def test_taps_pending_when_a_new_song_starts_never_land_on_it(browser, server_url):
+    """A run of taps belongs to the song it was tapped on: starting a new song before the pause drops it."""
+    with guided_page(browser, server_url) as page:
+        page.click("#gdemo")
+        tap(page, "#gtap", 120, 5)
+        expect(page.locator("#gtapinfo")).to_contain_text("stop tapping to keep it")
+        page.click('#steps [data-step="sing"]')
+        page.click("#gnewsong")
+        expect(page.locator("#gstatus")).to_contain_text("New song")
+        # Past the pause that would have kept the run: the new song keeps its own speed and nothing is said of taps.
+        page.wait_for_timeout(3000)
+        assert page.input_value("#bpm") == "100"
+        expect(page.locator("#gtapinfo")).to_have_text("")
+        expect(page.locator("#gtapspeed")).to_have_text("100 beats a minute")
+        # A new run on the new song still works.
+        tap(page, "#gtap", 120, 5)
+        expect(page.locator("#gtapinfo")).to_contain_text("from your taps", timeout=5000)
+        assert abs(int(page.input_value("#bpm")) - 120) <= 3
+
+
 def test_taps_on_the_capture_page_set_the_beat_speed_and_the_count_in(phone):  # noqa: F811
     page = phone
     page.add_init_script(SOUND_LOG)
