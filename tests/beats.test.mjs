@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GROOVES, grooveById, grooveHits, barSeconds, barsToCover, withBeat, grooveWindow, MAX_BARS } from "../beats.js";
+import { GROOVES, grooveById, grooveHits, barSeconds, barsToCover, withBeat, grooveWindow, MAX_BARS, MAX_HITS, MAX_TIME,
+  FILLS, fillById, fillLines, withFills } from "../beats.js";
+import { GENRES, fillFor } from "../genre.js";
 import { quantizeProject } from "../groove.js";
 import { midiFile, DRUM_NOTES } from "../daw.js";
 
@@ -123,4 +125,85 @@ test("the capture page's beat: the hits due in each window, from the take's zero
   assert.deepEqual(grooveWindow("four", { bpm: 120, zero: 10, from: 12.4, to: 13.1 }).map(h => [h.k, h.s]),
     [["kick", 2.5], ["snare", 2.5], ["hat", 2.75], ["kick", 3]]);
   assert.throws(() => grooveWindow("waltz", { bpm: 120, zero: 0, from: 0, to: 1 }), /no starter beat/);
+});
+
+// BEAT.2: drum fills.
+const halfOf = (drums, from, to) => drums.filter(h => h.t >= from - 1e-9 && h.t < to - 1e-9);
+
+test("BEAT.2: every fill is half a bar of kick, snare and hi-hat, and every genre has one", () => {
+  for (const f of FILLS) {
+    assert.ok(Object.keys(f.half).every(k => ["kick", "snare", "hat"].includes(k)), f.id);
+    for (const beats of Object.values(f.half)) for (const x of beats) assert.ok(x >= 0 && x < 2, `${f.id} ${x}`);
+    assert.ok(f.half.snare?.length, `${f.id} has a snare`);
+  }
+  for (const g of GENRES) assert.equal(fillById(fillFor(g.id)).id, g.fill);
+  assert.equal(fillFor(null), "build");
+  assert.equal(fillFor("rock"), "roll");
+  assert.equal(fillFor("jazz"), "triplet");
+  assert.throws(() => fillById("nope"), /no drum fill called nope/);
+});
+
+test("BEAT.2: without sections a fill goes before every fourth bar where the beat goes on", () => {
+  const bpm = 120, bar = barSeconds(bpm), drums = grooveHits("straight", { bpm, bars: 12 });
+  const { drums: out, lines } = withFills(drums, "roll", { bpm });
+  // Bars 4 and 8; bar 12 is the end of the beat, where nothing follows the fill.
+  assert.deepEqual(lines, [4 * bar, 8 * bar]);
+  for (const t of lines) {
+    const fill = halfOf(out, t - bar / 2, t);
+    assert.deepEqual(fill.map(h => h.k), ["kick", "snare", "snare", "snare", "snare", "snare", "snare", "snare", "snare"]);
+    assert.equal(fill[0].t, t - bar / 2);
+  }
+  // Everything outside the fills' half bars is the beat as it was.
+  const outside = h => !lines.some(t => h.t >= t - bar / 2 - 1e-9 && h.t < t - 1e-9);
+  assert.deepEqual(out.filter(outside), drums.filter(outside));
+  // In time order, kick before snare before hi-hat when they fall together.
+  for (let i = 1; i < out.length; i++) assert.ok(out[i - 1].t <= out[i].t);
+  // Adding fills again changes nothing.
+  assert.deepEqual(withFills(out, "roll", { bpm }).drums, out);
+});
+
+test("BEAT.2: the grid's origin moves the four-bar lines", () => {
+  const bpm = 100, bar = barSeconds(bpm), origin = 0.3, drums = grooveHits("straight", { bpm, bars: 9, from: origin });
+  assert.deepEqual(withFills(drums, "build", { bpm, origin }).lines, [origin + 4 * bar, origin + 8 * bar].map(t => Math.round(t * 1e6) / 1e6));
+});
+
+test("BEAT.2: with sections a fill goes before each section's start and end, where the drums play on both sides", () => {
+  const bpm = 120, bar = barSeconds(bpm), drums = grooveHits("straight", { bpm, bars: 16 });
+  const sections = [{ name: "Verse", from: 0, to: 6 * bar }, { name: "Chorus", from: 6 * bar, to: 10 * bar }, { name: "Bridge", from: 13 * bar, to: 16 * bar }];
+  const { drums: out, lines } = withFills(drums, "triplet", { bpm, sections });
+  // Not at 0 (no room), not at 16 bars (the end of the drums); 10 bars and 13 bars both have drums either side.
+  assert.deepEqual(lines, [6 * bar, 10 * bar, 13 * bar]);
+  assert.deepEqual(halfOf(out, 6 * bar - bar / 2, 6 * bar).map(h => h.k), ["kick", "hat", "snare", "snare", "snare", "snare", "snare"]);
+  // The four-bar lines are not used when there are sections.
+  assert.equal(halfOf(out, 4 * bar - bar / 2, 4 * bar).length, halfOf(drums, 4 * bar - bar / 2, 4 * bar).length);
+  assert.deepEqual(halfOf(out, 4 * bar - bar / 2, 4 * bar), halfOf(drums, 4 * bar - bar / 2, 4 * bar));
+});
+
+test("BEAT.2: no fill out of silence or into it", () => {
+  const bpm = 120, bar = barSeconds(bpm);
+  // Two four-bar beats with four silent bars between: the line at 4 bars has nothing after it, at 8 nothing before.
+  const drums = [...grooveHits("straight", { bpm, bars: 4 }), ...grooveHits("straight", { bpm, bars: 4, from: 8 * bar })];
+  const { drums: out, lines } = withFills(drums, "roll", { bpm });
+  assert.deepEqual(lines, []);
+  assert.deepEqual(out, drums);
+  assert.throws(() => withFills([], "roll", { bpm }), /Add a beat first/);
+});
+
+test("BEAT.2: lines closer than half a bar are one, and a line too early for a fill is left out", () => {
+  const bpm = 120, bar = barSeconds(bpm);
+  const sections = [{ name: "A", from: bar / 4, to: 4 * bar }, { name: "B", from: 4 * bar + bar / 4, to: 8 * bar }];
+  assert.deepEqual(fillLines({ bpm, sections }), [4 * bar, 8 * bar]);
+});
+
+test("BEAT.2: fills stay within the drum limits", () => {
+  // At the slowest tempo the beat reaches past the project's ten minutes: no hit is written after it.
+  const bpm = 45, bars = MAX_BARS, drums = grooveHits("straight", { bpm, bars });
+  const { drums: out, lines } = withFills(drums, "riser", { bpm });
+  assert.ok(lines.length > 0);
+  assert.ok(out.every(h => h.t >= 0 && h.t <= MAX_TIME));
+  assert.ok(out.length <= MAX_HITS);
+  // Drums close to the limit that fills would take past it are refused, not cut.
+  const bar = barSeconds(120), dense = [];
+  for (let i = 0; dense.length < MAX_HITS; i++) dense.push({ k: "hat", t: Math.round(i * bar / 16 * 1e6) / 1e6 });
+  assert.throws(() => withFills(dense, "roll", { bpm: 120 }), new RegExp(`more than ${MAX_HITS} hits`));
 });

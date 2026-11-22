@@ -98,3 +98,115 @@ def test_the_guided_beat_view_offers_the_starter_beats(browser, server_url):
         page.click("#gnodrums")
         expect(page.locator("#gdrumstate")).to_have_text("None yet")
 
+
+
+def in_order(hits, a, b):
+    """The hits from a to b seconds in time order, kick before snare before hi-hat when they fall together."""
+    order = {"kick": 0, "snare": 1, "hat": 2}
+    return sorted(((k, t) for k, t in hits if a <= t < b), key=lambda h: (h[1], order[h[0]]))
+
+
+def drum_midi(page, tmp_path):
+    mid = mido.MidiFile(file=io.BytesIO(download(page, "#exportmidi", tmp_path).read_bytes()))
+    drums = next(t for t in mid.tracks if t.name == "Drums")
+    now, ons = 0, []
+    for msg in drums:
+        now += msg.time
+        if msg.type == "note_on" and msg.velocity > 0:
+            ons.append((msg.note, now / mid.ticks_per_beat))
+    return ons
+
+
+def test_fills_follow_the_genre_go_every_four_bars_and_undo_as_one_edit(studio, tmp_path):
+    """BEAT.2: with no sections a fill replaces the last half bar before every fourth bar where the beat goes on."""
+    page = studio
+    set_tempo(page, 120)
+    expect(page.locator("#fill option")).to_have_count(6)
+    expect(page.locator("#fill")).to_have_value("build")
+    page.select_option("#genre", "rock")
+    expect(page.locator("#fill")).to_have_value("roll")
+    expect(page.locator("#fillabout")).to_contain_text("the snare on every sixteenth")
+    page.select_option("#groove", "straight")
+    page.select_option("#groovebars", "8")
+    page.click("#addgroove")
+    assert count(page, "hitcount") == 96
+    page.click("#addfills")
+    # 8 bars of 2 s: a fill before bar 4 (8 s); bar 8 is the end of the beat, so none there.
+    expect(page.locator("#status")).to_have_text("Added 1 snare roll fill, one every four bars. Undo is available.")
+    # The straight beat's 6 hits in 7..8 s became a kick and eight sixteenth snares.
+    assert count(page, "hitcount") == 96 - 6 + 9
+    hits = drum_hits(page)
+    assert in_order(hits, 7, 8) == [("kick", 7.0)] + [("snare", 7 + i * 0.125) for i in range(8)]
+    assert in_order(hits, 15, 16) == [("kick", 15.0), ("hat", 15.0), ("hat", 15.25), ("snare", 15.5), ("hat", 15.5), ("hat", 15.75)]
+    page.locator("#drumroll").scroll_into_view_if_needed()
+    page.screenshot(path=str(SHOTS / "studio-fills.png"))
+
+    # The MIDI file has the roll: eight snares (38) in beats 14 to 16.
+    ons = drum_midi(page, tmp_path)
+    assert len(ons) == 99
+    assert [b for n, b in ons if n == 38 and 14 <= b < 16] == [14 + i * 0.25 for i in range(8)]
+
+    # One edit: one undo gives the beat back; adding them again after redo changes nothing.
+    expect(page.locator("#undo")).to_have_attribute("title", "Undo: Drum fills: Snare roll")
+    page.click("#undo")
+    assert count(page, "hitcount") == 96
+    page.click("#redo")
+    assert count(page, "hitcount") == 99
+    page.click("#addfills")
+    expect(page.locator("#status")).to_have_text("The fills are already there.")
+    expect(page.locator("#undo")).to_have_attribute("title", "Undo: Drum fills: Snare roll")
+
+
+def test_fills_go_before_the_section_lines_and_never_out_of_silence(studio, tmp_path):
+    page = studio
+    # 120 bpm (2 s bars), a melody to 20 s, a verse to 12 s and a chorus to 20 s.
+    project = tmp_path / "song.json"
+    project.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": 120, "instrument": "piano", "melody_locked": True,
+                                   "notes": [{"m": 60, "t": 0, "d": 1}, {"m": 64, "t": 19, "d": 1}], "drums": [],
+                                   "sections": [{"name": "Verse", "from": 0, "to": 12}, {"name": "Chorus", "from": 12, "to": 20}]}))
+    page.set_input_files("#projectfile", str(project))
+    expect(page.locator("#status")).to_have_text("Project opened")
+    page.click("#addfills")
+    expect(page.locator("#status")).to_have_text("Add a beat first: a fill replaces the end of a bar of drums.")
+    page.select_option("#groove", "straight")
+    page.click("#addgroove")
+    assert count(page, "hitcount") == 120
+    page.click("#addfills")
+    # Before the chorus (12 s) only: 20 s is the end, and the four-bar line (8 s) is not used with sections.
+    expect(page.locator("#status")).to_have_text("Added 1 build fill before the section lines. Undo is available.")
+    hits = drum_hits(page)
+    assert in_order(hits, 11, 12) == [("kick", 11.0), ("hat", 11.0), ("snare", 11.25), ("kick", 11.5), ("snare", 11.5), ("snare", 11.75), ("snare", 11.875)]
+    assert in_order(hits, 7, 8) == [("kick", 7.0), ("hat", 7.0), ("hat", 7.25), ("snare", 7.5), ("hat", 7.5), ("hat", 7.75)]
+
+    # A beat that stops before the chorus: no fill leads into silence.
+    page.click("#undo")
+    page.click("#undo")
+    page.select_option("#groovebars", "4")
+    page.click("#addgroove")
+    page.click("#addfills")
+    expect(page.locator("#status")).to_contain_text("No place for a fill")
+    assert count(page, "hitcount") == 48
+
+
+def test_the_guided_beat_view_adds_fills(browser, server_url):
+    with guided_page(browser, server_url) as page:
+        open_view(page, "beat")
+        expect(page.locator("#gfill option")).to_have_count(6)
+        page.select_option("#ggroove", "straight")
+        page.click("#ggrooveadd")
+        expect(page.locator("#gdrumstate")).to_have_text("48 hits")
+        # Four bars: the only four-bar line is the end of the beat.
+        page.click("#gfilladd")
+        expect(page.locator("#gstatus")).to_contain_text("No place for a fill")
+        page.click("#gmore-beat summary")
+        page.select_option("#groovebars", "8")
+        page.click("#ggrooveadd")
+        expect(page.locator("#gdrumstate")).to_have_text("96 hits")
+        page.select_option("#gfill", "triplet")
+        expect(page.locator("#fill")).to_have_value("triplet")
+        page.click("#gfilladd")
+        expect(page.locator("#gstatus")).to_contain_text("Added 1 triplet fill, one every four bars.")
+        # Six straight hits become a kick, a hi-hat and five triplet snares.
+        expect(page.locator("#gdrumstate")).to_have_text("97 hits")
+        page.locator("#gfilladd").scroll_into_view_if_needed()
+        page.screenshot(path=str(SHOTS / "guided-fills.png"))
