@@ -37,6 +37,30 @@ export const VIEWS = Object.freeze([
   Object.freeze({ id: "ask", name: "Ask Tandem", group: "ask", plays: "song", roll: false }),
 ]);
 export const viewById = id => VIEWS.find(v => v.id === id) ?? null;
+
+// UX.9: the desktop studio's part (its lane or rail entry, `showPart`) that holds each change view's controls (frame D of
+// docs/design/tandem-flow-redesign.html). Sound is the melody's Sound group; Ask Tandem is the `song` panel.
+export const VIEW_PARTS = Object.freeze({
+  voice: "voice", notes: "melody", timing: "melody", words: "melody", chords: "harmony", voice2: "voice2", beat: "drums",
+  sound: "melody", sections: "melody", takes: "voice", practise: "melody", ask: "song",
+});
+// The change view a part chosen in the studio comes back to, when it is not the part the studio was opened on.
+export const PART_VIEWS = Object.freeze({
+  voice: "voice", melody: "notes", harmony: "chords", voice2: "voice2", drums: "beat", band: "sound", timbre: "sound", song: "ask",
+});
+// The part Show every control opens on from a guided place {step, view}: a change view's own part, Your song's hub the melody,
+// Share its panel, Sing (and Your take) the voice.
+export function studioPart({ step, view } = {}) {
+  if (step === "song" && VIEW_PARTS[view]) return VIEW_PARTS[view];
+  return step === "share" ? "share" : step === "song" ? "melody" : "voice";
+}
+// Where Guided steps comes back to: the place the studio was opened from while its part is still the one chosen, else the
+// change view (or step) that matches the part chosen in the studio.
+export function guidedPlace(part, from = {}) {
+  if (studioPart(from) === part) return from;
+  if (part === "share") return { step: "share" };
+  return PART_VIEWS[part] ? { step: "song", view: PART_VIEWS[part] } : { step: from.step ?? "sing" };
+}
 const viewIndex = id => VIEWS.findIndex(v => v.id === id);
 export const nextView = id => { const i = viewIndex(id); return i >= 0 && i < VIEWS.length - 1 ? VIEWS[i + 1].id : null; };
 export const previousView = id => { const i = viewIndex(id); return i > 0 ? VIEWS[i - 1].id : null; };
