@@ -8,8 +8,9 @@
 // A project with no sections has no `sections` field, so an older project opens, saves and exports as before.
 // DOM-free so Node tests import it directly; tandem_backend.py's ProjectSection mirrors cleanSections.
 
-import { beatSeconds } from "./bars.js";
-import { cleanPlaced, clipsOf, deleteClips, moveClips, repeatClips, withClips } from "./placement.js";
+import { barGrid, beatSeconds, songBars } from "./bars.js";
+import { tonicChord } from "./harmony.js";
+import { cleanPlaced, clipsOf, deleteClips, moveClips, repeatClips, shiftClips, withClips } from "./placement.js";
 
 export const MAX_SECTIONS = 32;
 export const MAX_SECTION_NAME = 40;
@@ -180,4 +181,81 @@ export function moveSection(project, i, dir, { lengths = {} } = {}) {
     return x;
   });
   return { ...parts, placed, sections: cleanSections(sections), index: dir === 1 ? b : a };
+}
+
+// SONG.3: an intro and an ending, each one edit that marks an Intro or Outro section.
+export const INTRO_BARS = Object.freeze([1, 2]);
+const checkLimits = (part, events) => {
+  if (events.length > MAX_EVENTS) throw Error(`The ${PART_NAMES[part]} would have more than ${MAX_EVENTS} notes.`);
+  if (events.some(ev => ev.t > MAX_TIME + EPS)) throw Error(`The ${PART_NAMES[part]} would go past ${MAX_TIME} seconds.`);
+};
+
+// One or two bars before the song's first bar (bars.js songBars: the bar after a pickup), playing the first bars of
+// the chords and the drums the song has; the melody and the harmony voice are not copied. Everything, the sections
+// and where every recording plays (GROW.3) included, moves later by the intro, whole bars, so the bar grid stays.
+// A chord held past the intro is cut at its end. Refused with no chords or drums in those bars, or when a section is
+// named Intro already. Returns {notes, harmony, voice2, drums, placed, sections, index}: index is the Intro's.
+export function addIntro(project, { bars = 2, lengths = {} } = {}) {
+  if (!INTRO_BARS.includes(bars)) throw Error("Choose an intro of one or two bars.");
+  const list = cleanSections(project.sections);
+  if (list.some(s => s.name === "Intro")) throw Error("The song has an intro already: delete that section to make another.");
+  if (list.length >= MAX_SECTIONS) throw Error(`A song can have at most ${MAX_SECTIONS} sections.`);
+  const { bar } = barGrid(project), { start } = songBars(project, 0), by = bars * bar, to = start + by;
+  const out = {};
+  let copied = 0;
+  for (const part of SECTION_PARTS) {
+    const events = Array.isArray(project[part]) ? project[part] : [];
+    const copies = part === "harmony" || part === "drums"
+      ? events.filter(ev => ev.t >= start - EPS && ev.t < to - EPS).map(ev => ("d" in ev ? { ...ev, d: round3(Math.min(ev.d, to - ev.t)) } : { ...ev }))
+      : [];
+    copied += copies.length;
+    out[part] = [...copies, ...events.map(ev => ({ ...ev, t: round3(ev.t + by) }))];
+    checkLimits(part, out[part]);
+  }
+  if (!copied) throw Error("Add chords or a beat first: the intro plays the first bars of them before the tune.");
+  const placed = rePlace(project, lengths, (clips, key) => shiftClips(clips, by, key));
+  const moved = list.map(x => ({ ...x, from: round3(x.from + by), to: round3(x.to + by) }));
+  const end = Math.min(to, moved.length ? moved[0].from : to);
+  const intro = end - start >= MIN_SECTION_SECONDS - EPS ? [{ name: "Intro", from: round3(start), to: round3(end) }] : [];
+  return { ...out, placed, sections: cleanSections([...intro, ...moved]), index: intro.length ? 0 : -1 };
+}
+
+// The bar the last melody note starts in, to the bar line at or after its end (at least one bar), becomes the ending:
+// the chords there are one tonic chord of `key` held to that bar line, voiced near the chord before it and under the
+// melody (harmony.js tonicChord), and the drums, when the song has some, stop on a kick and a snare together on its
+// first beat. A chord held into it stops where it starts. The melody, the harmony voice and the recordings are left as
+// they are. A section running into the ending stops at its start and one inside it gives way to the Outro. Adding it
+// again changes nothing. Returns {notes, harmony, voice2, drums, placed, sections, index}: index is the Outro's.
+export function addEnding(project, { key } = {}) {
+  const tune = (Array.isArray(project.notes) ? project.notes : []).filter(n => isTime(n.t) && isTime(n.d));
+  if (!tune.length) throw Error("Add ending needs a tune: sing or write the melody first.");
+  const last = tune.reduce((a, n) => (n.t > a.t + EPS || (Math.abs(n.t - a.t) <= EPS && n.t + n.d > a.t + a.d) ? n : a));
+  const { origin, bar } = barGrid(project);
+  const from = round3(Math.max(0, origin + Math.floor((last.t - origin) / bar + 1e-6) * bar));
+  const to = round3(Math.max(from + bar, origin + Math.ceil((last.t + last.d - origin) / bar - 1e-6) * bar));
+  if (to > MAX_TIME + EPS) throw Error(`The song would go past ${MAX_TIME} seconds.`);
+  const list = cleanSections(project.sections);
+  const kept = [];
+  for (const x of list) {
+    if (x.to <= from + EPS) kept.push(x);
+    else if (x.from < from - EPS && from - x.from >= MIN_SECTION_SECONDS - EPS) kept.push({ ...x, to: from });
+  }
+  if (kept.length >= MAX_SECTIONS) throw Error(`A song can have at most ${MAX_SECTIONS} sections.`);
+  const before = (Array.isArray(project.harmony) ? project.harmony : []).filter(n => n.t < from - EPS)
+    .map(n => (n.t + n.d > from + EPS ? { ...n, d: round3(from - n.t) } : { ...n }));
+  const lastStart = before.reduce((t, n) => Math.max(t, n.t), -Infinity);
+  const previous = before.filter(n => Math.abs(n.t - lastStart) < 0.03).map(n => n.m).sort((a, b) => a - b);
+  const over = tune.filter(n => n.t < to - EPS && n.t + n.d > from + EPS).map(n => n.m);
+  const chord = tonicChord(key, { previous: previous.length ? previous : null, ceiling: Math.min(...over) });
+  const harmony = [...before, ...chord.map(m => ({ m, t: from, d: round3(to - from) }))];
+  const beat = Array.isArray(project.drums) ? project.drums : [];
+  const drums = beat.length ? [...beat.filter(h => h.t < from - EPS).map(h => ({ ...h })), { k: "kick", t: from }, { k: "snare", t: from }] : [];
+  checkLimits("harmony", harmony);
+  checkLimits("drums", drums);
+  const sections = cleanSections([...kept, { name: "Outro", from, to }]);
+  return {
+    notes: (project.notes || []).map(n => ({ ...n })),
+    harmony, voice2: (project.voice2 || []).map(n => ({ ...n })), drums,
+    placed: cleanPlaced(project.placed), sections, index: sections.length - 1,
+  };
 }

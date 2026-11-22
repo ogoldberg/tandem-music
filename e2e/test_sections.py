@@ -8,18 +8,23 @@ and 2.25 s and the five drum hits from 1.35 to 2.25 s.
 """
 import io
 import json
+import os
 import re
+import tempfile
 import wave
 import zipfile
+from pathlib import Path
 
 import numpy as np
 from playwright.sync_api import expect
 
+from test_guided import guided_page, open_view
 from test_playhead import drag_loop
 from conftest import export_gain
-from test_studio import IDB_DRAFT, wait_for_draft_audio, wait_until
+from test_studio import IDB_DRAFT, download, midi_drum_ticks, midi_note_ons, wait_for_draft_audio, wait_until
 
 RATE = 44100
+SHOTS = Path(os.environ.get("TANDEM_E2E_SHOTS") or tempfile.gettempdir())
 
 
 def sections(page):
@@ -255,3 +260,91 @@ def test_a_repeated_chorus_repeats_the_voice_in_play_and_the_stems_and_no_record
     assert scheduled_voice(page, 4.0)["count"] == 1
     # No section edit wrote or changed a recording.
     assert page.evaluate(OPFS_HASHES) == files
+
+
+# SONG.3: an intro and an ending. A 120 bpm song (2 s bars): a melody over four bars, a C major chord a bar each and a
+# beat on every beat. MIDI at 960 ticks a beat: a bar is 3840 ticks.
+SONG3 = {
+    "notes": [{"m": m, "t": t, "d": d} for m, t, d in [(64, 0, 0.5), (62, 0.5, 0.5), (60, 1, 1), (67, 2, 1), (65, 3, 1),
+                                                     (64, 4, 1), (62, 5, 1), (67, 6.5, 0.5)]],
+    "harmony": [{"m": m, "t": b * 2, "d": 1.88} for b, ch in enumerate([(48, 52, 55), (53, 57, 60), (48, 52, 55), (55, 59, 62)]) for m in ch],
+    "drums": [{"k": "kick" if q % 2 == 0 else "snare", "t": b * 2 + q * 0.5} for b in range(4) for q in range(4)],
+}
+BAR = 3840
+
+
+def open_song3(page, tmp_path):
+    project = tmp_path / "song3.json"
+    project.write_text(json.dumps({"format": "tandem-project", "version": 1, "bpm": 120, "instrument": "piano",
+                                   "melody_locked": True, **SONG3}))
+    page.set_input_files("#projectfile", str(project))
+    expect(page.locator("#status")).to_have_text("Project opened")
+
+
+def test_an_intro_and_an_ending_are_one_edit_each_and_in_the_midi_file(studio, tmp_path):
+    page = studio
+    open_song3(page, tmp_path)
+    page.select_option("#harmonykey", "0:major")
+
+    # A two-bar intro: the first two bars of chords and drums before the tune, the song two bars later.
+    page.select_option("#introbars", "2")
+    page.click("#addintro")
+    expect(page.locator("#status")).to_contain_text("Add a two-bar intro")
+    assert sections(page) == [{"name": "Intro", "from": 0, "to": 4}]
+    expect(page.locator(".secblock")).to_have_text(["Intro"])
+    expect(page.locator("#undo")).to_have_attribute("title", "Undo: Add a two-bar intro")
+    data = download(page, "#exportmidi", tmp_path).read_bytes()
+    melody = midi_note_ons(data, 0)
+    assert [p for _, p in melody] == [64, 62, 60, 67, 65, 64, 62, 67]
+    assert melody[0][0] == 2 * BAR
+    chords = sorted(midi_note_ons(data, 1))
+    assert chords[:6] == [(0, 48), (0, 52), (0, 55), (BAR, 53), (BAR, 57), (BAR, 60)]
+    assert [t for t, _ in chords[6:]] == [t for t in (2 * BAR, 3 * BAR, 4 * BAR, 5 * BAR) for _ in range(3)]
+    drums = midi_drum_ticks(data)
+    assert len(drums) == 16 + 8 and min(drums) == 0 and drums[8] == 2 * BAR
+
+    # The ending: the bar of the last note (now 10.5 s, in the bar from 10 s) holds C major under it, and the beat
+    # ends on a kick and a snare together on its first beat.
+    page.click("#addending")
+    expect(page.locator("#status")).to_contain_text("Add an ending")
+    assert sections(page) == [{"name": "Intro", "from": 0, "to": 4}, {"name": "Outro", "from": 10, "to": 12}]
+    data = download(page, "#exportmidi", tmp_path).read_bytes()
+    last = [(t, p) for t, p in midi_note_ons(data, 1) if t >= 5 * BAR]
+    assert {t for t, _ in last} == {5 * BAR} and sorted(p % 12 for _, p in last) == [0, 4, 7]
+    assert all(p <= 67 for _, p in last)
+    ends = [(t, p) for t, p in midi_note_ons(data, 9) if t >= 5 * BAR]
+    assert sorted(ends) == [(5 * BAR, 36), (5 * BAR, 38)]
+    # The melody is as it was.
+    assert [p for _, p in midi_note_ons(data, 0)] == [64, 62, 60, 67, 65, 64, 62, 67]
+    page.locator("#addending").scroll_into_view_if_needed()
+    page.screenshot(path=str(SHOTS / "studio-intro-ending.png"))
+
+    # Again: nothing changes. One Undo takes the ending off, the next the intro.
+    page.click("#addending")
+    expect(page.locator("#status")).to_have_text("The ending is already there.")
+    page.click("#undo")
+    assert sections(page) == [{"name": "Intro", "from": 0, "to": 4}]
+    page.click("#undo")
+    expect(page.locator("#sections")).to_be_hidden()
+    data = download(page, "#exportmidi", tmp_path).read_bytes()
+    assert midi_note_ons(data, 0)[0][0] == 0 and len(midi_drum_ticks(data)) == 16
+
+    # A second intro is refused.
+    page.click("#redo")
+    page.click("#addintro")
+    expect(page.locator("#status")).to_contain_text("The song has an intro already")
+
+
+def test_the_guided_sections_view_adds_an_intro_and_an_ending(browser, server_url, tmp_path):
+    with guided_page(browser, server_url) as page:
+        open_song3(page, tmp_path)
+        open_view(page, "sections")
+        page.click("#addintro")
+        expect(page.locator("#gstatus")).to_contain_text("Add a two-bar intro")
+        page.click("#addending")
+        expect(page.locator("#gstatus")).to_contain_text("Add an ending")
+        assert [s["name"] for s in sections(page)] == ["Intro", "Outro"]
+        expect(page.locator(".secblock")).to_have_text(["Intro", "Outro"])
+        assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
+        page.locator("#addending").scroll_into_view_if_needed()
+        page.screenshot(path=str(SHOTS / "guided-intro-ending.png"))

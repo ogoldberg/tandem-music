@@ -130,6 +130,11 @@ export function deleteClips(clips, s, key = "voice") {
   return mapClips(clips, [{ from: s.from, to: s.to, shifts: [] }, { from: s.to, to: Infinity, shifts: [-len] }, { from: 0, to: s.from, shifts: [0] }], key);
 }
 
+// SONG.3: the whole song later by `by` seconds (an intro put before it).
+export function shiftClips(clips, by, key = "voice") {
+  return mapClips(clips, [{ from: 0, to: Infinity, shifts: [by] }], key);
+}
+
 // Sections a and b (a before b) swapped; the stretch between them keeps its length and stays between them.
 export function moveClips(clips, a, b, key = "voice") {
   const lenA = a.to - a.from, lenB = b.to - b.from;

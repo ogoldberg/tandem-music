@@ -100,6 +100,14 @@ export function chordsForKey(key) {
   });
 }
 
+// SONG.3: the key's tonic triad for an ending, voiced like the generated chords: near `previous` (the chord before
+// it), at or below `ceiling` (the melody's lowest note over it, HARM.4).
+export function tonicChord(key, { previous = null, ceiling = CHORD_RANGE[1] } = {}) {
+  const notes = voice(chordsForKey(key)[0], previous, ceiling);
+  if (!notes.length) throw new Error("The tune ends too low for a chord under it.");
+  return notes;
+}
+
 // How well each chord fits the melody inside [start, end): overlap in beats counts +1 for a chord
 // tone, -0.5 for another note of the key and -1 for a note outside it. A note sounding on the
 // downbeat counts double.

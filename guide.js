@@ -369,7 +369,7 @@ const PLACE_IDS = {
     "timbreinstrument gentimbre playtimbretrack timbremute removetimbre genre=#ggenre instrument=#ginstrument harmonyinstrument=#gharminst " +
     "voice2instrument=#gvoice2inst",
   "view:sound:more": "midioutput midichannel",
-  "view:sections": "gtimeline loop clearloop evolution sectionname marksection sectionrepeat sectionearlier sectionlater sectiondelete sectionunmark",
+  "view:sections": "gtimeline loop clearloop evolution sectionname marksection sectionrepeat sectionearlier sectionlater sectiondelete sectionunmark introbars addintro addending",
   "view:takes": "grecordlayer comptake compfrom compto compin comploop",
   "view:practise": "practice warmup addwarmup practiceforget practicestop practicekeep practiceask",
   "view:ask": "melodylock whatsent chatform prompt",
