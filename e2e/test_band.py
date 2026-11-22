@@ -18,7 +18,7 @@ import zipfile
 import numpy as np
 import pytest
 from playwright.sync_api import expect
-from conftest import show_part
+from conftest import export_gain, show_part
 
 import tandem_desktop as desk
 from tandem_desktop import band, models
@@ -204,7 +204,7 @@ def test_a_band_follows_the_melody_and_is_kept_played_undone_and_exported(page, 
     files = stems(page)
     assert {"mix.wav", "melody.wav", "drums.wav", "band.wav"} <= set(files), list(files)
     x, rate = samples_of(files["band.wav"])
-    assert rate == 44100 and abs(np.max(np.abs(x[:rate])) - 0.8 * TONE) < 0.02
+    assert rate == 44100 and abs(np.max(np.abs(x[:rate])) / export_gain(page) - 0.8 * TONE) < 0.02
     lead = np.argmax(np.abs(x) > 0.02) / rate
     assert lead < 0.005
     mix, _ = samples_of(files["mix.wav"])
@@ -422,7 +422,7 @@ def test_a_band_from_the_notes_plays_them_and_is_kept_played_undone_and_exported
     # It is a part stem from zero at the band's level, and in the mix.
     files = stems(page)
     x, rate = samples_of(files["band.wav"])
-    assert rate == 44100 and abs(np.max(np.abs(x[:rate])) - 0.8 * TONE) < 0.02
+    assert rate == 44100 and abs(np.max(np.abs(x[:rate])) / export_gain(page) - 0.8 * TONE) < 0.02
     assert np.argmax(np.abs(x) > 0.02) / rate < 0.005
     mix, _ = samples_of(files["mix.wav"])
     parts = [n for n in files if n.endswith(".wav") and n not in ("mix.wav", "band.wav")]

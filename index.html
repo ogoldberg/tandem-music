@@ -53,7 +53,7 @@ import {startPitchGuide,guideReading,hzToMidi,drawPitchStrip} from './pitch.js';
 import {GROOVES,grooveById,grooveHits,barsToCover,withBeat} from './beats.js';
 import {createIdeaStore,ideaTitle} from './ideas.js';
 import {readBundle,isBundle,writeBundle,toWav,ideaProject,bundleFileName,songFileName,BUNDLE_TYPE} from './bundle.js';
-import {midiFile,exportKey,arrangementSeconds,sumStems,monoOf,stemsZip,STEM_RATE,PROGRAMS} from './daw.js';
+import {midiFile,exportKey,arrangementSeconds,monoOf,stemsZip,levelExport,levelLine,STEM_RATE,PROGRAMS} from './daw.js';
 import {musicXml} from './notation.js';
 import {dawProject} from './dawproject.js';
 import {tuneInChunks,sectionLimits,harmonyTargets,keepSpans,harmonyFingerprint,HARMONY_LOWEST,HARMONY_HIGHEST} from './tuning.js';
@@ -810,8 +810,11 @@ async function renderParts(p,minFrames=0,{voice=true}={}){status('Loading instru
  const layers=held.map(([k])=>{const level=dbToGain(channel(p,k).level);return{key:k,file:layerStemFile(p.layers,layerIdOf(k)),name:p.layers.find(l=>layerKey(l.id)===k).name,samples:level===1?layerSamples[k]:scaled(layerSamples[k],level)}});for(const [k] of held)if(gains[k]>0)parts[k]=fitted(layerSamples[k],frames,gains[k]);return {parts,frames,layers,note}}
 // #46: `note` names the voices that were not ready when the render started, so a sample finishing its load during
 // the render does not drop its synthesized voice from the status.
-async function renderAudio(){const {parts,frames,note}=await renderParts(structuredClone(state));return {blob:wavBlob(sumStems(Object.values(parts),frames),STEM_RATE),note}}
-$('exportwav').onclick=async()=>{try{const {blob,note}=await renderAudio();download(blob,fileFor('mix'));status('Exported the WAV'+note)}catch(e){status('WAV export failed: '+e.message)}};
+// MIX.2: Export WAV, Share and Export stems level the mix and the stems by one gain (`levelExport`), so they agree.
+async function renderAudio(){const {parts,frames,layers,note}=await renderParts(structuredClone(state)),l=levelExport({parts,layers},frames);return {blob:wavBlob(l.mix,STEM_RATE),note,gain:l.gain,level:levelLine(l.gain,l.peak)}}
+// MIX.2: the last export's levelling gain, for the e2e tests.
+const exportedGain=g=>{$('status').dataset.gain=String(g)};
+$('exportwav').onclick=async()=>{try{const {blob,note,gain,level}=await renderAudio();download(blob,fileFor('mix'));status('Exported the WAV'+note+'.'+level);exportedGain(gain)}catch(e){status('WAV export failed: '+e.message)}};
 const exportMidi=(p=state,keyChoice=$('harmonykey').value)=>midiFile(p,{key:exportKey(p,keyChoice)});
 $('exportmidi').onclick=()=>{download(new Blob([exportMidi()],{type:'audio/midi'}),fileFor('midi'));status('Exported the MIDI file')};
 // EXP.2: the melody and harmony as a MusicXML score for notation apps, in the same key as the MIDI file.
@@ -823,7 +826,7 @@ async function vocalStem(blob){return monoOf(await new OfflineAudioContext(1,1,S
 // GROW.3: a recording slot's stem laid out where it plays in project p (the take's slots by the voice's clips), so every
 // stem, Export WAV and Hear how it grew start at the song's zero and line up with the notes.
 const laid=(samples,slot,p)=>placeSamples(p.placed?.[placeKey(slot)]??null,samples,STEM_RATE);
-$('exportstems').onclick=async()=>{try{const p=structuredClone(state),keyChoice=$('harmonykey').value,takes=[['original',audio],['polished',polished],['tuned',tuned],['vocal',vocal],['accompaniment',accompaniment]];if(!p.notes.length&&!p.harmony.length&&!p.voice2.length&&!p.drums.length&&!audio&&!GEN_KEYS.some(k=>p[k]&&generated.get(p[k].id)))throw Error('Nothing to export yet: add notes or drums, or record a take.');const midi=exportMidi(p,keyChoice),{parts,layers,note}=await renderParts(p),vocals={};for(const [slot,blob] of takes)if(blob)vocals[slot]=laid(await vocalStem(blob),slot,p);status('Writing the stems');download(new Blob([stemsZip({parts,vocals,layers,rate:STEM_RATE,midi})],{type:'application/zip'}),fileFor('stems'));const names=[...Object.keys(parts).filter(k=>!isLayerKey(k)).map(k=>k==='voice2'?'harmony voice':k==='voice2_sung'?'sung harmony':k==='voice'?'your voice':k),...layers.map(l=>l.name),...Object.keys(vocals).map(k=>k==='accompaniment'?'separated music':k==='vocal'?'separated vocal':k+' vocal')];status('Exported '+names.length+' stem'+(names.length===1?'':'s')+' ('+names.join(', ')+') and the MIDI file'+note)}catch(e){status('Stem export failed: '+e.message)}};
+$('exportstems').onclick=async()=>{try{const p=structuredClone(state),keyChoice=$('harmonykey').value,takes=[['original',audio],['polished',polished],['tuned',tuned],['vocal',vocal],['accompaniment',accompaniment]];if(!p.notes.length&&!p.harmony.length&&!p.voice2.length&&!p.drums.length&&!audio&&!GEN_KEYS.some(k=>p[k]&&generated.get(p[k].id)))throw Error('Nothing to export yet: add notes or drums, or record a take.');const midi=exportMidi(p,keyChoice),rendered=await renderParts(p),{note}=rendered,{parts,layers,gain,peak}=levelExport(rendered,rendered.frames),vocals={};for(const [slot,blob] of takes)if(blob)vocals[slot]=laid(await vocalStem(blob),slot,p);status('Writing the stems');download(new Blob([stemsZip({parts,vocals,layers,rate:STEM_RATE,midi})],{type:'application/zip'}),fileFor('stems'));const names=[...Object.keys(parts).filter(k=>!isLayerKey(k)).map(k=>k==='voice2'?'harmony voice':k==='voice2_sung'?'sung harmony':k==='voice'?'your voice':k),...layers.map(l=>l.name),...Object.keys(vocals).map(k=>k==='accompaniment'?'separated music':k==='vocal'?'separated vocal':k+' vocal')];status('Exported '+names.length+' stem'+(names.length===1?'':'s')+' ('+names.join(', ')+') and the MIDI file'+note+'.'+(Object.keys(parts).length?levelLine(gain,peak):''));exportedGain(gain)}catch(e){status('Stem export failed: '+e.message)}};
 // REC.1: a silent side of a recording (liveChannels) is dropped, so the take plays in both ears and everything
 // that reads it (transcription, polish, tuning, separation, exports) gets the voice at full level.
 async function decoded(blob){const ac=context(),buf=await ac.decodeAudioData(await blob.arrayBuffer()),live=liveChannels(buf);if(live.length===buf.numberOfChannels)return buf;const out=ac.createBuffer(live.length,buf.length,buf.sampleRate);live.forEach((data,c)=>out.copyToChannel(data,c));return out}
@@ -1291,11 +1294,11 @@ $('sharesong').onclick=async()=>{
   const snap={...projectSnapshot(),name:fileFor('mix')};
   if(shareReady&&sameSong(snap,shareReady.snap)){const ready=shareReady;shareReady=null;shareLabel(false);await sendSong(ready,true);return}
   shareReady=null;shareLabel(false);
-  let ready;
-  try{status('Preparing the song to share…');const p=structuredClone(state),{parts,frames,note}=await renderParts(p);
+  let ready,lv;
+  try{status('Preparing the song to share…');const p=structuredClone(state),{parts,frames,layers,note}=await renderParts(p);
     if(!Object.keys(parts).length||!frames)throw Error(bestTake()?'Nothing to hear yet: put your voice in the song or add some notes.':'Nothing to hear yet: sing your idea or add some notes first.');
     const voice=bestTake()?(channel(p,'voice').mute?' without your voice':' with your voice'):'';
-    ready={snap,note,voice,file:new File([wavBlob(sumStems(Object.values(parts),frames),STEM_RATE)],snap.name,{type:'audio/wav'})}}
+    ready={snap,note,voice,file:new File([wavBlob((lv=levelExport({parts,layers},frames)).mix,STEM_RATE)],snap.name,{type:'audio/wav'})};exportedGain(lv.gain)}
   catch(e){status('Could not prepare the song: '+e.message);return}
   await sendSong(ready,false)};
 async function sendSong(ready,retried){const {file,note,voice}=ready;let why='';

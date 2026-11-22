@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
-  midiFile, keySignature, exportKey, arrangementSeconds, sumStems, monoOf, stemsZip,
+  midiFile, keySignature, exportKey, arrangementSeconds, sumStems, monoOf, stemsZip, peakOf, exportGain, levelExport, levelLine, EXPORT_PEAK_DB, MAX_EXPORT_RAISE_DB,
   PROGRAMS, DRUM_NOTES, TICKS_PER_BEAT, STEM_RATE, STEM_FILES,
 } from "../daw.js";
 import { INSTRUMENTS } from "../voices.js";
@@ -182,6 +182,47 @@ test("stems are summed sample by sample into the mix", () => {
   const a = Float32Array.of(0.1, 0.2, 0.3), b = Float32Array.of(0.5, -0.5);
   assert.deepEqual([...sumStems([a, b], 4)], [...Float32Array.of(0.1 + 0.5, 0.2 - 0.5, 0.3, 0)]);
   assert.deepEqual([...sumStems([], 2)], [0, 0]);
+});
+
+test("an export is levelled by one gain: the mix peaks at the target under full scale and the stems still sum to it (MIX.2)", async () => {
+  const target = 10 ** (EXPORT_PEAK_DB / 20);
+  assert.ok(target < 1);
+  // Two parts that clip when summed (peak 1.5): turned down.
+  const melody = Float32Array.from({ length: 400 }, (_, i) => Math.sin(i / 7) * 0.9);
+  const drums = Float32Array.from({ length: 300 }, (_, i) => (i % 100 === 0 ? 0.6 : 0));
+  const muted = Float32Array.from({ length: 500 }, () => 0.2);
+  const loud = levelExport({ parts: { melody, drums }, layers: [{ file: "layer-2.wav", samples: muted }] }, 500);
+  assert.ok(Math.abs(peakOf(loud.mix) - target) < 1e-6, "the mix peaks at the target");
+  assert.ok(Math.abs(loud.peak - target) < 1e-6);
+  assert.ok(loud.gain < 1);
+  assert.equal(loud.mix.length, 500);
+  for (let i = 0; i < 500; i++) assert.ok(Math.abs(loud.mix[i] - ((loud.parts.melody[i] || 0) + (loud.parts.drums[i] || 0))) < 1e-6, "the stems sum to the mix at " + i);
+  assert.ok(Math.abs(loud.layers[0].samples[0] - 0.2 * loud.gain) < 1e-7, "a layer stem gets the same gain");
+  assert.equal(loud.layers[0].file, "layer-2.wav");
+  assert.equal(melody[0], 0, "the rendered parts are not changed in place");
+  assert.ok(Math.abs(drums[0] - 0.6) < 1e-7);
+  // Written as 16-bit stems, mix.wav peaks at the target, under full scale, and is still melody + drums.
+  const files = await unzipFiles(stemsZip({ parts: loud.parts, layers: loud.layers, rate: 8000, midi: midiFile(song()) }));
+  const pcm = name => { const b = files.get(name), v = new DataView(b.buffer, b.byteOffset); return Int16Array.from({ length: (b.length - 44) / 2 }, (_, i) => v.getInt16(44 + i * 2, true)); };
+  const [mix, m, d] = ["mix.wav", "melody.wav", "drums.wav"].map(pcm);
+  assert.equal(Math.max(...mix.map(Math.abs)), Math.round(target * 32767));
+  assert.ok(Math.max(...mix.map(Math.abs)) < 32767);
+  for (let i = 0; i < mix.length; i++) assert.ok(Math.abs(mix[i] - (m[i] + d[i])) <= 1, "mix.wav = melody + drums at " + i);
+  // A quiet song is turned up to the target, a near-silent one only by the most Tandem raises.
+  const quiet = levelExport({ parts: { melody: Float32Array.of(0.1, -0.2, 0.05) } }, 3);
+  assert.ok(Math.abs(peakOf(quiet.mix) - target) < 1e-6 && quiet.gain > 1);
+  const faint = levelExport({ parts: { melody: Float32Array.of(0.001) } }, 1);
+  assert.ok(Math.abs(faint.gain - 10 ** (MAX_EXPORT_RAISE_DB / 20)) < 1e-9);
+  // Silence is left as it is; a stem louder than the mix (they cancel) sets the gain, so no stem clips.
+  assert.equal(exportGain([new Float32Array(4)]), 1);
+  const cancel = levelExport({ parts: { a: Float32Array.of(1.2, 0), b: Float32Array.of(-1.2, 0.3) } }, 2);
+  assert.ok(Math.abs(peakOf(cancel.parts.a) - target) < 1e-6 && peakOf(cancel.mix) < target);
+  // Said in the status.
+  assert.match(levelLine(loud.gain, loud.peak), /^ Turned down \d+(\.\d)? dB to peak at −1 dB, so it does not clip\.$/);
+  assert.match(levelLine(quiet.gain, quiet.peak), /^ Turned up 13 dB to peak at −1 dB\.$/);
+  assert.equal(levelLine(faint.gain, faint.peak), " Turned up 18 dB, the most Tandem raises a quiet song; it peaks at −42 dB.");
+  assert.equal(levelLine(1, target), " It peaks at −1 dB.");
+  assert.equal(levelLine(1, 0), "");
 });
 
 test("monoOf averages the channels of a decoded buffer", () => {

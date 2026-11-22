@@ -15,6 +15,8 @@ import zipfile
 import numpy as np
 from playwright.sync_api import expect
 
+from conftest import export_gain
+
 RATE = 44100
 
 
@@ -39,8 +41,18 @@ def download(page, button):
 
 
 def stems(page):
+    """The stems as rendered: MIX.2 levels the mix and the part stems by one gain, divided out here; the takes
+    as recorded (vocal-*.wav) are not levelled."""
     z = zipfile.ZipFile(io.BytesIO(download(page, "#exportstems")))
-    return {name: samples(z.read(name)) for name in z.namelist() if name.endswith(".wav")}
+    g = export_gain(page)
+    return {name: samples(z.read(name)) / (1 if name.startswith("vocal-") else g) for name in z.namelist() if name.endswith(".wav")}
+
+
+def export_wav(page):
+    """Export WAV as rendered, with its levelling gain divided out, and that gain."""
+    wav = samples(download(page, "#exportwav"))
+    g = export_gain(page)
+    return wav / g, g
 
 
 def set_level(page, part, db):
@@ -58,6 +70,35 @@ def open_song(page, tmp_path):
 
 def gain_of(page, part):
     return float(page.get_attribute(f'.mixstrip[data-mix="{part}"]', "data-gain"))
+
+
+def test_export_wav_and_the_stems_peak_at_minus_one_db_however_loud_the_mix(studio, tmp_path):
+    """MIX.2: however loud the mixer leaves the song, Export WAV and mix.wav peak at -1 dB below full scale,
+    the stems still sum to the mix, and the status says how much it was turned up or down. (A mix past full
+    scale turned down is in tests/daw.test.mjs: this song stays under it even at +6 dB.)"""
+    page = studio
+    open_song(page, tmp_path)
+    target = round(10 ** (-1 / 20) * 32767)
+    peaks = []
+    for db in (6, -6):
+        set_level(page, "melody", db)
+        set_level(page, "drums", db)
+        raw = download(page, "#exportwav")
+        with wave.open(io.BytesIO(raw)) as w:
+            pcm = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(int)
+        assert np.max(np.abs(pcm)) == target, db
+        assert np.max(np.abs(pcm)) < 32767
+        peaks.append(np.max(np.abs(pcm)))
+        word = "down" if export_gain(page) < 1 else "up"
+        expect(page.locator("#status")).to_have_text(re.compile(r"^Exported the WAV\. Turned " + word + r" [0-9.]+ dB to peak at −1 dB"))
+        z = zipfile.ZipFile(io.BytesIO(download(page, "#exportstems")))
+        with wave.open(io.BytesIO(z.read("mix.wav"))) as w:
+            mix = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(int)
+        assert np.max(np.abs(mix)) == target, db
+        parts = sum(np.frombuffer(wave.open(io.BytesIO(z.read(n))).readframes(10 ** 9), "<i2").astype(int) for n in ("melody.wav", "drums.wav"))
+        assert np.max(np.abs(mix - parts)) <= 2, "the levelled stems still sum to the mix"
+        assert np.max(np.abs(mix[:len(pcm)] - pcm)) <= 1, "Export WAV is mix.wav"
+    assert peaks[0] == peaks[1], "as loud turned up 6 dB as turned down 6 dB"
 
 
 def test_levels_mutes_and_solos_shape_the_stems_and_export_wav(studio, tmp_path):
@@ -81,8 +122,10 @@ def test_levels_mutes_and_solos_shape_the_stems_and_export_wav(studio, tmp_path)
     assert np.max(np.abs(after["drums.wav"] - before["drums.wav"] * factor)) < 1e-4
     assert np.max(np.abs(after["melody.wav"] - before["melody.wav"])) < 1e-4
     assert np.max(np.abs(after["mix.wav"] - (after["drums.wav"] + after["melody.wav"]))) < 1e-4
-    wav = samples(download(page, "#exportwav"))
-    assert np.max(np.abs(wav - after["mix.wav"])) < 1e-4
+    wav, g = export_wav(page)
+    assert np.max(np.abs(wav - after["mix.wav"])) < 1e-4 / min(g, 1)
+    # MIX.2: Export WAV is levelled to peak at -1 dB below full scale.
+    assert abs(np.max(np.abs(wav)) * g - 10 ** (-1 / 20)) < 1e-4
 
     # A muted melody is silent: no melody stem, and Export WAV is the drums alone.
     page.click("#mute-melody")
@@ -90,8 +133,8 @@ def test_levels_mutes_and_solos_shape_the_stems_and_export_wav(studio, tmp_path)
     assert gain_of(page, "melody") == 0
     muted = stems(page)
     assert set(muted) == {"mix.wav", "drums.wav"}
-    wav = samples(download(page, "#exportwav"))
-    assert np.max(np.abs(wav - after["drums.wav"])) < 1e-4
+    wav, g = export_wav(page)
+    assert np.max(np.abs(wav - after["drums.wav"])) < 1e-4 / min(g, 1)
 
     # Undo brings the melody back; a solo on the melody leaves only the melody.
     page.click("#undo")
