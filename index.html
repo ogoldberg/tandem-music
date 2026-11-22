@@ -853,9 +853,9 @@ async function finishTake(){const t=takeRun;if(!t)return;takeRun=null;clearInter
 // TRACK.1: a take recorded as a layer is added to the song's layers as one edit, keeping the take and everything made from it.
 function addLayerTake(samples,rate){const id=newLayerId(),blob=wavBlob(samples,rate);let name='';generated.set(id,blob);edit('Record a layer',()=>{state.layers=addLayer(state.layers,{id,seconds:samples.length/rate});name=state.layers.at(-1).name});status('Recorded '+name+' as a track of its own. Choose what to transcribe it into, or mute it, in its lane.')}
 // BEAT.4: a beat recorded over the song is read into the drums first, then added as a layer with its hits in one edit, with the
-// layer itself muted as the drums now play it (its lane's M brings the beatbox back). If it cannot be read the layer is kept alone.
+// layer itself muted as the drums now play it (its lane's M brings the beatbox back). If it cannot be read, or no hit is heard in it, the layer is kept alone and the drums stay.
 async function addBeatLayer(samples,rate){const id=newLayerId(),blob=wavBlob(samples,rate);generated.set(id,blob);$('reclayer').checked=false;let drums=null,why='';
- try{status('Reading your beat…');({drums}=await readLayer(blob,'drums','your beat'))}catch(e){why=String(e.message).replace(/\.$/,'')}
+ try{status('Reading your beat…');({drums}=await readLayer(blob,'drums','your beat'));if(!drums.length){drums=null;why='no drum hits were heard in it'}}catch(e){why=String(e.message).replace(/\.$/,'')}
  let name='';guidedTake=false;editIn('beat',drums?'Record a beat':'Record a layer',()=>{state.layers=addLayer(state.layers,{id,seconds:samples.length/rate});name=state.layers.at(-1).name;if(drums){state.drums=drums;state.layers=setInto(state.layers,id,'drums');state.mix=setChannel(state.mix,layerKey(id),{mute:true})}});
  if(!$('guide').hidden)showStep('song',{view:'beat'});
  status(drums?'Recorded your beat as '+name+' and read it into the drums: '+drums.length+(drums.length===1?' hit':' hits')+'. What the drums held before is kept in Undo.':'Recorded your beat as '+name+', but could not read it into the drums: '+why+'. Transcribe it into the drums from its lane under Takes.')}

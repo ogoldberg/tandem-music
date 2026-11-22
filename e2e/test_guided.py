@@ -328,7 +328,7 @@ def record_beat_layer(page):
     expect(page.locator("#grecopts #reclayer")).to_be_checked()
     page.click("#grecord")
     expect(page.locator("#greclabel")).to_have_text("Tap to stop")
-    page.wait_for_timeout(2500)
+    page.wait_for_timeout(4000)  # past the count-in, so the beat holds the fake microphone's beeps
     page.click("#grecord")
     page.wait_for_function("/^Recorded your beat as/.test(document.getElementById('gstatus').textContent)", timeout=90_000)
     # Back in the Beat view, with the next take a take of the voice again.
@@ -388,6 +388,19 @@ def test_a_beat_that_cannot_be_read_is_kept_as_a_layer_and_says_so(browser, serv
         expect(layers).to_have_count(1)
         # Not read, so it is heard as recorded.
         expect(page.locator(f"#mute-layer-{layers.first.get_attribute('data-layer')}")).to_have_attribute("aria-pressed", "false")
+
+
+def test_a_beat_with_no_hits_heard_leaves_the_drums_as_they_were(browser, server_url):
+    with guided_page(browser, server_url) as page:
+        use_server_transcriber(page)
+        page.click('[data-mode="vocal"]')
+        record_take(page)
+        page.route("**/api/analyze?mode=rhythm", lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"notes": [], "drums": []}'))
+        record_beat_layer(page)
+        expect(page.locator("#gstatus")).to_have_text(re.compile(
+            r"^Recorded your beat as Layer 2, but could not read it into the drums: no drum hits were heard in it\. "))
+        expect(page.locator("#layerlanes .lane[data-layer]")).to_have_count(1)
 
 
 def test_record_a_beat_with_nothing_sung_records_the_first_take_as_a_beat(browser, server_url):
