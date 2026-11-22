@@ -1,13 +1,15 @@
 // SONG.1: song sections. A section is a named stretch of the song, {name, from, to} in seconds, kept in the
 // project's optional `sections` list in time order, never overlapping (gaps between them are allowed).
 // Repeat, Move and Delete edit every note part at once (SECTION_PARTS: melody, chords, harmony voice,
-// drums); the recordings (takes, layers, band, voice as instrument, sung harmony) stay where they are.
+// drums) and, GROW.3 (ADR-018), where every recording plays (placement.js): no recording is cut or rewritten,
+// but its clips are repeated, moved and taken out with the notes, in the same edit.
 // A note or hit belongs to the section its start is in; a note keeps its length, except that Delete cuts a
 // note held into the deleted section at the section's start, so it does not sound over what follows.
 // A project with no sections has no `sections` field, so an older project opens, saves and exports as before.
 // DOM-free so Node tests import it directly; tandem_backend.py's ProjectSection mirrors cleanSections.
 
 import { beatSeconds } from "./bars.js";
+import { cleanPlaced, clipsOf, deleteClips, moveClips, repeatClips, withClips } from "./placement.js";
 
 export const MAX_SECTIONS = 32;
 export const MAX_SECTION_NAME = 40;
@@ -112,38 +114,56 @@ function rework(project, shift, trim = null) {
 
 const inside = (t, s) => t >= s.from - EPS && t < s.to - EPS;
 
-// A copy of section i right after it, in every note part, with everything after it moved later by the
-// section's length. Returns {notes, harmony, voice2, drums, sections, index}: index is the copy's.
-export function repeatSection(project, i) {
+// GROW.3: every recording channel's clips after `op(clips, key)`. `lengths` gives each recording the song has
+// ({voice, band, timbre, voice2_sung, "layer-<id>"}: its length in seconds), so a channel with no entry (the
+// whole recording from zero) can be placed; a channel back at the whole recording from zero has no entry again.
+function rePlace(project, lengths, op) {
+  const placed = cleanPlaced(project.placed);
+  const keys = new Set([...Object.keys(placed || {}), ...Object.entries(lengths || {}).filter(([, s]) => s > 0).map(([k]) => k)]);
+  let out = placed;
+  for (const key of keys) {
+    const seconds = lengths?.[key] || 0, clips = clipsOf(placed, key, seconds);
+    out = withClips(out, key, op(clips, key), seconds);
+  }
+  return out;
+}
+
+// A copy of section i right after it, in every note part and every recording's clips, with everything after it
+// moved later by the section's length. Returns {notes, harmony, voice2, drums, placed, sections, index}: index is
+// the copy's; placed is null when every recording plays whole from zero.
+export function repeatSection(project, i, { lengths = {} } = {}) {
   const list = cleanSections(project.sections);
   checkIndex(list, i);
   const s = list[i], len = round3(s.to - s.from);
   if (list.length >= MAX_SECTIONS) throw Error(`A song can have at most ${MAX_SECTIONS} sections.`);
   if (list[list.length - 1].to + len > MAX_TIME + EPS) throw Error(`The song would go past ${MAX_TIME} seconds.`);
   const parts = rework(project, t => (inside(t, s) ? [0, len] : t >= s.to - EPS ? len : 0));
+  const placed = rePlace(project, lengths, (clips, key) => repeatClips(clips, s, key));
   const sections = [
     ...list.slice(0, i + 1), { name: s.name, from: s.to, to: round3(s.to + len) },
     ...list.slice(i + 1).map(x => ({ ...x, from: round3(x.from + len), to: round3(x.to + len) })),
   ];
-  return { ...parts, sections: cleanSections(sections), index: i + 1 };
+  return { ...parts, placed, sections: cleanSections(sections), index: i + 1 };
 }
 
-// Section i and its notes taken out of every note part, with everything after it moved earlier by its
-// length. A note held into it from before is cut at its start. Returns {notes, harmony, voice2, drums, sections}.
-export function deleteSection(project, i) {
+// Section i and its notes taken out of every note part and every recording's clips, with everything after it
+// moved earlier by its length. A note held into it from before is cut at its start.
+// Returns {notes, harmony, voice2, drums, placed, sections}.
+export function deleteSection(project, i, { lengths = {} } = {}) {
   const list = cleanSections(project.sections);
   checkIndex(list, i);
   const s = list[i], len = round3(s.to - s.from);
   const parts = rework(project, t => (inside(t, s) ? null : t >= s.to - EPS ? -len : 0),
     (ev, kept) => (ev.t < s.from - EPS && ev.t + ev.d > s.from + EPS ? round3(s.from - ev.t) : kept.d));
+  const placed = rePlace(project, lengths, (clips, key) => deleteClips(clips, s, key));
   const sections = [...list.slice(0, i), ...list.slice(i + 1).map(x => ({ ...x, from: round3(x.from - len), to: round3(x.to - len) }))];
-  return { ...parts, sections: cleanSections(sections) };
+  return { ...parts, placed, sections: cleanSections(sections) };
 }
 
-// Section i swapped with the one before it (dir -1) or after it (dir 1), in every note part. The stretch
-// between the two keeps its length and stays between them, so nothing outside the pair moves.
-// Returns {notes, harmony, voice2, drums, sections, index}: index is the moved section's new place.
-export function moveSection(project, i, dir) {
+// Section i swapped with the one before it (dir -1) or after it (dir 1), in every note part and every recording's
+// clips. The stretch between the two keeps its length and stays between them, so nothing outside the pair moves.
+// Returns {notes, harmony, voice2, drums, placed, sections, index}: index is the moved section's new place.
+export function moveSection(project, i, dir, { lengths = {} } = {}) {
   const list = cleanSections(project.sections);
   checkIndex(list, i);
   if (dir !== -1 && dir !== 1) throw Error("Choose whether to move the section earlier or later.");
@@ -153,10 +173,11 @@ export function moveSection(project, i, dir) {
   const lenA = A.to - A.from, lenB = B.to - B.from, gap = { from: A.to, to: B.from };
   const shiftB = A.from - B.from, shiftGap = A.from + lenB - A.to, shiftA = lenB + (B.from - A.to);
   const parts = rework(project, t => (inside(t, A) ? shiftA : inside(t, B) ? shiftB : gap.to - gap.from > EPS && inside(t, gap) ? shiftGap : 0));
+  const placed = rePlace(project, lengths, (clips, key) => moveClips(clips, A, B, key));
   const sections = list.map((x, k) => {
     if (k === a) return { ...B, from: round3(A.from), to: round3(A.from + lenB) };
     if (k === b) return { ...A, from: round3(B.to - lenA), to: round3(B.to) };
     return x;
   });
-  return { ...parts, sections: cleanSections(sections), index: dir === 1 ? b : a };
+  return { ...parts, placed, sections: cleanSections(sections), index: dir === 1 ? b : a };
 }

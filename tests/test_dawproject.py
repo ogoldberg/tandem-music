@@ -89,8 +89,8 @@ def test_the_drums_are_general_midi_keys_on_channel_10(project):
 def test_the_recordings_are_audio_tracks_from_zero(project):
     bpm = SONG["project"]["bpm"]
     found = tracks(project)
-    expected = {"Band": (12, True, 0.8, "audio/band.wav"), "Vocal (tuned)": (10.5, False, 1, "audio/vocal-tuned.wav"),
-                "Vocal (original)": (10.5, True, 1, "audio/vocal-original.wav"), "Music (separated)": (10.5, False, 1, "audio/accompaniment.wav")}
+    expected = {"Band": (12, True, 0.8, "audio/band.wav"), "Vocal (tuned)": (17, False, 1, "audio/vocal-tuned.wav"),
+                "Vocal (original)": (17, True, 1, "audio/vocal-original.wav"), "Music (separated)": (17, False, 1, "audio/accompaniment.wav")}
     assert [n for n, (t, _) in found.items() if t.get("contentType") == "audio"] == list(expected)
     master = found["Master"][0].find("Channel")
     assert master.get("role") == "master"

@@ -4,13 +4,15 @@
 // harmony voice (HARM.1) and drums are note clips on their own tracks (the same channels and drum keys
 // as the MIDI file), and every recording the studio holds (the takes, the separated music, the band
 // and the voice played as an instrument, and each recorded layer, TRACK.1) is an audio clip on its own track, from zero, so it lines up
-// with the notes as the stems do. The tempo is the project tempo in 4/4; the key has no place in the format and goes in
+// with the notes as the stems do; GROW.3: a placed recording is laid out where it plays in the song (placement.js
+// placeSamples), the take's slots by the voice's clips, so a repeated verse has its voice twice. The tempo is the project tempo in 4/4; the key has no place in the format and goes in
 // the metadata comment. DOM-free so Node tests import it directly.
 
 import { encodeWav, zipFiles } from "./bundle.js";
 import { arrangementSeconds, DRUM_NOTES, DRUM_SECONDS, STEM_FILES } from "./daw.js";
 import { keyLabel } from "./harmony.js";
 import { isLayerKey, layerIdOf, layerKey, layerStemFile } from "./layers.js";
+import { placeKey, placeSamples } from "./placement.js";
 
 export const DAWPROJECT_FILES = Object.freeze({ project: "project.xml", metadata: "metadata.xml" });
 export const DAWPROJECT_TYPE = "application/zip";
@@ -117,13 +119,16 @@ export function metadataXml({ title = "Tandem", key = null } = {}) {
 }
 
 // The .dawproject file. `audio` maps track slots (AUDIO_TRACKS, and each recorded layer's key) to {samples (mono Float32Array at
-// `rate`, starting at zero), gain, muted}; vocal takes other than audibleVocal are muted.
+// `rate`, the recording as it is), gain, muted}; vocal takes other than audibleVocal are muted. Each is laid out by its
+// channel's clips in project.placed, so every file starts at the song's zero.
 export function dawProject({ project, audio = {}, rate, key = null, title = "Tandem", date }) {
-  const slots = audioTracks(project).map(t => t.slot).filter(s => audio[s] && audio[s].samples && audio[s].samples.length);
+  const laid = {};
+  for (const [slot, a] of Object.entries(audio)) if (a && a.samples) laid[slot] = { ...a, samples: placeSamples(project?.placed?.[placeKey(slot)] ?? null, a.samples, rate) };
+  const slots = audioTracks(project).map(t => t.slot).filter(s => laid[s] && laid[s].samples.length);
   const playing = audibleVocal(slots);
   const info = {}, files = [];
   for (const slot of slots) {
-    const a = audio[slot];
+    const a = laid[slot];
     info[slot] = { seconds: a.samples.length / rate, gain: a.gain, muted: VOCAL_ORDER.includes(slot) ? slot !== playing : !!a.muted };
     files.push({ name: audioPath(slot, project), data: encodeWav(a.samples, rate) });
   }
