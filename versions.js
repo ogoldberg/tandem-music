@@ -66,7 +66,29 @@ export function projectFromState(state) {
     ...(typeof state.genre === "string" && state.genre ? { genre: state.genre } : {}),
     // MIX.1: the mixer, when anything in it differs from the defaults (mixer.js cleanMix).
     ...(state.mix && typeof state.mix === "object" && Object.keys(state.mix).length ? { mix: state.mix } : {}),
+    // GROW.1: the pinned bar grid, when it is pinned (bars.js cleanGrid), and `uses` naming it, so a Tandem that does
+    // not know it refuses the file instead of opening it with its bars guessed.
+    ...(state.grid && typeof state.grid === "object" ? { grid: state.grid } : {}),
+    ...usesPart(state),
   };
+}
+
+// GROW.1: `uses` lists the optional features a file needs, by name. A file naming one this Tandem does not know was
+// made by a newer Tandem, whose song this one would open wrongly, so it is refused (checkUses) with NEWER_TANDEM.
+export const KNOWN_USES = Object.freeze(["grid"]);
+export const NEWER_TANDEM = "This song was made with a newer Tandem. Update, then open it again.";
+export function usesOf(state) {
+  return KNOWN_USES.filter(name => name === "grid" && state?.grid && typeof state.grid === "object");
+}
+function usesPart(state) {
+  const uses = usesOf(state);
+  return uses.length ? { uses } : {};
+}
+export function checkUses(uses) {
+  if (uses == null) return [];
+  if (!Array.isArray(uses) || uses.length > 16 || uses.some(u => typeof u !== "string")) throw Error("Invalid project: uses must be a list of names");
+  if (uses.some(u => !KNOWN_USES.includes(u))) throw Error(NEWER_TANDEM);
+  return [...uses];
 }
 
 const isProject = p => !!p && typeof p === "object" && Array.isArray(p.notes) && Array.isArray(p.drums);

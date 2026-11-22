@@ -7,19 +7,17 @@ export const GRID_DIVISIONS = Object.freeze({ "1/4": 1, "1/8": 2, "1/16": 4 });
 // Tempo detection searches the project's whole range (FIX.4).
 export const TEMPO_RANGE = Object.freeze([45, 220]);
 
+import { barOrigin, ZERO_GRID_SHARE } from "./bars.js";
+
 const MIN_ONSETS = 4;
 
 const ONSET_MERGE_SECONDS = 0.01;
 // How far an onset may sit from a grid line and still count, as a Gaussian's sigma. FIX.4: 40 ms, wide
 // enough for a singer's timing (about 30 ms either way), which a 20 ms window read as off the grid.
 const FIT_SIGMA_SECONDS = 0.04;
-// The window a beat phase (beatOrigin) and an anchor on it are found with: tighter, as a played grid.
-const PHASE_SIGMA_SECONDS = 0.02;
 const TEMPO_STEP_BPM = 0.25;
 const ANCHORS = 4;
 const round6 = x => Math.round(x * 1e6) / 1e6;
-// 4/4, as beats.js and harmony.js.
-const BEATS_PER_BAR = 4;
 
 // Position of the swung offbeat within a pair of grid steps, as a fraction of the pair:
 // 0 swing = 0.5 (straight), 1 = 2/3 (triplet feel).
@@ -117,62 +115,12 @@ export function estimateTempo(times, { prefer = null, current = null, timed = fa
   return Math.round(candidates[0].bpm);
 }
 
-// Where the beat grid sits: the onset phase (within one beat) that the most onsets agree with,
-// so a pickup note before the downbeat does not shift the grid. Ties go to the earliest onset.
-// Returned as a time at or before the earliest onset.
-function beatOrigin(times, beat) {
-  const sorted = times.slice().sort((a, b) => a - b);
-  let bestPhase = sorted[0], bestScore = -Infinity;
-  for (const candidate of sorted) {
-    let score = 0;
-    for (const t of sorted) {
-      const x = (t - candidate) / beat;
-      const d = Math.abs(x - Math.round(x)) * beat;
-      score += Math.exp(-(d * d) / (2 * PHASE_SIGMA_SECONDS * PHASE_SIGMA_SECONDS));
-    }
-    if (score > bestScore + 1e-9) { bestScore = score; bestPhase = candidate; }
-  }
-  // Anchor on the earliest onset in that phase, so the first downbeat stays where it was played.
-  const onPhase = t => {
-    const x = (t - bestPhase) / beat;
-    return Math.abs(x - Math.round(x)) * beat <= 2 * PHASE_SIGMA_SECONDS;
-  };
-  const anchor = sorted.find(onPhase);
-  return anchor - Math.ceil((anchor - sorted[0]) / beat - 1e-9) * beat;
-}
-
-// FIX.3: the bar grid chords, the starter beat and quantize share. A time in [0, one bar) where a
-// bar starts; every bar line is that time plus whole bars. Zero (the song's own bar 1, where a take
-// recorded after the count-in or over the song starts, and where a starter beat starts) when the
-// onsets of the melody and drums sit on the beat grid from zero about as well as on any other;
-// otherwise the beat the onsets agree on (beatOrigin), with a bar starting at the earliest onset on
-// that beat, so a free-time recording keeps its first downbeat where it was sung. An empty project is 0.
-// The zero grid is compared with a wider window than beatOrigin's: a singer lands 30 ms or so either side of
-// the click, which the 20 ms window would count as off the grid, while a free-time take is off it by far more.
-export const ZERO_GRID_SHARE = 0.8;
-const ZERO_FIT_SIGMA_SECONDS = 0.05;
-export function barOrigin(project) {
-  const bpm = Number(project?.bpm);
-  if (!Number.isFinite(bpm) || bpm <= 0) throw new Error("Set a tempo first.");
-  // With no melody or drums, the chords part and the harmony voice give the grid.
-  const onsets = list => list.map(e => Number(e.t)).filter(Number.isFinite);
-  let times = onsets([...(project.notes || []), ...(project.drums || [])]);
-  if (!times.length) times = onsets([...(project.harmony || []), ...(project.voice2 || [])]);
-  if (!times.length) return 0;
-  const beat = 60 / bpm, bar = beat * BEATS_PER_BAR;
-  const fitAt = phase => times.reduce((sum, t) => {
-    const x = (t - phase) / beat, d = Math.abs(x - Math.round(x)) * beat;
-    return sum + Math.exp(-(d * d) / (2 * ZERO_FIT_SIGMA_SECONDS * ZERO_FIT_SIGMA_SECONDS));
-  }, 0);
-  const origin = beatOrigin(times, beat);
-  if (fitAt(0) >= ZERO_GRID_SHARE * fitAt(origin) - 1e-9) return 0;
-  const sorted = times.slice().sort((a, b) => a - b);
-  const anchor = sorted.find(t => { const x = (t - origin) / beat; return Math.abs(x - Math.round(x)) * beat <= 2 * PHASE_SIGMA_SECONDS; }) ?? origin;
-  return round6(((anchor % bar) + bar) % bar);
-}
+// FIX.3's bar grid (chords, the starter beat and quantize share it) is bars.js barOrigin since GROW.1, which returns a
+// pinned grid as it is; re-exported here for the studio and the v60/v61 workers' groove.js (FIX.5).
+export { barOrigin, ZERO_GRID_SHARE };
 
 // Snap note and drum start times to a (possibly swung) grid at the project tempo.
-// The grid is barOrigin's: zero when the onsets sit on it, else the beat they agree on (beatOrigin), so
+// The grid is barOrigin's: a pinned grid (GROW.1), else zero when the onsets sit on it, else the beat they agree on (beatOrigin), so
 // leading silence is kept. The chords part and the harmony voice (FIX.3) move with the melody on the same grid.
 // A pickup stays a pickup only when more onsets fall on the downbeats than on the offbeats;
 // with a pickup into even eighths the pickup's phase has as many onsets or more and is taken as the beat.

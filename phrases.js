@@ -3,7 +3,10 @@
 // directly. Works on the tandem-project shape ({bpm, notes:[{m,t,d}]}) and returns new note arrays;
 // the studio applies them through edit() so every phrase edit is undoable.
 
-export const BEATS_PER_BAR = 4;
+import { BEATS_PER_BAR, barSeconds, beatSeconds as beats } from "./bars.js";
+
+// GROW.1: bars.js owns the bar.
+export { BEATS_PER_BAR };
 // A rest of at least this many beats (at the project tempo) ends a phrase.
 export const PHRASE_GAP_BEATS = 1;
 // Same bounds as the project schema (ProjectNote in tandem_backend.py) and the melody cap.
@@ -15,11 +18,8 @@ export const MAX_MELODY_NOTES = 1024;
 const EPS = 1e-3;
 const round3 = x => Math.round(x * 1000) / 1000;
 
-function beatSeconds(bpm) {
-  const b = Number(bpm);
-  if (!Number.isFinite(b) || b <= 0) throw new Error("Set a tempo before editing phrases.");
-  return 60 / b;
-}
+const TEMPO_FIRST = "Set a tempo before editing phrases.";
+const beatSeconds = bpm => beats(bpm, TEMPO_FIRST);
 
 const validNote = n => n && Number.isFinite(n.m) && Number.isFinite(n.t) && Number.isFinite(n.d) && n.t >= 0 && n.d > 0;
 
@@ -85,7 +85,7 @@ export function transposePhrase(notes, phrase, semitones) {
 // Returns {notes, indices, bars}: `indices` are the copied notes, appended at the end of the array.
 export function copyPhraseToEnd(notes, phrase, { bpm }) {
   checkPhrase(notes, phrase);
-  const bar = beatSeconds(bpm) * BEATS_PER_BAR;
+  const bar = barSeconds(bpm, TEMPO_FIRST);
   const lastEnd = Math.max(...notes.filter(validNote).map(n => n.t + n.d));
   const bars = Math.max(1, Math.ceil((lastEnd - phrase.start - EPS) / bar));
   const shift = bars * bar;

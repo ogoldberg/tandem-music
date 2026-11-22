@@ -5,11 +5,12 @@
 
 import { KEY_NAMES } from "./contour.js";
 import { keyPitchClasses, nextInScale } from "./noteedit.js";
-import { barOrigin } from "./groove.js";
+import { barOrigin, BEATS_PER_BAR, barSeconds } from "./bars.js";
 
 export const MODES = Object.freeze(["major", "minor"]);
 export const STYLES = Object.freeze(["chords", "bass"]);
-export const BEATS_PER_BAR = 4;
+// GROW.1: bars.js owns the bar.
+export { BEATS_PER_BAR };
 // Chords are voiced in this range (C3..G4); bass notes start in C2..B2 (MIDI 36 is the lowest the
 // studio's note rolls and the AI accept).
 export const CHORD_RANGE = Object.freeze([48, 67]);
@@ -200,8 +201,8 @@ export function generateHarmony(project, { style = "chords", key = null, feel = 
   if (!useKey) throw new Error("The melody needs at least three notes with two different pitches to find its key; choose a key instead.");
   const chords = chordsForKey(useKey);
   const scalePcs = SCALE_STEPS[useKey.mode].map(x => (useKey.tonic + x) % 12);
-  const beat = 60 / bpm, bar = beat * BEATS_PER_BAR;
-  const grid = barOrigin({ bpm, notes: melody, drums: project?.drums || [] });
+  const bar = barSeconds(bpm), beat = bar / BEATS_PER_BAR;
+  const grid = barOrigin({ bpm, notes: melody, drums: project?.drums || [], grid: project?.grid ?? null });
   const end = Math.max(...melody.map(n => n.t + n.d));
   const first = grid + Math.floor((melody[0].t - grid) / bar + 1e-6) * bar;
   // A pickup (a first note in the second half of its bar) is left unaccompanied, and no chord starts before zero;
@@ -473,7 +474,7 @@ export function readChords(harmony, { bpm, key = null } = {}) {
   if (!Number.isFinite(bpm) || bpm <= 0) throw new Error("Set a tempo before reading the chords.");
   const notes = validNotes(harmony);
   if (!notes.length) return [];
-  const bar = (60 / bpm) * BEATS_PER_BAR;
+  const bar = barSeconds(bpm);
   const origin = Math.min(...notes.map(n => n.t)), end = Math.max(...notes.map(n => n.t + n.d));
   const bars = Math.max(1, Math.ceil((end - origin) / bar - 1e-6));
   const onsets = [...new Set(notes.map(n => n.t))].sort((a, b) => a - b);
