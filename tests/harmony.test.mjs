@@ -191,8 +191,9 @@ test("harmonyLines offers the default line first, then distinct alternatives, ev
 });
 
 test("the default line is a third above in key, a sixth where the third is not in the chord, with no parallel fifths or octaves", () => {
-  // C major chords for the whole tune: C over C gives E (a third), G over C gives E above it (a
-  // sixth, since B is not in the chord), D over C gives F (no chord tone either way: the third).
+  // C major chords for the whole tune: C over C gives E (a third), D over C gives F (no chord tone either
+  // way: the third). G after F gives B, a third outside the chord: the sixth (E) would leap a seventh up
+  // from A and back (HARM.4). A G the line does not reach by step still takes the sixth.
   const chords = [48, 52, 55].map(m => ({ m, t: 0, d: 8 }));
   const [line] = harmonyLines({ bpm: 120, notes: TUNE }, { key: C_MAJOR, chords });
   assert.deepEqual(line.notes.map(n => n.t), TUNE.map(n => n.t), "it moves with the melody");
@@ -200,7 +201,9 @@ test("the default line is a third above in key, a sixth where the third is not i
   const byStart = new Map(line.notes.map(n => [n.t, n.m]));
   assert.equal(byStart.get(0), 64, "C: a third above");
   assert.equal(byStart.get(1), 67, "E: a third above, G is in the chord");
-  assert.equal(byStart.get(2), 76, "G: a sixth above, E, since B is not in the chord");
+  assert.equal(byStart.get(2), 71, "G after F: B, by step, not a leap to the sixth");
+  const [alone] = harmonyLines({ bpm: 120, notes: [{ m: 67, t: 0, d: 0.45 }, { m: 60, t: 0.5, d: 0.45 }] }, { key: C_MAJOR, chords });
+  assert.equal(alone.notes[0].m, 76, "G on its own: a sixth above, E, since B is not in the chord");
   assert.equal(byStart.get(0.5), 65, "D: neither F nor B is in the chord, so the third");
   for (const n of line.notes) assert.ok(n.m > TUNE.find(x => x.t === n.t).m, "above the melody");
   assert.equal(parallelPerfects(TUNE, line.notes), 0);
@@ -382,4 +385,103 @@ test("changeChord checks its input", () => {
   assert.throws(() => changeChord(h.notes, read[0], { root: -1, quality: "major" }), /chord/);
   assert.throws(() => changeChord(h.notes, read[0], { root: 0, quality: "power" }), /chord/);
   assert.throws(() => changeChord(h.notes, null, { root: 0, quality: "major" }), /chord/);
+});
+
+// HARM.4: chords that go somewhere, on six tunes hummed low (tests/fixtures/tunes.mjs).
+import { TUNES, BPM, tuneNotes } from "./fixtures/tunes.mjs";
+import { GENRE_IDS, harmonyStyle } from "../genre.js";
+
+const FEELS = [null, ...GENRE_IDS];
+const tuneHarmony = (name, genre, style = "chords") => generateHarmony({ bpm: BPM, notes: tuneNotes(name) }, { style, key: TUNES[name].key, feel: harmonyStyle(genre) });
+const progressionOf = h => h.chords.map(c => c.t + ":" + c.roman).join(" ");
+
+test("every tune starts and ends on the tonic, whatever the genre (HARM.4)", () => {
+  for (const name of Object.keys(TUNES)) for (const genre of FEELS) {
+    const romans = tuneHarmony(name, genre).chords.map(c => c.roman);
+    assert.ok(["I", "i"].includes(romans.at(-1)), `${name} ${genre}: ends on ${romans.at(-1)}`);
+    assert.ok(["I", "i"].includes(romans[0]), `${name} ${genre}: starts on ${romans[0]}`);
+  }
+  // Twinkle's last bar is D D C: the D's take V and the held C the tonic, a cadence inside the bar.
+  assert.deepEqual(tuneHarmony("twinkle", null).chords.slice(-2).map(c => [c.roman, c.d]), [["V", 1.2], ["I", 1.2]]);
+});
+
+test("the chords move: no chord is held for more than three bars running under a moving tune (HARM.4)", () => {
+  const bar = 240 / BPM;
+  for (const name of Object.keys(TUNES)) for (const genre of FEELS) {
+    const chords = tuneHarmony(name, genre).chords;
+    let run = 1;
+    for (let i = 1; i < chords.length; i++) {
+      // A bar held by one chord, the same as the bar before it ended on.
+      const held = chords[i].d === bar && chords[i].roman === chords[i - 1].roman;
+      run = held ? run + 1 : 1;
+      assert.ok(run <= 3, `${name} ${genre}: ${chords.map(c => c.roman).join(" ")}`);
+    }
+  }
+});
+
+test("every chord note sounds at or below the melody's lowest note in its bar (HARM.4)", () => {
+  const bar = 240 / BPM;
+  for (const name of Object.keys(TUNES)) {
+    const melodyNotes = tuneNotes(name);
+    for (const genre of FEELS) {
+      const h = tuneHarmony(name, genre);
+      assert.ok(h.notes.length > 0);
+      for (const n of h.notes) {
+        const b = Math.floor(n.t / bar + 1e-6);
+        const under = melodyNotes.filter(m => m.t < (b + 1) * bar - 1e-6 && m.t + m.d > b * bar + 1e-6);
+        if (!under.length) continue;
+        const lowest = Math.min(...under.map(m => m.m));
+        assert.ok(n.m <= lowest, `${name} ${genre} bar ${b}: chord note ${n.m} above the melody's ${lowest}`);
+        assert.ok(n.m >= 36, `${name} ${genre}: ${n.m} below the studio's lowest note`);
+      }
+    }
+  }
+  // A melody high enough keeps the usual voicing (the CADENCE test above).
+});
+
+test("a melody below every chord tone gets no chord notes rather than notes above it (HARM.4)", () => {
+  const notes = melody([[38, 38, 40, 38]]);
+  const h = generateHarmony({ bpm: 120, notes }, { key: { tonic: 2, mode: "major" } });
+  assert.ok(h.notes.every(n => n.m <= 38 && n.m >= 36), JSON.stringify(h.notes));
+});
+
+test("harmony lines follow a stepwise tune without leaping over a fourth (HARM.4)", () => {
+  for (const name of Object.keys(TUNES)) {
+    const notes = tuneNotes(name), key = TUNES[name].key;
+    const lines = harmonyLines({ bpm: BPM, notes }, { key, chords: tuneHarmony(name, null).notes });
+    assert.ok(lines.length >= 4, `${name}: ${lines.map(l => l.id)}`);
+    for (const line of lines) {
+      if (line.id === "counter") {
+        // The counter-melody has its own rhythm: every move of it stays within a fifth.
+        line.notes.forEach((n, i) => i && assert.ok(Math.abs(n.m - line.notes[i - 1].m) <= 7, `${name} counter: ${line.notes[i - 1].m} -> ${n.m}`));
+        continue;
+      }
+      // Each voice of the line (the stack has two) against the melody note it starts with.
+      const voices = line.id === "stack" ? [ns => ns.at(-1), ns => ns[0]] : [ns => ns[0]];
+      for (const take of voices) {
+        let prev = null;
+        for (const m of notes) {
+          const at = line.notes.filter(n => Math.abs(n.t - m.t) < 1e-3).sort((a, b) => a.m - b.m);
+          if (!at.length) { prev = null; continue; }
+          const h = take(at);
+          // Within a fourth: stricter than the acceptance's fifth, since without the leap cost the thirds line leaps a fifth here.
+          if (prev && Math.abs(m.m - prev.mel) <= 2) assert.ok(Math.abs(h.m - prev.line) <= 5, `${name} ${line.id}: melody ${prev.mel} -> ${m.m}, line ${prev.line} -> ${h.m}`);
+          prev = { mel: m.m, line: h.m };
+        }
+      }
+    }
+  }
+});
+
+test("each genre gives its own progressions (HARM.4)", () => {
+  const names = Object.keys(TUNES);
+  const shapes = Object.fromEntries(FEELS.map(g => [g ?? "none", names.map(n => progressionOf(tuneHarmony(n, g)))]));
+  for (const g of GENRE_IDS) {
+    const differs = names.filter((_, i) => shapes[g][i] !== shapes.none[i]).length;
+    assert.ok(differs >= 3, `${g} differs from no genre on only ${differs} of ${names.length} tunes`);
+    for (const other of GENRE_IDS) if (other !== g) assert.notDeepEqual(shapes[g], shapes[other], `${g} and ${other}`);
+  }
+  // Jazz leans to ii-V: a ii going to V on most tunes.
+  const iiV = names.filter(n => { const r = tuneHarmony(n, "jazz").chords.map(c => c.roman); return r.some((x, i) => x === "ii" && r[i + 1] === "V"); });
+  assert.ok(iiV.length >= 4, `jazz ii-V only on ${iiV}`);
 });

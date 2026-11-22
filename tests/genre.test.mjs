@@ -1,5 +1,7 @@
-// GENRE.1: the optional genre. No genre gives exactly what Tandem made before genres (the fixture was written by
-// the harmony.js and groove.js of the commit before GENRE.1); each genre's choices are applied as its table says.
+// GENRE.1: the optional genre. No genre gives exactly Tandem's own harmony and tempo (the fixture was written by
+// the harmony.js and groove.js of the commit before GENRE.1, and its harmony again by HARM.4's harmony.js, which
+// chooses chords as a progression: `node tests/fixtures/make_genre_none_fixture.mjs`); each genre's choices are
+// applied as its table says.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -94,7 +96,9 @@ test("voicings: sevenths add the key's seventh, power chords are root fifth octa
 
 test("bass patterns: roots on the beat, a walking line, octaves and a held root", () => {
   const key = { tonic: 0, mode: "major" }, beat = 60 / 96;
-  const bass = b => generateHarmony({ bpm: 96, notes: NOTES }, { style: "bass", key, feel: { ...genreById("pop").harmony, bass: b } });
+  // Tandem's own chord choices (HARM.4's prior, moves, stay and split), so only the bass pattern differs.
+  const own = { prior: { 0: 0.3, 5: 0.15, 7: 0.2 }, moves: {}, stay: 1, split: 1 };
+  const bass = b => generateHarmony({ bpm: 96, notes: NOTES }, { style: "bass", key, feel: { ...genreById("pop").harmony, ...own, bass: b } });
   const plain = generateHarmony({ bpm: 96, notes: NOTES }, { style: "bass", key });
   assert.deepEqual(bass("rootfifth").notes, plain.notes);
   const bars = plain.chords.length;

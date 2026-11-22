@@ -83,11 +83,13 @@ def test_a_genre_changes_the_chords_bass_beat_and_controls_and_none_keeps_todays
     assert jazz["genre"] == "jazz" and jazz["harmony_instrument"] == "organ"
     jazz_chords = by_onset(jazz["harmony"])
     assert sorted(jazz_chords) == [0, 1.2, 2.4, 3.6, 4.8, 6, 7.2, 8.4] and all(len(v) == 4 for v in jazz_chords.values())
-    assert chord_names(page) == ["Cmaj7", "Cmaj7", "Fmaj7", "Cmaj7"]
-    # A walking bass: a note on every beat, root, third, fifth, then a step into the next bar's root.
+    # HARM.4: jazz changes chord in the middle of the first bar (Cmaj7 to G7) and goes back home.
+    assert chord_names(page) == ["Cmaj7", "G7", "Cmaj7", "Fmaj7", "Cmaj7"]
+    # A walking bass: a note on every beat, root, third, fifth, then a step into the next chord's root
+    # (the first bar's G7 half: its fifth, then B into C).
     generate(page, "bass")
     walk = saved(page, tmp_path)["harmony"]
-    assert len(walk) == 16 and [n["m"] for n in walk[:4]] == [36, 40, 43, 43] and walk[7]["m"] == 40 and walk[11]["m"] == 47  # E into F, B into C
+    assert len(walk) == 16 and [n["m"] for n in walk[:4]] == [36, 40, 50, 47] and walk[7]["m"] == 40 and walk[11]["m"] == 47  # E into F, B into C
     # The shuffle starter beat: hi-hats on the triplets, not the straight eighths.
     page.click("#addgroove")
     jazz_drums = saved(page, tmp_path)["drums"]
