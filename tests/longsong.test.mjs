@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { MAX_EVENTS, repeatSection, cleanSections } from "../sections.js";
 import { MAX_MELODY_NOTES, copyPhraseToEnd, detectPhrases } from "../phrases.js";
-import { MAX_HARMONY_NOTES } from "../harmony.js";
+import { MAX_HARMONY_NOTES, readChords } from "../harmony.js";
 import { MAX_BARS, grooveHits } from "../beats.js";
 import { quantizeProject, GRID_DIVISIONS } from "../groove.js";
 import { midiFile } from "../daw.js";
@@ -43,9 +43,9 @@ test("a section repeat fills a part up to 4,096 and no further", () => {
   const p = song(2048, { seconds: 290 });
   p.sections = [{ name: "Verse", from: 0, to: 290 }];
   const r = repeatSection(p, 0);
-  for (const k of PARTS) assert.equal(r.project[k].length, 4096, k);
-  assert.ok(r.project.notes.at(-1).t < 600);
-  cleanSections(r.project.sections);
+  for (const k of PARTS) assert.equal(r[k].length, 4096, k);
+  assert.ok(r.notes.at(-1).t < 600);
+  cleanSections(r.sections);
   const over = song(2049, { seconds: 290 });
   over.sections = [{ name: "Verse", from: 0, to: 290 }];
   assert.throws(() => repeatSection(over, 0), /more than 4096/);
@@ -127,4 +127,21 @@ test("the chat reads up to 1,024 a part and refuses a longer song in words, neve
   const problems = [];
   assert.equal(applyActions(song(16), [{ type: "add_beat", groove: "straight", bars: 64 }], { problems }), 1);
   assert.deepEqual(problems, []);
+});
+
+test("the chords of a 4,092-note chords part are read in time for every redraw", () => {
+  // 341 bars at 140 bpm (584 s), C and G in turn, each struck four times a bar: 4,092 notes.
+  const bar = 240 / 140, beat = bar / 4, chords = [[60, 64, 67], [55, 59, 62]];
+  const harmony = [];
+  for (let b = 0; b < 341; b++) for (let s = 0; s < 4; s++) for (const m of chords[b % 2]) harmony.push({ m, t: Math.round((b * bar + s * beat) * 1000) / 1000, d: Math.round(beat * 0.9 * 1000) / 1000 });
+  const t0 = performance.now();
+  const read = readChords(harmony, { bpm: 140 });
+  const ms = performance.now() - t0;
+  assert.equal(read.length, 341);
+  assert.deepEqual(read.slice(0, 3).map(c => c.name), ["C", "G", "C"]);
+  // Every note is in exactly one chord, the twelve struck in its bar.
+  assert.deepEqual(read.flatMap(c => c.indices), harmony.map((_, i) => i));
+  assert.ok(read.every(c => c.indices.length === 12));
+  // About 10 ms on an M-series Mac; reading every bar from every note took about 400 ms (GROW.2).
+  assert.ok(ms < 150, `${ms.toFixed(0)} ms`);
 });

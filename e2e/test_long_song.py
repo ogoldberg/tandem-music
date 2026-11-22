@@ -16,10 +16,11 @@ SECONDS = 180
 # Chromium's CPU throttling: 4x is DevTools' "low-end mobile" preset.
 THROTTLE = 4
 # The budget for one edit (update() and the redraw) and for one undo step, in ms of wall time while throttled.
-# Measured on an M-series Mac (see docs/TESTING.md, GROW.2): about 100-200 ms on the three-minute song and
-# 300-600 ms at 4,096 events a part. The budget leaves room for a loaded CI runner.
-BUDGET_SONG_MS = 1500
-BUDGET_FULL_MS = 4000
+# Measured on an M-series Mac on 2026-11-22 (docs/TESTING.md, GROW.2): about 50 ms on the three-minute song and about
+# 450 ms at 4,096 events a part (1,300 ms before readChords read each bar from its own notes). The budgets leave
+# room for a slower CI runner and still catch a redraw that grows with the square of the song.
+BUDGET_SONG_MS = 400
+BUDGET_FULL_MS = 1200
 
 
 def open_song(page, tmp_path, project, name="song.json"):

@@ -98,10 +98,13 @@ test("GROW.2: a beat as long as a whole song, and never past the project's 10 mi
   const song = grooveHits("straight", { bpm: 120, bars: 90 });
   assert.equal(song.length, 1080);
   assert.equal(song.at(-1).t, 179.75);
-  // 256 bars at 100 bpm would run to 614 s: the hits after 600 s are left out, the rest are kept.
+  // 256 bars at 100 bpm would run to 614 s: the hits after 600 s are left out, the rest are kept. 250 bars end
+  // at 600 s exactly, so what is kept is those 250 bars and the next bar's downbeat at 600 s (the schema's last time).
   const long = grooveHits("straight", { bpm: 100, bars: 256 });
-  assert.ok(long.at(-1).t <= 600 && long.at(-1).t > 599, String(long.at(-1).t));
-  assert.equal(long.length, grooveHits("straight", { bpm: 100, bars: 250 }).length);
+  const at600 = grooveHits("straight", { bpm: 100, bars: 251 }).filter(h => h.t === 600);
+  assert.equal(long.at(-1).t, 600);
+  assert.ok(at600.length > 0);
+  assert.deepEqual(long, [...grooveHits("straight", { bpm: 100, bars: 250 }), ...at600]);
   assert.equal(grooveHits("four", { bpm: 220, bars: 256 }).length, 2560);
 });
 

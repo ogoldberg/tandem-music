@@ -112,7 +112,7 @@ test("a section edit is refused when the song would grow past its limits", () =>
   assert.throws(() => repeatSection(p, 0), /600 seconds/);
   // GROW.2: a part holds 4,096 notes, so 1,000 notes repeated is room enough and 3,000 is not.
   const many = n => ({ bpm: 120, notes: Array.from({ length: n }, (_, i) => ({ m: 60, t: Math.round(i * 9000 / n) / 1000, d: 0.001 })), harmony: [], voice2: [], drums: [], sections: [{ name: "Verse", from: 0, to: 10 }] });
-  assert.equal(repeatSection(many(1000), 0).project.notes.length, 2000);
+  assert.equal(repeatSection(many(1000), 0).notes.length, 2000);
   assert.throws(() => repeatSection(many(3000), 0), /more than 4096/);
   assert.throws(() => repeatSection(song(), 7), /Choose a section/);
 });
