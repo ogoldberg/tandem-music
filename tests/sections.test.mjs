@@ -217,6 +217,15 @@ test("SONG.3: Add ending holds the tonic chord under the last note, ends the bea
   // Adding it again changes nothing.
   const again = addEnding({ ...p, ...r }, { key: C });
   for (const k of ["notes", "harmony", "voice2", "drums", "sections"]) assert.deepEqual(again[k], r[k], k);
+  // Under a low last note (G3) the chord stays at or below it, though the chord before it is high (C5 E5 G5)
+  // and voicing near that alone would put it there.
+  const high = [...p.harmony.filter(n => n.t < 4), ...[72, 76, 79].map(m => ({ m, t: 4, d: 1.88 }))];
+  const without = addEnding({ ...p, harmony: high }, { key: C }).harmony.filter(n => n.t >= 6);
+  assert.ok(Math.max(...without.map(n => n.m)) > 55);
+  const low = addEnding({ ...p, harmony: high, notes: [...p.notes.slice(0, -1), { m: 55, t: 6.5, d: 0.5 }] }, { key: C }).harmony.filter(n => n.t >= 6);
+  assert.ok(low.length >= 2);
+  for (const n of low) assert.ok(n.m <= 55, n.m);
+  assert.ok(low.every(n => [0, 4, 7].includes(n.m % 12)));
   // In A minor the chord is A minor.
   const am = addEnding(p, { key: { tonic: 9, mode: "minor" } }).harmony.filter(n => n.t >= 6);
   assert.deepEqual([...new Set(am.map(n => n.m % 12))].sort((a, b) => a - b), [0, 4, 9]);
@@ -268,6 +277,8 @@ test("SONG.3: Add ending changes only its own bar: the chords, drums, harmony vo
   assert.equal(r.later, 12);
   // A section after the ending that runs on past every note and hit counts too.
   assert.equal(addEnding({ ...solo, sections: [{ name: "Solo", from: 9, to: 14 }] }, { key: C }).later, 14);
+  // A harmony voice note held past everything else after the ending counts too.
+  assert.equal(addEnding({ ...solo, voice2: [...solo.voice2, { m: 72, t: 10, d: 5 }] }, { key: C }).later, 15);
   // A section alone after the ending, with no notes there, is reported as well.
   assert.equal(addEnding({ ...p, sections: [{ name: "Solo", from: 8, to: 10 }] }, { key: C }).later, 10);
   // Again: nothing changes.
