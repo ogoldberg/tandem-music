@@ -39,6 +39,17 @@ test("a missed tap counts two beats and a bounce is dropped", () => {
   assert.equal(tapTempo(bounced), 96);
 });
 
+test("a bounce is not a beat: it neither pulls the tempo nor makes up the four taps", () => {
+  // At 120 a beat is 0.5 s. A bounce 40 ms after the first tap, counted as a beat of its own, would read 121.
+  assert.equal(tapTempo([3, 3.04, 3.5, 4, 4.5, 5]), 120);
+  // Four presses with one a bounce are three taps: no tempo yet, though the tapper holds four presses.
+  const tapper = createTapper();
+  let run;
+  for (const t of [3, 3.5, 3.54, 4]) run = tapper.tap(t);
+  assert.deepEqual(run, { count: 4, bpm: null });
+  assert.equal(tapper.tap(4.5).bpm, 120);
+});
+
 test("only the last twelve taps count, so a run that settles reads the settled speed", () => {
   const early = taps(80, 6, { start: 0 }), late = taps(120, 12, { start: early.at(-1) + 0.5 });
   assert.equal(tapTempo([...early, ...late]), 120);

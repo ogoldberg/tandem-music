@@ -400,3 +400,16 @@ test("FIX.5: every groove import of the studio links against the groove.js the v
     for (const name of names) assert.ok(V61_GROOVE_EXPORTS.includes(name), `${name} is not in the v61 groove.js`);
   }
 });
+
+// A module the studio and capture page import statically links against that groove.js too (TEMPO.1's tap.js).
+test("FIX.5: tap.js imports only what the v60 and v61 workers' groove.js exports", () => {
+  const src = readFileSync(new URL("../tap.js", import.meta.url), "utf8");
+  const declarations = [...src.matchAll(/\bimport\s*\{([^}]*)\}\s*from\s*['"]\.\/groove\.js['"]/g)];
+  const mentions = src.match(/['"]\.\/groove\.js['"]/g) ?? [];
+  assert.ok(declarations.length > 0);
+  assert.equal(declarations.length, mentions.length, "groove.js is loaded other than by a named import");
+  for (const [, list] of declarations) {
+    const names = list.split(",").map(n => n.trim().split(/\s+as\s+/)[0]).filter(Boolean);
+    for (const name of names) assert.ok(V61_GROOVE_EXPORTS.includes(name), `${name} is not in the v61 groove.js`);
+  }
+});

@@ -459,6 +459,8 @@ $('bpm').onchange=()=>{let next;try{next=speedChange(state,Number($('bpm').value
 // last tap, or when Record starts, and four or more set the tempo as one edit (speedChange, so a pinned grid still says no).
 const tapper=createTapper();let tapRun=null,tapTimer=null;
 function tapShow(t){$('tapinfo').textContent=$('gtapinfo').textContent=t}
+// A run of taps belongs to the song it was tapped on: a song opened or started meanwhile drops it (newProject).
+function dropTaps(){clearTimeout(tapTimer);tapTimer=null;tapRun=null;tapper.clear();tapShow('')}
 function keepTaps(){clearTimeout(tapTimer);tapTimer=null;const run=tapRun;tapRun=null;tapper.clear();if(!run)return;if(run.count<TAP_MIN){tapShow('Tap at least '+TAP_MIN+' times to set the speed');return}if(run.bpm===null){tapShow(tapText(run));return}if(run.bpm===state.bpm){tapShow('The speed is already '+speedText(run.bpm));return}let next;try{next=speedChange(state,run.bpm)}catch(e){tapShow(e.message);status(e.message);return}edit('Tap the speed',()=>Object.assign(state,next));tapShow('Speed set to '+speedText(state.bpm)+' from your taps');status('Speed set to '+speedText(state.bpm)+' from your taps')}
 $('taptempo').onclick=()=>{if(takeRun||takeStarting){tapShow('Stop recording, then tap the speed');return}tapRun=tapper.tap(performance.now()/1000);tapShow(tapText(tapRun));clearTimeout(tapTimer);tapTimer=setTimeout(keepTaps,TAP_RESET*1000)};
 $('gtap').onclick=()=>$('taptempo').onclick();
@@ -1409,7 +1411,7 @@ function linkParts(){const now=partsNow();if(!restoringAudio&&(now.length!==save
 // A band belongs to the project it was made for: after another project, idea or version is opened, a band still being
 // generated is not sent or not added (a model download carries on).
 const STALE_BAND='another project was opened meanwhile, so this band was not added to it.';
-function newProject(){projectEpoch++;viewUsed.clear()}
+function newProject(){projectEpoch++;viewUsed.clear();dropTaps()}
 async function bandMelody(follows){
   if(follows==='melody'){
     const p=structuredClone(state);if(!p.notes.length)throw Error('there are no melody notes; transcribe or add some, or follow the recording.');
