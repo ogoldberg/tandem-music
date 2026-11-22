@@ -154,12 +154,17 @@ test("a melody note sounding on the downbeat counts double", () => {
   assert.deepEqual(generateHarmony({ bpm: 120, notes }, { key: { tonic: 0, mode: "major" } }).chords.map(c => c.name), ["F"]);
 });
 
-test("a melody too long for a 1024-note harmony part is refused", () => {
-  // 342 bars of chords would be 1026 notes, over what projects and /api/chat accept.
-  const long = Array.from({ length: 342 }, (_, b) => ({ m: 60, t: b * 2, d: 1.9 }));
-  long.push({ m: 64, t: 0.5, d: 0.2 }, { m: 67, t: 1, d: 0.2 });
-  assert.throws(() => generateHarmony({ bpm: 120, notes: long }), /too long/);
-  assert.equal(generateHarmony({ bpm: 120, notes: long }, { style: "bass" }).notes.length, 684);
+test("a melody too long for a 4096-note harmony part is refused", () => {
+  // GROW.2: 1,366 bars of chords would be 4,098 notes, over the studio's 4,096 a part; 342 bars (1,026) now fit.
+  const melody = bars => {
+    const notes = Array.from({ length: bars }, (_, b) => ({ m: 60, t: b * 2, d: 1.9 }));
+    notes.push({ m: 64, t: 0.5, d: 0.2 }, { m: 67, t: 1, d: 0.2 });
+    return notes;
+  };
+  assert.equal(MAX_HARMONY_NOTES, 4096);
+  assert.equal(generateHarmony({ bpm: 120, notes: melody(342) }).notes.length, 1026);
+  assert.throws(() => generateHarmony({ bpm: 120, notes: melody(1366) }), /too long/);
+  assert.equal(generateHarmony({ bpm: 120, notes: melody(1366) }, { style: "bass" }).notes.length, 2732);
 });
 
 // HARM.2: generated harmony lines for the harmony voice.

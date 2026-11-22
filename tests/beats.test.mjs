@@ -86,8 +86,23 @@ test("bars to cover a song, and what is refused", () => {
   assert.equal(barsToCover(10000, 120), MAX_BARS);
   assert.throws(() => grooveById("polka"), /no starter beat called polka/);
   assert.throws(() => grooveHits("straight", { bpm: 0, bars: 4 }), /tempo/);
-  assert.throws(() => grooveHits("straight", { bpm: 100, bars: 0 }), /1 to 64 bars/);
-  assert.throws(() => grooveHits("straight", { bpm: 100, bars: 2.5 }), /1 to 64 bars/);
+  assert.throws(() => grooveHits("straight", { bpm: 100, bars: 0 }), /1 to 256 bars/);
+  assert.throws(() => grooveHits("straight", { bpm: 100, bars: 2.5 }), /1 to 256 bars/);
+  assert.throws(() => grooveHits("straight", { bpm: 100, bars: 257 }), /1 to 256 bars/);
+});
+
+test("GROW.2: a beat as long as a whole song, and never past the project's 10 minutes", () => {
+  assert.equal(MAX_BARS, 256);
+  assert.equal(barsToCover(180, 120), 90);
+  // 90 bars of the straight beat: 12 hits a bar, more than the 1,024 a part the chat carries.
+  const song = grooveHits("straight", { bpm: 120, bars: 90 });
+  assert.equal(song.length, 1080);
+  assert.equal(song.at(-1).t, 179.75);
+  // 256 bars at 100 bpm would run to 614 s: the hits after 600 s are left out, the rest are kept.
+  const long = grooveHits("straight", { bpm: 100, bars: 256 });
+  assert.ok(long.at(-1).t <= 600 && long.at(-1).t > 599, String(long.at(-1).t));
+  assert.equal(long.length, grooveHits("straight", { bpm: 100, bars: 250 }).length);
+  assert.equal(grooveHits("four", { bpm: 220, bars: 256 }).length, 2560);
 });
 
 test("the capture page's beat: the hits due in each window, from the take's zero, none twice and none missed", () => {

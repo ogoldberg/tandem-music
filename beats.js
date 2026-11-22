@@ -7,8 +7,10 @@ import { BEATS_PER_BAR, barSeconds as bars } from "./bars.js";
 // GROW.1: bars.js owns the bar.
 export { BEATS_PER_BAR };
 export const BAR_CHOICES = Object.freeze([4, 8, 16, 32]);
-// How many bars a beat may have: at the slowest tempo (45 bpm) 64 bars is about six minutes.
-export const MAX_BARS = 64;
+// GROW.2: how many bars a beat may have, room for a whole song: 256 bars is 4:39 at the fastest 220 bpm and
+// past the project's 10 minutes below about 103 bpm, where hits after 600 s are left out (MAX_TIME).
+export const MAX_BARS = 256;
+export const MAX_TIME = 600;
 
 // Each groove is one bar of 4/4: the beat (0 up to 4) each drum is hit on.
 const eighths = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
@@ -57,7 +59,10 @@ export function grooveHits(id, { bpm, bars, from = 0 }) {
   if (!(Number.isInteger(bars) && bars >= 1 && bars <= MAX_BARS)) throw Error(`A beat is 1 to ${MAX_BARS} bars long.`);
   const hits = [];
   for (let b = 0; b < bars; b++) {
-    for (const [k, beats] of Object.entries(g.bar)) for (const x of beats) hits.push({ k, t: round6(from + b * bar + x * beat) });
+    for (const [k, beats] of Object.entries(g.bar)) for (const x of beats) {
+      const t = round6(from + b * bar + x * beat);
+      if (t <= MAX_TIME) hits.push({ k, t });
+    }
   }
   return hits.sort((a, c) => a.t - c.t || ORDER[a.k] - ORDER[c.k]);
 }

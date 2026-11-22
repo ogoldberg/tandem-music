@@ -15,8 +15,8 @@ export { BEATS_PER_BAR };
 // studio's note rolls and the AI accept).
 export const CHORD_RANGE = Object.freeze([48, 67]);
 export const BASS_LOW = 36;
-// Projects and /api/chat accept at most this many harmony notes (ChatProject.harmony).
-export const MAX_HARMONY_NOTES = 1024;
+// GROW.2: the studio's harmony cap, sections.js MAX_EVENTS (the chat carries fewer: actions.js CHAT_LIMITS).
+export const MAX_HARMONY_NOTES = 4096;
 // Each generated note ends a little before the next one starts, so repeated pitches re-strike.
 const RELEASE = 0.94;
 const MIN_KEY_NOTES = 3;

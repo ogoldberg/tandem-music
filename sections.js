@@ -14,8 +14,9 @@ export const MAX_SECTION_NAME = 40;
 export const MAX_TIME = 600;
 // The same shortest stretch the Timeline marks to loop (playhead.js loopRegion).
 export const MIN_SECTION_SECONDS = 0.25;
-// Each part's note cap, as in the project schema (ProjectNote/ProjectHit lists in tandem_backend.py).
-export const MAX_EVENTS = 1024;
+// GROW.2: each part's note cap in the studio, room for a whole song (phrases.js MAX_MELODY_NOTES and harmony.js
+// MAX_HARMONY_NOTES are the same; a Node test checks). The chat carries fewer (actions.js CHAT_LIMITS).
+export const MAX_EVENTS = 4096;
 export const SECTION_NAMES = Object.freeze(["Intro", "Verse", "Pre-chorus", "Chorus", "Bridge", "Solo", "Outro"]);
 export const SECTION_PARTS = Object.freeze(["notes", "harmony", "voice2", "drums"]);
 const PART_NAMES = { notes: "melody", harmony: "chords", voice2: "harmony voice", drums: "drums" };

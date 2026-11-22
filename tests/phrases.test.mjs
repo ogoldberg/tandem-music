@@ -11,7 +11,7 @@ const TWO = [n(67, 2.0), n(60, 0), n(62, 0.5), n(64, 1.0), n(65, 2.5)];
 test("constants", () => {
   assert.equal(PHRASE_GAP_BEATS, 1);
   assert.equal(BEATS_PER_BAR, 4);
-  assert.equal(MAX_MELODY_NOTES, 1024);
+  assert.equal(MAX_MELODY_NOTES, 4096);
 });
 
 test("detectPhrases splits at rests of a beat or more", () => {
@@ -118,9 +118,9 @@ test("copyPhraseToEnd keeps a pickup's position in the bar", () => {
 });
 
 test("copyPhraseToEnd respects the note cap and the 600 s limit", () => {
-  const many = Array.from({ length: MAX_MELODY_NOTES - 1 }, (_, i) => n(60, i * 0.5, 0.4));
+  const many = Array.from({ length: MAX_MELODY_NOTES - 1 }, (_, i) => n(60, i * 0.1, 0.05));
   const ps = detectPhrases(many, { bpm: 60 });
-  assert.throws(() => copyPhraseToEnd(many, { ...ps[0], indices: [0, 1] }, { bpm: 60 }), /more than 1024 notes/);
+  assert.throws(() => copyPhraseToEnd(many, { ...ps[0], indices: [0, 1] }, { bpm: 60 }), /more than 4096 notes/);
   assert.equal(copyPhraseToEnd(many, { ...ps[0], indices: [0] }, { bpm: 60 }).notes.length, MAX_MELODY_NOTES);
   // The last phrase starts at 598.5 s, so its copy one bar later would start at 600.5 s.
   const late = [n(60, 0), n(62, 598.5)];
