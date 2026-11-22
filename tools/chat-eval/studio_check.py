@@ -9,8 +9,14 @@ melody change leaves the melody as it was.
     # Local web server (TANDEM_PROVIDER/TANDEM_MODEL/TANDEM_BASE_URL/TANDEM_API_KEY set for the model)
     python tools/chat-eval/studio_check.py --url http://127.0.0.1:8765 --shots shots/ --out check.json
 
-The Mac app's window carries a launch secret that only its own page gets (DESK.2), so this script cannot drive
-it; the Mac app is checked by hand with the same requests (docs/TESTING.md).
+    # The Mac app's server: guarded_app with a launch secret, AI settings saved as in its AI panel ("Another
+    # OpenAI-compatible server"), the key from the named environment variable kept in memory (never the Keychain)
+    python tools/chat-eval/studio_check.py --desktop --model Inkling-2-Mini-oQ4e-mtp \
+      --base-url http://127.0.0.1:8000/v1 --key-env OMLX_API_KEY --shots shots/ --out check.json
+
+--desktop runs the Mac app's own server code (tandem_desktop.start_server: the Host and Origin checks, the launch
+secret, the person's saved provider through scope["tandem_ai"]) in a scratch settings folder, and gives the page the
+secret with the window's own launch_script. The window itself (WKWebView) is not driven.
 
 Exit code 0 when every check passed, 1 otherwise. The model's replies are kept in --out for reading.
 """
@@ -92,13 +98,62 @@ REQUESTS = [
 ]
 
 
+class MemoryKeys:
+    """A key store in memory, in place of the macOS Keychain, so the check never touches the person's keys."""
+
+    def __init__(self):
+        self.keys = {}
+
+    def get(self, account):
+        return self.keys.get(account)
+
+    def set(self, account, key):
+        self.keys[account] = key
+
+    def delete(self, account):
+        self.keys.pop(account, None)
+
+
+def desktop_server(args, home):
+    """The Mac app's server on a free loopback port with AI settings saved as the AI panel saves them."""
+    import os
+    import socket
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    import tandem_desktop as desk
+    from tandem_desktop.ai_keys import AISettings
+    key = os.environ.get(args.key_env or "")
+    if args.key_env and not key:
+        sys.exit(f"{args.key_env} is not set")
+    ai = AISettings(home, keys=MemoryKeys())
+    ai.save({"provider": "custom", "model": args.model, "base_url": args.base_url, **({"key": key} if key else {})})
+    if not ai.public()["ready"]:
+        sys.exit("The AI settings were saved but are not ready")
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    secret = desk.new_launch_secret()
+    server, thread = desk.start_server(port, secret, ai_settings=ai)
+    return f"http://127.0.0.1:{port}", desk.launch_script(port, secret), lambda: desk.stop_server(server, thread)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--url", required=True)
+    ap.add_argument("--url", help="a running Tandem web server whose chat is set up")
+    ap.add_argument("--desktop", action="store_true", help="run the Mac app's own server here instead of --url")
+    ap.add_argument("--model", help="--desktop: the model, as saved in the AI panel")
+    ap.add_argument("--base-url", help="--desktop: the OpenAI-compatible server's address")
+    ap.add_argument("--key-env", help="--desktop: the environment variable holding the server's key, if it needs one")
     ap.add_argument("--shots", type=Path)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--timeout", type=float, default=120, help="seconds to wait for each answer")
     args = ap.parse_args()
+    if args.desktop == bool(args.url) or (args.desktop and not (args.model and args.base_url)):
+        ap.error("give --url, or --desktop with --model and --base-url")
+    stop, launch = None, None
+    if args.desktop:
+        import tempfile
+        home = tempfile.mkdtemp(prefix="tandem-desktop-check-")
+        args.url, launch, stop = desktop_server(args, home)
     if args.shots:
         args.shots.mkdir(parents=True, exist_ok=True)
     results, problems = [], []
@@ -106,12 +161,19 @@ def main():
         browser = pw.chromium.launch()
         context = browser.new_context(viewport={"width": 1440, "height": 900})
         context.add_init_script(ALL_CONTROLS)
+        if launch:
+            context.add_init_script(launch)
         page = context.new_page()
         page.on("pageerror", lambda e: problems.append(f"pageerror: {e}"))
         page.on("console", lambda m: problems.append(f"console.error: {m.text}") if m.type == "error" else None)
         page.goto(args.url + "/")
         page.wait_for_selector("#demo", state="attached")
-        config = page.evaluate("async () => (await fetch('/api/config')).json()")
+        config = page.evaluate("""async () => {
+          const l = window.tandemLaunch, headers = l ? {[l.header]: l.secret} : {};
+          return (await fetch('/api/config', {headers})).json();
+        }""")
+        if args.desktop and (config.get("runtime") != "desktop" or config.get("ai_source") == "server"):
+            sys.exit(f"Not the Mac app's server with saved AI settings: {config}")
         if not config.get("ai_ready"):
             sys.exit(f"The server's chat is not set up: {config.get('ai_problem') or 'no model'}")
         page.click(reveal(page, "#demo"))
@@ -152,8 +214,10 @@ def main():
             print(f"{name}: {'ok' if passed else 'FAILED'} ({seen}); {seconds}s; undo restores: {undone}; "
                   f"status: {status}\n  reply: {' | '.join(replies)[:300]}")
         browser.close()
+    if stop:
+        stop()
     ok = all(r["passed"] and r["one_undo"] is not False for r in results) and not problems
-    args.out.write_text(json.dumps({"url": args.url, "model": config.get("model"), "provider": config.get("provider"),
+    args.out.write_text(json.dumps({"url": args.url, "desktop": args.desktop, "ai_source": config.get("ai_source"), "model": config.get("model"), "provider": config.get("provider"),
                                     "results": results, "problems": problems, "ok": ok}, indent=1) + "\n")
     for p in problems:
         print("problem:", p)

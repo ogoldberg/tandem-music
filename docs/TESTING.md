@@ -161,6 +161,29 @@ What the runs show:
 - "Move it into G major" is a transpose of +7 or -5 from C; the models mostly gave +2, +3, +4 or +5. The song summary names the key, so the arithmetic is the problem, not reading the key.
 - qwen3:8b timed out at 75 s on 4 of 15 answers.
 
+**AI.2a: Inkling-2-Mini on oMLX** (2026-11-22, the same Mac, the operator's own oMLX server over its OpenAI-compatible API, model `Inkling-2-Mini-oQ4e-mtp`, all 18 cases, 3 repeats a case, `tools/chat-eval/results/2026-11-22-omlx.jsonl`):
+
+| Model | Runs | JSON | Valid actions | Melody lock | Did what was asked | Median s | 90th pct s | Tokens in/out | Cost per request |
+|---|---|---|---|---|---|---|---|---|---|
+| openai-compatible Inkling-2-Mini-oQ4e-mtp | 54 | 100% | 100% | 100% | 100% | 18.5 | 42.2 | 1744/449 | free (this Mac) |
+
+Every one of the 18 cases passed 3 of 3, including the ones every Ollama model failed: the plain-text injection, eighth-note hats, "delete the last note", the bass line and the move into G major. Against the best Ollama model (qwen3:8b, 72% of the first 13 cases and 53% of AI.6's five) it is about as slow (18.5 s median against 19 s) and right every time. Recommendation for a local model on a Mac with 32 GB: **Inkling-2-Mini on oMLX**, set as "Another OpenAI-compatible server" in the Mac app's AI settings (or `TANDEM_PROVIDER=openai-compatible` with `TANDEM_BASE_URL` on the web server). It was not tried on a Mac with less memory; there qwen3:8b on Ollama remains the measured choice.
+
+**AI.2a: the studio end to end with that model** (2026-11-22). `tools/chat-eval/studio_check.py` drives the studio in Chromium (nothing mocked): it opens the example song in the all-controls view with melody lock on, sends five requests through the chat form, reads the project draft from IndexedDB before and after, and checks that one Undo gives back the project as it was and Redo the edit. Run twice:
+
+- Local web server (`TANDEM_PROVIDER=openai-compatible`, `tools/chat-eval/results/2026-11-22-studio-check.json`): all passed.
+- The Mac app's server (`--desktop`, `tools/chat-eval/results/2026-11-22-studio-check-desktop.json`): `tandem_desktop.start_server`'s `guarded_app` with a launch secret given to the page by the window's own `launch_script`, the model saved through `AISettings` as the AI panel saves "Another OpenAI-compatible server" (the key in memory, not the Keychain), no `TANDEM_*` environment, so `/api/config` reported `ai_source` `your-settings`: all passed.
+
+| Request | Web server | Mac app's server |
+|---|---|---|
+| "Make it a bit faster, about 130 BPM." | 100 to 130 BPM, one Undo (9.1 s) | 100 to 130 BPM, one Undo (50.7 s, the model loading) |
+| "Play the melody on flute." | marimba to flute, one Undo (9.9 s) | marimba to flute, one Undo (11.9 s) |
+| "Add a simple rock beat." | 8 to 16 hats with the kicks and snares, one Undo (26.4 s) | the same (21.0 s) |
+| "Add chords to go with the tune." | a chords part of 6 notes, one Undo (11.2 s) | the same (14.2 s) |
+| "Transpose the melody up two semitones." (lock on) | nothing changed, no undo step; the reply says the melody is protected and to turn off "Protect original melody from AI edits" (17.4 s) | the same (22.1 s) |
+
+The melody's pitches were unchanged after every request. Not checked: the Mac app's WKWebView window itself (computer use was not available to drive it), so the page inside WKWebView was not run, only the same page in Chromium against the Mac app's server code; the operator can repeat the five requests in the window.
+
 ## Manual acceptance matrix
 
 Web MIDI (EXP.4), unverified by the operator: in desktop Chrome with a real USB or Bluetooth MIDI keyboard, Connect MIDI, play a few keys and hear them on the melody instrument, record a phrase with the count-in and check the notes land on the beat in the melody and Undo removes them; then choose a hardware or software synth (for example macOS IAC Driver into GarageBand) as the output and check Play sounds the melody, harmony and drums on their channels and Stop silences it.

@@ -1,0 +1,76 @@
+{
+ "url": "http://127.0.0.1:61687",
+ "desktop": true,
+ "ai_source": "your-settings",
+ "model": "Inkling-2-Mini-oQ4e-mtp",
+ "provider": "openai-compatible",
+ "results": [
+  {
+   "name": "tempo",
+   "message": "Make it a bit faster, about 130 BPM.",
+   "replies": [
+    "Bumped the tempo to 130 BPM to give it a bit more drive. The melody is locked, so I left the notes untouched; if you want the rhythm re-aligned to the new tempo, that would mean melody/drum edits, which are protected for the melody."
+   ],
+   "status": "Applied 1 AI edit(s). Undo is available.",
+   "seconds": 50.7,
+   "passed": true,
+   "seen": "bpm 100 -> 130",
+   "changed": true,
+   "one_undo": true
+  },
+  {
+   "name": "instrument",
+   "message": "Play the melody on flute.",
+   "replies": [
+    "Switched the melody to flute. The melody notes themselves are untouched (protected), only the instrument changed."
+   ],
+   "status": "Applied 1 AI edit(s). Undo is available.",
+   "seconds": 11.9,
+   "passed": true,
+   "seen": "instrument marimba -> flute",
+   "changed": true,
+   "one_undo": true
+  },
+  {
+   "name": "beat",
+   "message": "Add a simple rock beat.",
+   "replies": [
+    "Added a simple straight rock beat (kick on the downbeats, snare on 2 and 4, hats on the offbeats) across the two bars of the song. The melody is protected, so it stays exactly as is."
+   ],
+   "status": "Applied 1 AI edit(s). Undo is available.",
+   "seconds": 21.0,
+   "passed": true,
+   "seen": "drums {'kick': 4, 'hat': 8, 'snare': 4} -> {'kick': 4, 'hat': 16, 'snare': 4}",
+   "changed": true,
+   "one_undo": true
+  },
+  {
+   "name": "chords",
+   "message": "Add chords to go with the tune.",
+   "replies": [
+    "I'll use the studio's chord generator to write a chords part from the melody \u2014 I can't write harmony notes by hand. The melody itself stays untouched."
+   ],
+   "status": "Applied 1 AI edit(s). Undo is available.",
+   "seconds": 14.2,
+   "passed": true,
+   "seen": "harmony notes 0 -> 6",
+   "changed": true,
+   "one_undo": true
+  },
+  {
+   "name": "locked-melody",
+   "message": "Transpose the melody up two semitones.",
+   "replies": [
+    "The melody is protected in this project, so I can't transpose it \u2014 the studio would ignore the transpose anyway. To move the melody up two semitones (C4 to D4, etc.), you'd need to turn off 'Protect original melody from AI edits' first, then ask me to transpose it. The chords and drums stay as they are."
+   ],
+   "status": "The AI reply did not change the project.",
+   "seconds": 22.1,
+   "passed": true,
+   "seen": "melody [60, 60, 62, 64, 64, 67, 67, 69] -> [60, 60, 62, 64, 64, 67, 67, 69]",
+   "changed": false,
+   "one_undo": null
+  }
+ ],
+ "problems": [],
+ "ok": true
+}

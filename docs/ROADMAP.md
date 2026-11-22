@@ -84,11 +84,12 @@ This is the working task list, in strategic order: protect the deployment, prove
   - **Depends:** SEC.1, AI.5 (for the model choice)
   - Since ADR-011 this is only for a hosted mode with the operator's key; local use works with the user's own key (AI.4) and does not need it.
   - Follow "Before enabling paid AI" in `docs/SECURITY.md`.
-- [ ] **AI.2a** Verify structured AI edits end to end with a local model
+- [x] **AI.2a** Verify structured AI edits end to end with a local model
   - **Depends:** AI.4, AI.5
   - Split from AI.2 on 2026-11-22 (operator): the part that needs no key or money. A free model on this Mac, served over the OpenAI-compatible API (the operator's own oMLX server, or Ollama), scored first by `tools/chat-eval` beside the models already in `docs/TESTING.md`; then the best of them drives the chat end to end in the Mac app (AI settings) and on the local web server (`TANDEM_PROVIDER=openai-compatible`, `TANDEM_BASE_URL`).
   - Items whose only open point is "a real-model check under AI.2" (SILENT.3, PRACTICE.4's readings, GROW.9, AI.6's cases) may take that check from AI.2a's local model.
   - **Acceptance:** in both the Mac app and the local web server a small edit asked in the chat (for example add a beat, change the instrument, generate chords) lands as one undoable edit; melody lock still blocks a melody change and the reply says so; the models scored, the one used and what it did recorded in `docs/TESTING.md`.
+  - Done: Inkling-2-Mini (`Inkling-2-Mini-oQ4e-mtp`) on the operator's oMLX server scored 100% on all 18 chat-eval cases (54 runs, median 18.5 s; the best Ollama model, qwen3:8b, 72%) and is the recommended local model for a 32 GB Mac. `tools/chat-eval/studio_check.py` drives the studio in Chromium with it: tempo, instrument, a rock beat and chords each land as one edit that one Undo takes back, and a melody transpose under the lock changes nothing and the reply says the melody is protected; passed on the local web server and on the Mac app's own server code (`--desktop`: `guarded_app`, launch secret, saved AI settings with the key kept in memory). Results in `docs/TESTING.md` and `tools/chat-eval/results/`. Open: the WKWebView window itself was not driven (no computer use in the session); the server path it uses was.
 - [ ] **AI.2b** Verify structured AI edits end to end on the deployed app with a real key
   - **Depends:** AI.1, AI.2a
   - **Acceptance:** a small edit succeeds on the deployed app with a real key (the user's own from the browser; the hosted `/api/chat` too if AI.1 is done); melody lock still blocks melody changes; result recorded in `docs/TESTING.md`.
