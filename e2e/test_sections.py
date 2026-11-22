@@ -143,7 +143,9 @@ WATCH_BUFFERS = """() => {
 
 
 def scheduled_voice(page, seconds):
-    """Press Play and return the level of the scheduled buffer `seconds` long at each of a few song times."""
+    """Press Play from the start, not looping, and return the level of the scheduled buffer `seconds` long at a few song times."""
+    if page.locator("#clearloop").is_enabled():
+        page.click("#clearloop")
     page.evaluate("window.bufs = []")
     page.click("#play")
     expect(page.locator("#status")).to_have_text(re.compile("^Playing composition"))
@@ -229,7 +231,7 @@ def test_a_repeated_chorus_repeats_the_voice_in_play_and_the_stems_and_no_record
     page.click("#redo")
     expect(page.locator("#notecount")).to_have_text("11 notes")
     assert json.loads(page.get_attribute("#lanefill-voice", "data-clips")) == clips
-    page.click('.secblock[data-section="2"]')
+    page.click('.secblock[data-section="1"]')
     page.click("#sectiondelete")
     expect(page.locator("#notecount")).to_have_text("8 notes")
     expect(page.locator("#lanefill-voice")).to_be_hidden()
