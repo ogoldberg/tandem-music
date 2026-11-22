@@ -182,7 +182,7 @@ Every one of the 18 cases passed 3 of 3, including the ones every Ollama model f
 | "Add chords to go with the tune." | a chords part of 6 notes, one Undo (11.2 s) | the same (14.2 s) |
 | "Transpose the melody up two semitones." (lock on) | nothing changed, no undo step; the reply says the melody is protected and to turn off "Protect original melody from AI edits" (17.4 s) | the same (22.1 s) |
 
-The melody's pitches were unchanged after every request. Not checked: the Mac app's WKWebView window itself (computer use was not available to drive it), so the page inside WKWebView was not run, only the same page in Chromium against the Mac app's server code; the operator can repeat the five requests in the window.
+The melody's pitches were unchanged after every request. Not checked: the Mac app's WKWebView window itself (computer use was not available to drive it), so the page inside WKWebView was not run, only the same page in Chromium against the Mac app's server code; the five requests in the window are AI.2c.
 
 ## Manual acceptance matrix
 

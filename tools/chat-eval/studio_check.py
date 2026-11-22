@@ -81,6 +81,18 @@ def kinds(p):
     return out
 
 
+def is_beat(a, b):
+    """A beat was written: kicks, snares and hats, at least four of each, and either a new pattern (hits the old
+    drums did not have, with some of the old ones gone) or at least a bar's worth (four hits) more than before.
+    The example song already has kicks and snares, so one extra hit is not a beat."""
+    k = kinds(b)
+    if min(k.get("kick", 0), k.get("snare", 0), k.get("hat", 0)) < 4:
+        return False
+    old = {(h["k"], round(h["t"], 3)) for h in a["drums"]}
+    new = {(h["k"], round(h["t"], 3)) for h in b["drums"]}
+    return (bool(old - new) and bool(new - old)) or len(new - old) >= 4
+
+
 # Each request: what is asked, and a check of (project before, project after) -> (passed, what was seen).
 REQUESTS = [
     ("tempo", "Make it a bit faster, about 130 BPM.",
@@ -88,7 +100,7 @@ REQUESTS = [
     ("instrument", "Play the melody on flute.",
      lambda a, b: (a["instrument"] != "flute" and b["instrument"] == "flute" and PITCHES(a) == PITCHES(b), f"instrument {a['instrument']} -> {b['instrument']}")),
     ("beat", "Add a simple rock beat.",
-     lambda a, b: ({"kick", "snare"} <= set(kinds(b)) and len(b["drums"]) > len(a["drums"]) and PITCHES(a) == PITCHES(b),
+     lambda a, b: (is_beat(a, b) and PITCHES(a) == PITCHES(b),
                    f"drums {kinds(a)} -> {kinds(b)}")),
     ("chords", "Add chords to go with the tune.",
      lambda a, b: (len(b.get("harmony") or []) > 0 and PITCHES(a) == PITCHES(b),
@@ -149,11 +161,23 @@ def main():
     args = ap.parse_args()
     if args.desktop == bool(args.url) or (args.desktop and not (args.model and args.base_url)):
         ap.error("give --url, or --desktop with --model and --base-url")
-    stop, launch = None, None
-    if args.desktop:
-        import tempfile
-        home = tempfile.mkdtemp(prefix="tandem-desktop-check-")
+    if not args.desktop:
+        return run(args, None)
+    import shutil
+    import tempfile
+    home = tempfile.mkdtemp(prefix="tandem-desktop-check-")
+    stop = None
+    try:
         args.url, launch, stop = desktop_server(args, home)
+        return run(args, launch)
+    finally:
+        # Always: the Mac app's server stops and the scratch settings folder goes, however the run ended.
+        if stop:
+            stop()
+        shutil.rmtree(home, ignore_errors=True)
+
+
+def run(args, launch):
     if args.shots:
         args.shots.mkdir(parents=True, exist_ok=True)
     results, problems = [], []
@@ -214,8 +238,6 @@ def main():
             print(f"{name}: {'ok' if passed else 'FAILED'} ({seen}); {seconds}s; undo restores: {undone}; "
                   f"status: {status}\n  reply: {' | '.join(replies)[:300]}")
         browser.close()
-    if stop:
-        stop()
     ok = all(r["passed"] and r["one_undo"] is not False for r in results) and not problems
     args.out.write_text(json.dumps({"url": args.url, "desktop": args.desktop, "ai_source": config.get("ai_source"), "model": config.get("model"), "provider": config.get("provider"),
                                     "results": results, "problems": problems, "ok": ok}, indent=1) + "\n")
