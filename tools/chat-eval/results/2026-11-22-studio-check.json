@@ -1,0 +1,74 @@
+{
+ "url": "http://127.0.0.1:8765",
+ "model": "Inkling-2-Mini-oQ4e-mtp",
+ "provider": "openai-compatible",
+ "results": [
+  {
+   "name": "tempo",
+   "message": "Make it a bit faster, about 130 BPM.",
+   "replies": [
+    "Bumped the tempo to 130 BPM to give it a bit more energy while keeping the melody and drums intact."
+   ],
+   "status": "Applied 1 AI edit(s). Undo is available.",
+   "seconds": 9.1,
+   "passed": true,
+   "seen": "bpm 100 -> 130",
+   "changed": true,
+   "one_undo": true
+  },
+  {
+   "name": "instrument",
+   "message": "Play the melody on flute.",
+   "replies": [
+    "Switched the melody to flute \u2014 the melody itself stays untouched."
+   ],
+   "status": "Applied 1 AI edit(s). Undo is available.",
+   "seconds": 9.9,
+   "passed": true,
+   "seen": "instrument marimba -> flute",
+   "changed": true,
+   "one_undo": true
+  },
+  {
+   "name": "beat",
+   "message": "Add a simple rock beat.",
+   "replies": [
+    "Added a simple straight rock-style beat (kick and snare with hats) under the flute melody. The melody itself is protected by the lock, so it stays untouched."
+   ],
+   "status": "Applied 1 AI edit(s). Undo is available.",
+   "seconds": 26.4,
+   "passed": true,
+   "seen": "drums {'kick': 4, 'hat': 8, 'snare': 4} -> {'kick': 4, 'hat': 16, 'snare': 4}",
+   "changed": true,
+   "one_undo": true
+  },
+  {
+   "name": "chords",
+   "message": "Add chords to go with the tune.",
+   "replies": [
+    "Added a chords part from the flute melody in C major \u2014 the melody itself is locked, so I left it untouched and let the studio's harmony tool write the chords."
+   ],
+   "status": "Applied 1 AI edit(s). Undo is available.",
+   "seconds": 11.2,
+   "passed": true,
+   "seen": "harmony notes 0 -> 6",
+   "changed": true,
+   "one_undo": true
+  },
+  {
+   "name": "locked-melody",
+   "message": "Transpose the melody up two semitones.",
+   "replies": [
+    "The melody is protected by the studio's lock, so I can't transpose it \u2014 transpose is ignored while it's on. Turning off \"Protect original melody from AI edits\" would let me raise it two semitones (C4 to A4 becomes D4 to B4). Everything else stays as-is: flute melody, piano chords, and the rock beat at 130 BPM."
+   ],
+   "status": "The AI reply did not change the project.",
+   "seconds": 17.4,
+   "passed": true,
+   "seen": "melody [60, 60, 62, 64, 64, 67, 67, 69] -> [60, 60, 62, 64, 64, 67, 67, 69]",
+   "changed": false,
+   "one_undo": null
+  }
+ ],
+ "problems": [],
+ "ok": true
+}

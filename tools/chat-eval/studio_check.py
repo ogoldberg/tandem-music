@@ -49,6 +49,22 @@ def wait_until(page, predicate, arg=None, timeout=30):
         raise TimeoutError(f"timed out after {timeout}s waiting for {predicate}")
 
 
+# UI.2: the studio's side panel shows one part's settings at a time; as a person would, the part's track lane is
+# picked before a control in a hidden panel is used (as e2e/conftest.py does).
+REVEAL = """els => { for (const el of els) {
+  const panel = el.closest && el.closest('#partpanel [data-panel-part]');
+  if (!panel || !panel.hidden) continue;
+  const part = panel.dataset.panelPart;
+  const pick = document.querySelector('#lanes .lanehead[data-part="' + part + '"]') || document.querySelector('#rail .railstep[data-part="' + part + '"]');
+  if (pick) pick.click();
+} }"""
+
+
+def reveal(page, selector):
+    page.eval_on_selector_all(selector, REVEAL)
+    return selector
+
+
 PITCHES = lambda p: sorted(n["m"] for n in p["notes"])
 
 
@@ -63,8 +79,8 @@ def kinds(p):
 REQUESTS = [
     ("tempo", "Make it a bit faster, about 130 BPM.",
      lambda a, b: (125 <= b["bpm"] <= 135 and PITCHES(a) == PITCHES(b), f"bpm {a['bpm']} -> {b['bpm']}")),
-    ("instrument", "Play the melody on marimba.",
-     lambda a, b: (b["instrument"] == "marimba" and PITCHES(a) == PITCHES(b), f"instrument {a['instrument']} -> {b['instrument']}")),
+    ("instrument", "Play the melody on flute.",
+     lambda a, b: (a["instrument"] != "flute" and b["instrument"] == "flute" and PITCHES(a) == PITCHES(b), f"instrument {a['instrument']} -> {b['instrument']}")),
     ("beat", "Add a simple rock beat.",
      lambda a, b: ({"kick", "snare"} <= set(kinds(b)) and len(b["drums"]) > len(a["drums"]) and PITCHES(a) == PITCHES(b),
                    f"drums {kinds(a)} -> {kinds(b)}")),
@@ -94,21 +110,21 @@ def main():
         page.on("pageerror", lambda e: problems.append(f"pageerror: {e}"))
         page.on("console", lambda m: problems.append(f"console.error: {m.text}") if m.type == "error" else None)
         page.goto(args.url + "/")
-        page.wait_for_selector("#demo")
+        page.wait_for_selector("#demo", state="attached")
         config = page.evaluate("async () => (await fetch('/api/config')).json()")
         if not config.get("ai_ready"):
             sys.exit(f"The server's chat is not set up: {config.get('ai_problem') or 'no model'}")
-        page.click("#demo")
+        page.click(reveal(page, "#demo"))
         wait_until(page, "() => document.getElementById('notecount').textContent.startsWith('8 ')")
-        if not page.is_checked("#melodylock"):
+        if not page.is_checked(reveal(page, "#melodylock")):
             sys.exit("Melody lock should be on for a new song")
         for name, message, check in REQUESTS:
             before = page.evaluate(DRAFT)
             bubbles = page.locator("#chat .bubble").count()
             undo_title = page.get_attribute("#undo", "title")
-            page.fill("#prompt", message)
+            page.fill(reveal(page, "#prompt"), message)
             started = time.monotonic()
-            page.click("#chatform button[type=submit]")
+            page.click(reveal(page, "#chatform button[type=submit]"))
             # The person's bubble, then the reply (and one more for each action the song cannot take).
             wait_until(page, "n => document.querySelectorAll('#chat .bubble').length >= n + 2", bubbles, args.timeout)
             page.wait_for_timeout(300)
@@ -121,9 +137,9 @@ def main():
             undone = None
             if changed:
                 # One request is one edit: one Undo gives back the project as it was before it, then Redo again.
-                page.click("#undo")
+                page.click(reveal(page, "#undo"))
                 undone = page.evaluate(DRAFT) == before
-                page.click("#redo")
+                page.click(reveal(page, "#redo"))
                 if page.evaluate(DRAFT) != after:
                     problems.append(f"{name}: Redo did not bring the edit back")
             elif page.get_attribute("#undo", "title") != undo_title:
