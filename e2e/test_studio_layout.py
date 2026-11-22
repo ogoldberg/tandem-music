@@ -4,6 +4,7 @@ The example project is 8 melody notes on the marimba and 16 drum hits at 100 bea
 """
 from playwright.sync_api import expect
 
+from test_guided import guided_page, open_view
 from test_studio import IDB_GET, wait_until
 
 # A control of each part that must be in its side panel, and the panel the step buttons show.
@@ -16,8 +17,9 @@ PART_CONTROLS = {
     "band": ["#bandnote"],
     "timbre": ["#timbrenote"],
 }
-STEP_PARTS = {"sing": ("voice", "#record"), "notes": ("melody", "#melodydraw"), "song": ("song", "#prompt"),
-              "share": ("share", "#exportwav")}
+# UX.9: the rail reads Sing, Your song, Share as the guided steps do, and Ask Tandem is an entry of its own.
+STEP_PARTS = {"sing": ("voice", "#record"), "song": ("melody", "#melodydraw"), "share": ("share", "#exportwav"),
+              "ask": ("song", "#prompt")}
 
 
 def shown_panels(page):
@@ -77,7 +79,7 @@ def test_top_bar_lanes_and_steps_show_the_song(studio):
     expect(page.locator("#lanesub-drums")).to_have_text("16 hits")
     expect(page.locator("#lanesub-harmony")).to_have_text("Not added")
     expect(page.locator("#lanesub-band")).to_have_text("Made in the Mac app")
-    expect(page.locator('#rail [data-rail="notes"] .rsum')).to_have_text("8 notes")
+    expect(page.locator('#rail [data-rail="song"] .rsum')).to_have_text("8 notes and drums")
     # The speed follows the tempo, and chords show on their lane.
     page.fill("#bpm", "120")
     page.press("#bpm", "Enter")
@@ -96,8 +98,10 @@ def test_space_plays_and_stops_and_number_keys_pick_the_steps(studio):
     page.set_viewport_size({"width": 1440, "height": 900})
     page.click("#demo")
     page.locator("#lanes h2").click()  # focus on the page, not on a control
-    page.keyboard.press("4")
+    page.keyboard.press("3")
     assert shown_panels(page) == ["share"]
+    page.keyboard.press("4")
+    assert shown_panels(page) == ["song"]
     page.keyboard.press("2")
     assert shown_panels(page) == ["melody"]
     page.keyboard.press("Space")
@@ -134,7 +138,7 @@ def test_tablet_width_puts_the_steps_above_and_the_panel_beside_the_tracks(studi
     assert rail["y"] + rail["height"] <= lanes["y"] + 1
     assert lanes["x"] + lanes["width"] <= panel["x"] + 1 and abs(panel["y"] - lanes["y"]) < 2
     assert page.evaluate("document.documentElement.scrollWidth") <= 1024
-    # The four steps sit side by side.
+    # The three steps and Ask Tandem sit side by side.
     tops = page.eval_on_selector_all("#rail .railstep", "bs => bs.map(b => Math.round(b.getBoundingClientRect().top))")
     assert len(set(tops)) == 1
 
@@ -287,3 +291,79 @@ def test_a_refused_token_in_the_guided_view_says_where_the_token_goes(browser, s
     context.close()
     expected = "console.error: Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     assert problems == [expected], "Browser reported errors:\n" + "\n".join(problems)
+
+
+DESKTOP = {"viewport": {"width": 1440, "height": 900}, "is_mobile": False, "has_touch": False}
+# UX.9: a change view, the lane Show every control opens on, and the control of that lane's panel that the view also holds.
+ROUND_TRIPS = {"chords": ("harmony", "#genharmony"), "beat": ("drums", "#addhit"), "timing": ("melody", "#quantize"),
+               "takes": ("voice", "#polish")}
+
+
+def test_show_every_control_from_a_view_opens_its_lane_and_guided_steps_comes_back(browser, server_url):
+    with guided_page(browser, server_url, **DESKTOP) as page:
+        page.click("#gdemo")
+        for view, (part, control) in ROUND_TRIPS.items():
+            open_view(page, view)
+            page.click("#gsettings")
+            page.click("#gshowall")
+            expect(page.locator("#guide")).to_be_hidden()
+            assert shown_panels(page) == [part], view
+            expect(page.locator(f'#lanes .lanehead[data-part="{part}"]')).to_have_attribute("aria-pressed", "true")
+            expect(page.locator('#rail [aria-current="step"]')).to_have_attribute("data-rail", "sing" if part == "voice" else "song")
+            expect(page.locator(control)).to_be_visible()
+            page.click("#showguide")
+            expect(page.locator(f'.gview[data-view="{view}"]')).to_be_visible()
+            expect(page.locator("#gh-view")).to_have_text(page.evaluate(f"document.getElementById('gtile-{view}').querySelector('strong').textContent"))
+        # A lane chosen in the studio meanwhile: Guided steps opens that part's view.
+        open_view(page, "chords")
+        page.click("#gsettings")
+        page.click("#gshowall")
+        pick_lane(page, "drums")
+        page.click("#showguide")
+        expect(page.locator('.gview[data-view="beat"]')).to_be_visible()
+        # The hub and the Share step land on the melody and the share panel, and come back to themselves.
+        page.click('#steps [data-step="song"]')
+        page.click("#gsettings")
+        page.click("#gshowall")
+        assert shown_panels(page) == ["melody"]
+        page.click("#showguide")
+        expect(page.locator('[data-panel="song"]')).to_be_visible()
+        expect(page.locator('[data-panel="view"]')).to_be_hidden()
+        page.click('#steps [data-step="share"]')
+        page.click("#gshareall")
+        assert shown_panels(page) == ["share"]
+        page.click("#showguide")
+        expect(page.locator('[data-panel="share"]')).to_be_visible()
+
+
+def test_at_1440_the_hub_and_the_open_view_sit_side_by_side(browser, server_url):
+    with guided_page(browser, server_url, **DESKTOP) as page:
+        page.click("#gdemo")
+        page.click('#steps [data-step="song"]')
+        expect(page.locator('[data-panel="view"]')).to_be_hidden()
+        open_view(page, "notes")
+        hub, view = (page.locator(f'[data-panel="{p}"]').bounding_box() for p in ("song", "view"))
+        assert hub["x"] + hub["width"] <= view["x"] and abs(hub["y"] - view["y"]) < 40, (hub, view)
+        assert view["width"] > 600 and page.evaluate("document.documentElement.scrollWidth") <= 1440
+        expect(page.locator("#gtile-notes")).to_have_attribute("aria-current", "true")
+        expect(page.locator('#gtiles [aria-current]')).to_have_count(1)
+        expect(page.locator(".gview[data-view=notes] #melodyroll")).to_be_visible()
+        # No control is shown twice: every id is on one element, and the roll is only in the open view.
+        assert page.evaluate("""() => { const ids = [...document.querySelectorAll('[id]')].map(e => e.id);
+            return ids.length === new Set(ids).size }""")
+        assert page.evaluate("document.querySelectorAll('#melodyroll').length") == 1
+        # A tile of the hub beside the view opens its view in the same place; Done closes it.
+        page.click("#gtile-chords")
+        expect(page.locator('.gview[data-view="chords"]')).to_be_visible()
+        expect(page.locator('[data-panel="song"]')).to_be_visible()
+        expect(page.locator("#gtile-chords")).to_have_attribute("aria-current", "true")
+        page.click("#gviewdone")
+        expect(page.locator('[data-panel="view"]')).to_be_hidden()
+        expect(page.locator('#gtiles [aria-current]')).to_have_count(0)
+        # Narrower than 1100 px a view is shown alone, as on the phone.
+        open_view(page, "beat")
+        page.set_viewport_size({"width": 1024, "height": 768})
+        expect(page.locator('[data-panel="song"]')).to_be_hidden()
+        expect(page.locator('.gview[data-view="beat"]')).to_be_visible()
+        page.set_viewport_size({"width": 1440, "height": 900})
+        expect(page.locator('[data-panel="song"]')).to_be_visible()

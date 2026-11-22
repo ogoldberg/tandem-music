@@ -4,7 +4,7 @@ import {
   STEPS, HELPERS, DEFAULTS, PITCH_AMOUNTS, BEAT_STYLES, GUIDE_KEY, normalizeSettings, readSettings, writeSettings,
   afterTake, stepSummaries, isChords, speedText, pitchAmountName, nextStep, previousStep, planSentence, pastTense, takeReport,
   VIEWS, VIEW_GROUPS, viewById, nextView, previousView, playsText, beforeText, viewSummaries, suggestNext, MOVES, PLACES, CONTROL_PLACES,
-  MORE_VIEWS, songLines,
+  MORE_VIEWS, songLines, VIEW_PARTS, PART_VIEWS, studioPart, guidedPlace,
 } from "../guide.js";
 import { GENRES } from "../genre.js";
 
@@ -318,4 +318,33 @@ test("UX.7: every control of the studio page has a guided screen or fold, and ev
   assert.deepEqual(Object.keys(CONTROL_PLACES).filter(id => CONTROL_PLACES[id].place === "studio").sort(), ["backtotracks", "shortcuts", "showguide"]);
   assert.deepEqual(MORE_VIEWS.map(id => PLACES["view:" + id + ":more"]), ["#gmore-voice", "#gmoretools", "#gmore-timing", "#gmore-chords",
     "#gmore-voice2", "#gmore-beat", "#gmore-sound"]);
+});
+
+test("UX.9: Show every control opens the part that holds the place, and Guided steps comes back to it or to the part's view", () => {
+  // Every change view has a part, and every part the studio has comes back to a view that opens on that part.
+  assert.deepEqual(Object.keys(VIEW_PARTS).sort(), VIEWS.map(v => v.id).sort());
+  const parts = ["voice", "melody", "harmony", "voice2", "drums", "band", "timbre", "song"];
+  assert.deepEqual(Object.keys(PART_VIEWS).sort(), [...parts].sort());
+  for (const part of ["voice", "melody", "harmony", "voice2", "drums", "song"]) assert.equal(VIEW_PARTS[PART_VIEWS[part]], part, part);
+  assert.equal(studioPart({ step: "sing" }), "voice");
+  assert.equal(studioPart({ step: "sing", take: true }), "voice");
+  assert.equal(studioPart({ step: "song" }), "melody");
+  assert.equal(studioPart({ step: "share" }), "share");
+  assert.equal(studioPart({ step: "song", view: "chords" }), "harmony");
+  assert.equal(studioPart({ step: "song", view: "beat" }), "drums");
+  assert.equal(studioPart({ step: "song", view: "takes" }), "voice");
+  assert.equal(studioPart({ step: "song", view: "ask" }), "song");
+  assert.equal(studioPart({ step: "song", view: "nope" }), "melody");
+  assert.equal(studioPart(), "voice");
+  // The part left as it was: back to the very place, Timing included (Notes shares its part).
+  const timing = { step: "song", view: "timing" };
+  assert.equal(guidedPlace("melody", timing), timing);
+  assert.deepEqual(guidedPlace("voice", { step: "sing", take: true }), { step: "sing", take: true });
+  assert.deepEqual(guidedPlace("melody", { step: "song" }), { step: "song" });
+  // Another part chosen in the studio: its own view.
+  assert.deepEqual(guidedPlace("drums", timing), { step: "song", view: "beat" });
+  assert.deepEqual(guidedPlace("band", timing), { step: "song", view: "sound" });
+  assert.deepEqual(guidedPlace("song", { step: "sing" }), { step: "song", view: "ask" });
+  assert.deepEqual(guidedPlace("share", timing), { step: "share" });
+  assert.deepEqual(guidedPlace("voice", { step: "share" }), { step: "song", view: "voice" });
 });
