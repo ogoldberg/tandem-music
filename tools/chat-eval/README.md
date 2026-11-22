@@ -36,3 +36,20 @@ python tools/chat-eval/chat_eval.py report runs.jsonl
 including the model's raw answer (first 4000 characters), so a failure can be read afterwards. `report` prints the summary
 table and the per-case passes. Prices are passed in, not kept here, because they change.
 `tests/test_chat_eval.py` checks the scoring with a faked model.
+
+## The studio end to end (AI.2a)
+
+`studio_check.py` drives the studio itself in Chromium against a real model: it opens the example song with
+melody lock on, asks for a faster tempo, flute, a rock beat, chords and a locked melody transpose through the
+chat form, reads the project draft from IndexedDB before and after each, and checks each change is one edit
+that one Undo takes back (and the locked transpose changes nothing). It exits 1 when a check fails.
+
+```bash
+# Against a running web server whose chat is set up (TANDEM_PROVIDER, TANDEM_MODEL, TANDEM_BASE_URL, TANDEM_API_KEY)
+~/m5-heavy.sh studio python tools/chat-eval/studio_check.py --url http://127.0.0.1:8765 --shots shots/ --out check.json
+
+# The Mac app's own server code (guarded_app, launch secret, AI settings saved as the AI panel saves them,
+# the key read from the named variable and kept in memory, never the Keychain)
+~/m5-heavy.sh studio python tools/chat-eval/studio_check.py --desktop --model Inkling-2-Mini-oQ4e-mtp \
+  --base-url http://127.0.0.1:8000/v1 --key-env OMLX_API_KEY --shots shots/ --out check.json
+```
