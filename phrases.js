@@ -9,11 +9,12 @@ import { BEATS_PER_BAR, barSeconds, beatSeconds as beats } from "./bars.js";
 export { BEATS_PER_BAR };
 // A rest of at least this many beats (at the project tempo) ends a phrase.
 export const PHRASE_GAP_BEATS = 1;
-// Same bounds as the project schema (ProjectNote in tandem_backend.py) and the melody cap.
+// Same bounds as the project schema (ProjectNote in tandem_backend.py).
 export const MIN_PITCH = 0;
 export const MAX_PITCH = 127;
 export const MAX_TIME = 600;
-export const MAX_MELODY_NOTES = 1024;
+// GROW.2: the studio's melody cap, sections.js MAX_EVENTS (the chat carries fewer: actions.js CHAT_LIMITS).
+export const MAX_MELODY_NOTES = 4096;
 // Times within a millisecond count as equal, so rounded note times do not split or merge phrases.
 const EPS = 1e-3;
 const round3 = x => Math.round(x * 1000) / 1000;

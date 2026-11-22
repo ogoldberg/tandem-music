@@ -110,8 +110,10 @@ test("moving a section swaps it with its neighbour, keeping the gap between them
 test("a section edit is refused when the song would grow past its limits", () => {
   const p = { bpm: 120, notes: [{ m: 60, t: 0, d: 1 }, { m: 62, t: 590, d: 1 }], harmony: [], voice2: [], drums: [], sections: [{ name: "Verse", from: 0, to: 20 }] };
   assert.throws(() => repeatSection(p, 0), /600 seconds/);
-  const full = { bpm: 120, notes: Array.from({ length: 1000 }, (_, i) => ({ m: 60, t: i * 0.01, d: 0.01 })), harmony: [], voice2: [], drums: [], sections: [{ name: "Verse", from: 0, to: 10 }] };
-  assert.throws(() => repeatSection(full, 0), /more than 1024/);
+  // GROW.2: a part holds 4,096 notes, so 1,000 notes repeated is room enough and 3,000 is not.
+  const many = n => ({ bpm: 120, notes: Array.from({ length: n }, (_, i) => ({ m: 60, t: Math.round(i * 9000 / n) / 1000, d: 0.001 })), harmony: [], voice2: [], drums: [], sections: [{ name: "Verse", from: 0, to: 10 }] });
+  assert.equal(repeatSection(many(1000), 0).notes.length, 2000);
+  assert.throws(() => repeatSection(many(3000), 0), /more than 4096/);
   assert.throws(() => repeatSection(song(), 7), /Choose a section/);
 });
 

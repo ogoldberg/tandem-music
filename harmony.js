@@ -15,8 +15,8 @@ export { BEATS_PER_BAR };
 // studio's note rolls and the AI accept).
 export const CHORD_RANGE = Object.freeze([48, 67]);
 export const BASS_LOW = 36;
-// Projects and /api/chat accept at most this many harmony notes (ChatProject.harmony).
-export const MAX_HARMONY_NOTES = 1024;
+// GROW.2: the studio's harmony cap, sections.js MAX_EVENTS (the chat carries fewer: actions.js CHAT_LIMITS).
+export const MAX_HARMONY_NOTES = 4096;
 // Each generated note ends a little before the next one starts, so repeated pitches re-strike.
 const RELEASE = 0.94;
 const MIN_KEY_NOTES = 3;
@@ -477,32 +477,44 @@ export function readChords(harmony, { bpm, key = null } = {}) {
   const bar = barSeconds(bpm);
   const origin = Math.min(...notes.map(n => n.t)), end = Math.max(...notes.map(n => n.t + n.d));
   const bars = Math.max(1, Math.ceil((end - origin) / bar - 1e-6));
-  const onsets = [...new Set(notes.map(n => n.t))].sort((a, b) => a - b);
+  // GROW.2: each bar looks only at the notes near it (in the part's own order, so each chord is named exactly as
+  // before), which keeps a song of thousands of notes quick to read on every redraw.
+  const near = Array.from({ length: bars }, () => []);
+  for (const n of notes) {
+    const first = Math.max(0, Math.floor((n.t - origin) / bar) - 1), last = Math.min(bars - 1, Math.floor((n.t + n.d - origin) / bar) + 1);
+    for (let b = first; b <= last; b++) near[b].push(n);
+  }
   const out = [];
   for (let b = 0; b < bars; b++) {
-    const start = origin + b * bar, stop = start + bar;
+    const start = origin + b * bar, stop = start + bar, here = near[b];
+    const onsets = [...new Set(here.map(n => n.t))].sort((a, b) => a - b);
     // Where a chord is struck inside the bar (a time within TOGETHER of the bar line is the bar line).
     const cuts = [start];
     for (const t of onsets) {
       if (t < start + TOGETHER || t >= stop - TOGETHER || t - cuts[cuts.length - 1] < TOGETHER) continue;
-      const struck = new Set(notes.filter(n => Math.abs(n.t - t) < TOGETHER).map(n => pc(n.m)));
+      const struck = new Set(here.filter(n => Math.abs(n.t - t) < TOGETHER).map(n => pc(n.m)));
       if (struck.size >= 2) cuts.push(t);
     }
     cuts.push(stop);
     let last = null;
     for (let i = 0; i + 1 < cuts.length; i++) {
-      const c = nameSpan(notes, cuts[i], cuts[i + 1], key);
+      const c = nameSpan(here, cuts[i], cuts[i + 1], key);
       if (!c) { last = null; continue; }
       if (last && last.name === c.name) { last.d = round3(cuts[i + 1] - last.t); continue; }
       last = { t: round3(cuts[i]), d: round3(cuts[i + 1] - cuts[i]), ...c };
       out.push(last);
     }
   }
-  const eps = 1e-6, list = Array.isArray(harmony) ? harmony : [];
-  for (const c of out) {
-    c.indices = [];
-    list.forEach((n, i) => { if (notes.includes(n) && n.t >= c.t - eps && n.t < c.t + c.d - eps) c.indices.push(i); });
-  }
+  // Each note that starts in a chord is one of its indices. The chords are in time order, so a binary search finds
+  // the last one starting by the note, and the ones before it are checked while they still hold it.
+  const eps = 1e-6, list = Array.isArray(harmony) ? harmony : [], valid = new Set(notes);
+  for (const c of out) c.indices = [];
+  list.forEach((n, i) => {
+    if (!valid.has(n)) return;
+    let lo = 0, hi = out.length - 1, at = -1;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (out[mid].t - eps <= n.t) { at = mid; lo = mid + 1; } else hi = mid - 1; }
+    for (let j = at; j >= 0 && n.t < out[j].t + out[j].d - eps; j--) out[j].indices.push(i);
+  });
   return out;
 }
 

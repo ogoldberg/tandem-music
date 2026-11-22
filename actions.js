@@ -22,6 +22,17 @@ function fitsChat(list, what) {
 }
 const utf8Bytes = text => new TextEncoder().encode(text).length;
 
+// GROW.2: the studio holds 4,096 notes a part (sections.js MAX_EVENTS) but the chat still carries CHAT_LIMITS.items
+// (ChatProject; a long prompt is slow and costly on a small model). A song with a longer part is not sent, never sent
+// cut short: this gives the words the studio shows instead, or "" when the song fits. GROW.9 lifts it.
+const CHAT_PARTS = Object.freeze([["notes", "the melody has", "notes"], ["harmony", "the chords part has", "notes"], ["voice2", "the harmony voice has", "notes"], ["drums", "the drums have", "hits"]]);
+export function chatTooLong(project) {
+  const over = CHAT_PARTS.filter(([k]) => (project?.[k]?.length ?? 0) > CHAT_LIMITS.items)
+    .map(([k, says, unit]) => `${says} ${project[k].length} ${unit}`);
+  if (!over.length) return "";
+  return `This song is too long for Ask Tandem to read yet: ${over.join(", ")}, and Ask Tandem reads up to ${CHAT_LIMITS.items} a part. Nothing was sent.`;
+}
+
 // One function per action, (project, action, context) => void, changing the project in place. The studio calls
 // applyActions inside one edit(), so a reply's actions are one undo step. A handler that cannot run throws before
 // it changes anything (AI.6's generators work out the new part first and then assign it).
