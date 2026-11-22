@@ -87,8 +87,11 @@ def test_harmony_js_scores_full_marks_on_its_own_melody_and_low_on_the_other():
     chords = [dict(n, instrument=0) for n in spike.harmony_js(dict(base, notes=melody), "chords")]
     own = spike.scores(chords, melody, key)
     other = spike.scores(chords, spike.looped(base["notes"], 30, 6), {"tonic": 11, "mode": "major"})
-    assert own["in_key"] == own["consonant"] == own["shares_triad"] == 1.0
-    assert other["in_key"] < 0.2 and other["consonant"] == 0.0 and other["shares_triad"] == 0.0
+    assert own["in_key"] == own["shares_triad"] == 1.0
+    # HARM.4: the chords now also sit under the melody's fifth (a root a fifth below the melody), which
+    # this mod-12 measure counts as a fourth; 2 of the 18 notes over the melody do that.
+    assert own["consonant"] >= 0.85
+    assert other["in_key"] < 0.2 and other["consonant"] < 0.2 and other["shares_triad"] == 0.0
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="needs node for harmony.js")
