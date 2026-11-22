@@ -82,15 +82,15 @@ def kinds(p):
 
 
 def is_beat(a, b):
-    """A beat was written: kicks, snares and hats, at least four of each, and either a new pattern (hits the old
-    drums did not have, with some of the old ones gone) or at least a bar's worth (four hits) more than before.
-    The example song already has kicks and snares, so one extra hit is not a beat."""
+    """A beat was written: kicks, snares and hats, at least four of each, and at least a bar's worth (four) of
+    hits the old drums did not have, whether added to them or as a new pattern in their place. The example song
+    already has kicks and snares, so one extra or one moved hit is not a beat."""
     k = kinds(b)
     if min(k.get("kick", 0), k.get("snare", 0), k.get("hat", 0)) < 4:
         return False
     old = {(h["k"], round(h["t"], 3)) for h in a["drums"]}
     new = {(h["k"], round(h["t"], 3)) for h in b["drums"]}
-    return (bool(old - new) and bool(new - old)) or len(new - old) >= 4
+    return len(new - old) >= 4
 
 
 # Each request: what is asked, and a check of (project before, project after) -> (passed, what was seen).
