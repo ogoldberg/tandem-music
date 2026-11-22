@@ -134,7 +134,14 @@ def test_the_song_name_is_kept_and_names_a_version_saved_without_a_name(studio):
 def test_tablet_width_puts_the_steps_above_and_the_panel_beside_the_tracks(studio):
     page = studio
     page.set_viewport_size({"width": 1024, "height": 768})
-    rail, lanes, panel = (page.locator(s).bounding_box() for s in ("#rail", "#lanes", "#partpanel"))
+    # The rail settles a frame or two after the resize: read the three boxes together, once two reads agree.
+    rail, lanes, panel = page.evaluate("""async () => {
+      const read = () => JSON.stringify(['rail', 'lanes', 'partpanel'].map(id => {
+        const r = document.getElementById(id).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }));
+      const frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      let last = null;
+      for (let i = 0; i < 60; i++) { await frame(); const now = read(); if (now === last) return JSON.parse(now); last = now; }
+      return JSON.parse(last); }""")
     assert rail["y"] + rail["height"] <= lanes["y"] + 1
     assert lanes["x"] + lanes["width"] <= panel["x"] + 1 and abs(panel["y"] - lanes["y"]) < 2
     assert page.evaluate("document.documentElement.scrollWidth") <= 1024
