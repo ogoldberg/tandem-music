@@ -2,6 +2,7 @@
 // with one change view per kind of change (VIEWS).
 // Pure: what the guided view shows and does next, and its settings. The studio page wires it to the controls.
 import { genreById } from "./genre.js";
+import { shapeLine } from "./shape.js";
 
 export const GUIDE_KEY = "tandem-guide";
 
@@ -30,8 +31,9 @@ export const VIEWS = Object.freeze([
   Object.freeze({ id: "voice2", name: "Second voice", group: "add", plays: "song", roll: false }),
   Object.freeze({ id: "beat", name: "Beat", group: "add", plays: "song", roll: false }),
   Object.freeze({ id: "sound", name: "Sound", group: "add", plays: "song", roll: false }),
-  // UX.7: the song's sections on the Timeline, every take and layer, and practising the tune.
-  Object.freeze({ id: "sections", name: "Sections", group: "more", plays: "song", roll: true }),
+  // GROW.4: the song as a row of blocks (UX.7's Sections view, its Timeline now the view's More fold).
+  Object.freeze({ id: "sections", name: "Song shape", group: "add", plays: "song", roll: false }),
+  // UX.7: every take and layer, and practising the tune.
   Object.freeze({ id: "takes", name: "Takes", group: "more", plays: "song", roll: false }),
   Object.freeze({ id: "practise", name: "Practise", group: "more", plays: "both", roll: true }),
   Object.freeze({ id: "ask", name: "Ask Tandem", group: "ask", plays: "song", roll: false }),
@@ -208,8 +210,9 @@ export function stepSummaries({ duration = 0, notes = 0, drums = 0, harmony = []
 }
 
 // UX.5: the state line on each of Your song's tiles, in plain words. project is the studio state (or a saved project);
-// recorded, polished and tuned say which recordings there are; sounds names the melody's instrument as the menu shows it.
-export function viewSummaries(project, { recorded = false, polished = false, tuned = false, sounds = {} } = {}) {
+// recorded, polished and tuned say which recordings there are; sounds names the melody's instrument as the menu shows it;
+// seconds is how long the song plays (GROW.4's Song shape line).
+export function viewSummaries(project, { recorded = false, polished = false, tuned = false, sounds = {}, seconds = 0 } = {}) {
   const p = project ?? {}, notes = p.notes?.length ?? 0, harmony = p.harmony ?? [], voice2 = p.voice2?.length ?? 0;
   const drums = p.drums?.length ?? 0, words = String(p.lyrics ?? "").split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
   const sung = p.voice2_sung && !p.voice2_sung.muted, genre = genreById(p.genre);
@@ -222,7 +225,7 @@ export function viewSummaries(project, { recorded = false, polished = false, tun
     voice2: voice2 ? plural(voice2, "note") + (sung ? ", sung in your voice" : "") : "Not added",
     beat: drums ? plural(drums, "hit") : "Not added",
     sound: (genre ? genre.name : "No genre") + (sounds.melody ? ", melody on " + sounds.melody : ""),
-    sections: p.sections?.length ? plural(p.sections.length, "section") : "No sections yet",
+    sections: shapeLine(p.sections, seconds),
     takes: takesLine(p.takes?.list?.length ?? (recorded ? 1 : 0), p.layers?.length ?? 0),
     practise: notes ? "Sing along, note by note" : "Needs a tune first",
     ask: p.melody_locked !== false ? "Your melody is protected" : "Tandem may change your melody",
@@ -249,11 +252,13 @@ function takesLine(takes, layers) {
   return [takes && plural(takes, "take"), layers && plural(layers, "layer")].filter(Boolean).join(", ");
 }
 
-// UX.5: the one tile marked Suggested next: chords once there is a tune without them, then a beat, then Share.
+// UX.5: the one tile marked Suggested next: chords once there is a tune without them, then a beat, then (GROW.4) Song
+// shape while the song is one block, then Share.
 export function suggestNext(project) {
   const p = project ?? {};
   if ((p.notes?.length ?? 0) > 0 && !(p.harmony?.length)) return "chords";
   if (!(p.drums?.length)) return "beat";
+  if ((p.sections?.length ?? 0) <= 1) return "sections";
   return "share";
 }
 
@@ -319,19 +324,22 @@ export const MOVES = Object.freeze([
   ["#bandtrack", "slot-band"], ['.mixstrip[data-mix="band"]', "slot-band"], ["#timbretrack", "slot-timbre"], ['.mixstrip[data-mix="timbre"]', "slot-timbre"],
   ["#midioutbox", "slot-sound-more"],
   // Takes, Practise, Ask Tandem, Settings and Share.
+  // Song shape (GROW.4): the row of blocks and the chosen block's actions in view; the Timeline is its More.
+  ["#sections", "slot-shape"], ["#sectionedit", "slot-shape-edit"], ["#songends", "slot-shape-ends"],
   ["#takes", "slot-takes"], ["#layerlanes", "slot-layers"], ["#practicegroup", "slot-practise"], ["#lockgroup", "slot-ask"],
   ["#yourai", "slot-aiconn"], ["#connection", "slot-aiconn"], ["#versionlist", "slot-versions"],
 ].map(Object.freeze));
 
-// UX.7: the views with a closed More fold holding the rest of their kind's controls.
-export const MORE_VIEWS = Object.freeze(["voice", "notes", "timing", "chords", "voice2", "beat", "sound"]);
+// UX.7: the views with a closed More fold holding the rest of their kind's controls. GROW.4: Song shape's is the Timeline fold.
+export const MORE_VIEWS = Object.freeze(["voice", "notes", "timing", "chords", "voice2", "beat", "sound", "sections"]);
+const MORE_FOLDS = Object.freeze({ notes: "#gmoretools", sections: "#gtimeline" });
 // UX.7: the guided screens and folds, each by the element that holds it.
 export const PLACES = Object.freeze({
   top: ".gtop", nav: ".gnav", fixed: "body", sing: '[data-panel="sing"]', "sing:options": "#grecopts", take: '[data-panel="take"]',
   song: '[data-panel="song"]', frame: '[data-panel="view"]', share: '[data-panel="share"]', "share:apps": "#gmoreapps",
   settings: "#ghelpers", "settings:ai": "#gaiconn",
   ...Object.fromEntries(VIEWS.map(v => ["view:" + v.id, '.gview[data-view="' + v.id + '"]'])),
-  ...Object.fromEntries(MORE_VIEWS.map(id => ["view:" + id + ":more", id === "notes" ? "#gmoretools" : "#gmore-" + id])),
+  ...Object.fromEntries(MORE_VIEWS.map(id => ["view:" + id + ":more", MORE_FOLDS[id] ?? "#gmore-" + id])),
   // Only in the studio's layout (its own header and rail), and the file pickers behind their buttons.
   studio: "#allcontrols", file: "#allcontrols",
 });
@@ -352,7 +360,7 @@ const PLACE_IDS = {
   "view:voice:more": "original playtuned downloadtuned tunekey tunescale detectvocal snapvocal resetvocal separate playvocal playband downloadband usefull",
   "view:notes": "gmoretools melodydraw melodyline linekeep linecancel melodyall melodydelete melodysemidown melodysemiup",
   "view:notes:more": "melodyoctdown melodyoctup melodykeydown melodykeyup melodyfit ganalyze addnote clearnotes phraseearlier phraselater " +
-    "phrasedown phraseup phraseoctdown phraseoctup phrasecopy midiconnect midiinput midirecord analyze=#ganalyze",
+    "phrasedown phraseup phraseoctdown phraseoctup midiconnect midiinput midirecord analyze=#ganalyze",
   "view:timing": "gbpm gfindspeed gmore-timing bpm=#gbpm detecttempo=#gfindspeed",
   "view:timing:more": "grid swing qstrength quantize",
   "view:words": "lyrics",
@@ -369,7 +377,8 @@ const PLACE_IDS = {
     "timbreinstrument gentimbre playtimbretrack timbremute removetimbre genre=#ggenre instrument=#ginstrument harmonyinstrument=#gharminst " +
     "voice2instrument=#gvoice2inst",
   "view:sound:more": "midioutput midichannel",
-  "view:sections": "gtimeline loop clearloop evolution sectionname marksection sectionrepeat sectionearlier sectionlater sectiondelete sectionunmark introbars addintro addending",
+  "view:sections": "gtimeline gideafit sectionrepeat sectionearlier sectionlater sectiondelete sectionrename introbars addintro addending",
+  "view:sections:more": "loop clearloop evolution sectionname marksection sectionunmark",
   "view:takes": "grecordlayer comptake compfrom compto compin comploop",
   "view:practise": "practice warmup addwarmup practiceforget practicestop practicekeep practiceask",
   "view:ask": "melodylock whatsent chatform prompt",
@@ -380,7 +389,8 @@ const PLACE_IDS = {
     "versionreplace=[data-press=versionreplace] versionkeep=[data-press=versionkeep] exportevolution=[data-press=exportevolution]",
   "share:apps": "exportwav=[data-press=exportwav] exportstems=[data-press=exportstems] exportmusicxml=[data-press=exportmusicxml] " +
     "exportdawproject=[data-press=exportdawproject] exportmidi=[data-press=exportmidi] save=[data-press=save]",
-  studio: "showguide shortcuts backtotracks",
+  // GROW.4: Copy the phrase is not offered in the guided view; Song shape's Play it again is.
+  studio: "showguide shortcuts backtotracks phrasecopy",
   file: "audiofile projectfile",
 };
 export const CONTROL_PLACES = Object.freeze(Object.fromEntries(Object.entries(PLACE_IDS).flatMap(([place, ids]) =>

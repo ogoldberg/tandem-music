@@ -89,6 +89,14 @@ export function unmarkSection(sections, i) {
   return list.filter((_, k) => k !== i);
 }
 
+// GROW.4: the list with section i named `name`; its stretch and notes stay as they are.
+export function renameSection(sections, i, name) {
+  const list = cleanSections(sections);
+  checkIndex(list, i);
+  const clean = cleanName(name);
+  return list.map((s, k) => (k === i ? { ...s, name: clean } : s));
+}
+
 // Every note part of the project, each event moved by `shift(t)` (null drops it; an array of shifts
 // copies it once per shift), with the limits checked. `trim(n)` may give a note a new length.
 function rework(project, shift, trim = null) {

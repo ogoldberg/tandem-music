@@ -34,13 +34,14 @@ test("UX.5: a step kept from before Your song (notes or song) opens Your song", 
 test("UX.5, UX.7: the twelve change views, grouped, in the order Prev and Next walk them", () => {
   assert.deepEqual(VIEWS.map(v => v.id), ["voice", "notes", "timing", "words", "chords", "voice2", "beat", "sound", "sections", "takes",
     "practise", "ask"]);
-  assert.deepEqual(VIEWS.map(v => v.name), ["Voice", "Notes", "Timing", "Words", "Chords", "Second voice", "Beat", "Sound", "Sections",
+  assert.deepEqual(VIEWS.map(v => v.name), ["Voice", "Notes", "Timing", "Words", "Chords", "Second voice", "Beat", "Sound", "Song shape",
     "Takes", "Practise", "Ask Tandem"]);
   assert.deepEqual(VIEW_GROUPS.map(g => g.id), ["fix", "add", "more", "ask"]);
   const groups = VIEWS.map(v => v.group);
-  assert.deepEqual(groups, ["fix", "fix", "fix", "fix", "add", "add", "add", "add", "more", "more", "more", "ask"]);
+  // GROW.4: Song shape is in Add to it, after Sound.
+  assert.deepEqual(groups, ["fix", "fix", "fix", "fix", "add", "add", "add", "add", "add", "more", "more", "ask"]);
   assert.ok(VIEWS.every(v => ["voice", "both", "song"].includes(v.plays)));
-  assert.deepEqual(VIEWS.filter(v => v.roll).map(v => v.id), ["notes", "timing", "words", "sections", "practise"]);
+  assert.deepEqual(VIEWS.filter(v => v.roll).map(v => v.id), ["notes", "timing", "words", "practise"]);
   assert.equal(VIEWS[0].plays, "voice");
   assert.ok(Object.isFrozen(VIEWS) && VIEWS.every(Object.isFrozen));
   assert.equal(viewById("chords").name, "Chords");
@@ -74,7 +75,7 @@ test("UX.5: viewSummaries says each kind's state in plain words", () => {
   const empty = viewSummaries({ notes: [], drums: [], harmony: [], voice2: [], bpm: 100 });
   assert.deepEqual(empty, {
     voice: "Nothing recorded yet", notes: "No notes yet", timing: "100 beats a minute", words: "No words yet",
-    chords: "Not added", voice2: "Not added", beat: "Not added", sound: "No genre", sections: "No sections yet",
+    chords: "Not added", voice2: "Not added", beat: "Not added", sound: "No genre", sections: "Nothing yet",
     takes: "Nothing recorded yet", practise: "Needs a tune first", ask: "Your melody is protected",
   });
   assert.deepEqual(Object.keys(empty), VIEWS.map(v => v.id), "one line per view, in VIEWS order");
@@ -86,8 +87,9 @@ test("UX.5: viewSummaries says each kind's state in plain words", () => {
     sections: [{ name: "Verse", from: 0, to: 2 }, { name: "Chorus", from: 2, to: 4 }],
     takes: { list: [{ id: "a", name: "Take 1", seconds: 2 }, { id: "b", name: "Take 2", seconds: 2 }], comp: [] },
     layers: [{ id: "l", name: "Layer 1", seconds: 2 }],
-  }, { recorded: true, polished: true, tuned: true, sounds: { melody: "Flute" } });
-  assert.equal(full.sections, "2 sections");
+  }, { recorded: true, polished: true, tuned: true, sounds: { melody: "Flute" }, seconds: 72 });
+  assert.equal(full.sections, "Verse, Chorus, 1:12");
+  assert.equal(viewSummaries({ notes: [{ m: 60, t: 0, d: 0.5 }] }, { seconds: 10.4 }).sections, "One part, 0:10");
   assert.equal(full.takes, "2 takes, 1 layer");
   assert.equal(full.practise, "Sing along, note by note");
   assert.equal(full.voice, "Cleaned up, pitch fixed");
@@ -127,14 +129,21 @@ test("UX.8: songLines lists only the parts the song has, each with its view and 
   assert.deepEqual(songLines(null), []);
 });
 
-test("UX.5: suggestNext offers chords for a tune without them, then a beat, then Share", () => {
+test("UX.5, GROW.4: suggestNext offers chords for a tune without them, then a beat, then Song shape while it is one block, then Share", () => {
   const n = [{ m: 60, t: 0, d: 0.5 }], h = [{ m: 48, t: 0, d: 1 }], d = [{ k: "kick", t: 0 }];
   assert.equal(suggestNext({ notes: n, harmony: [], drums: [] }), "chords");
   assert.equal(suggestNext({ notes: n, harmony: [], drums: d }), "chords");
   assert.equal(suggestNext({ notes: n, harmony: h, drums: [] }), "beat");
   assert.equal(suggestNext({ notes: [], harmony: [], drums: [] }), "beat", "no tune: chords cannot be made yet");
-  assert.equal(suggestNext({ notes: n, harmony: h, drums: d }), "share");
-  assert.equal(suggestNext({ notes: [], harmony: [], drums: d }), "share");
+  const one = [{ name: "Your idea", from: 0, to: 2.4 }], two = [...one, { name: "Your idea", from: 2.4, to: 4.8 }];
+  assert.equal(suggestNext({ notes: n, harmony: h, drums: d }), "sections", "no sections: the song is one block");
+  assert.equal(suggestNext({ notes: n, harmony: h, drums: d, sections: one }), "sections", "one block marked");
+  assert.equal(suggestNext({ notes: n, harmony: h, drums: d, sections: two }), "share");
+  assert.equal(suggestNext({ notes: [], harmony: [], drums: d }), "sections");
+  assert.equal(suggestNext({ notes: [], harmony: [], drums: d, sections: two }), "share");
+  // Chords and a beat come first, whatever the shape.
+  assert.equal(suggestNext({ notes: n, harmony: [], drums: d, sections: two }), "chords");
+  assert.equal(suggestNext({ notes: n, harmony: h, drums: [], sections: two }), "beat");
   assert.equal(suggestNext(null), "beat");
 });
 
@@ -315,9 +324,9 @@ test("UX.7: every control of the studio page has a guided screen or fold, and ev
   }
   assert.equal(new Set(MOVES.map(m => m[0])).size, MOVES.length, "an element moves to one place");
   // Only the studio's own header, rail and side-panel link are left out of the guided view, and the file pickers.
-  assert.deepEqual(Object.keys(CONTROL_PLACES).filter(id => CONTROL_PLACES[id].place === "studio").sort(), ["backtotracks", "shortcuts", "showguide"]);
+  assert.deepEqual(Object.keys(CONTROL_PLACES).filter(id => CONTROL_PLACES[id].place === "studio").sort(), ["backtotracks", "phrasecopy", "shortcuts", "showguide"]);
   assert.deepEqual(MORE_VIEWS.map(id => PLACES["view:" + id + ":more"]), ["#gmore-voice", "#gmoretools", "#gmore-timing", "#gmore-chords",
-    "#gmore-voice2", "#gmore-beat", "#gmore-sound"]);
+    "#gmore-voice2", "#gmore-beat", "#gmore-sound", "#gtimeline"]);
 });
 
 test("UX.9: Show every control opens the part that holds the place, and Guided steps comes back to it or to the part's view", () => {

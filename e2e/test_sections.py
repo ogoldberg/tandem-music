@@ -363,7 +363,9 @@ def test_the_guided_sections_view_adds_an_intro_and_an_ending(browser, server_ur
         page.click("#addending")
         expect(page.locator("#gstatus")).to_contain_text("Add an ending")
         assert [s["name"] for s in sections(page)] == ["Intro", "Outro"]
-        expect(page.locator(".secblock")).to_have_text(["Intro", "Outro"])
+        # GROW.4: each block says its name and its length.
+        expect(page.locator(".secblock strong")).to_have_text(["Intro", "Outro"])
+        expect(page.locator(".secblock small")).to_have_text(["2 bars", "1 bar"])
         assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
         page.locator("#addending").scroll_into_view_if_needed()
         page.screenshot(path=str(SHOTS / "guided-intro-ending.png"))

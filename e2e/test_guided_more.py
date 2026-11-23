@@ -21,7 +21,7 @@ TABLE = """async () => { const g = await import('/guide.js');
 # own controls (once it is sung) and the Mac app's folder buttons.
 STATE = set(MAC_APP + MIDI_PORTS + LINE_TRIAL + DRAWN_LINE + TAKES + SECTION_TOOLS + PRACTICE_BAR + RANGE_BOX + VERSION_FULL
             + ["gvoice2next", "gvoice2keep", "gvoice2cancel", "gopenfolder", "gsavefolder",
-               "playvoice2sung", "voice2sungmute", "removevoice2sung", "gsharevoice"])
+               "playvoice2sung", "voice2sungmute", "removevoice2sung", "gsharevoice", "gideafit"])
 
 CHECK = """([ids, controls, holder]) => ids.map(id => {
   const { via } = controls[id], el = via ? document.querySelector(via) : document.getElementById(id);
@@ -188,17 +188,18 @@ def test_sections_takes_and_practise_views(browser, server_url):
         page.click("#gdemo")
         page.wait_for_function("document.querySelectorAll('#melodyroll .note').length > 0")
         expect(page.locator("#gtiles .glabel")).to_have_text(["Fix your tune", "Add to it", "More", "Or ask for it"])
-        expect(page.locator("#gtile-sections .gtstate")).to_have_text("No sections yet")
-        # Sections: the Timeline is open there, and marking a stretch is one edit.
+        expect(page.locator("#gtile-sections .gtstate")).to_have_text("One part, 0:04")
+        # Song shape (GROW.4): the Timeline is its More fold, closed until opened, and marking a stretch there is one edit.
         open_view(page, "sections")
-        assert page.eval_on_selector("#gtimeline", "d => d.open")
+        assert page.eval_on_selector("#gtimeline", "d => !d.open")
+        page.click("#gtimeline > summary")
         expect(page.locator('.gview[data-view="sections"] #timeline')).to_be_visible()
         drag_loop(page, 1.2, 2.4)
         page.select_option("#sectionname", "Chorus")
         page.click("#marksection")
         expect(page.locator("#sections .secblock")).to_have_count(1)
         page.click("#gviewdone")
-        expect(page.locator("#gtile-sections .gtstate")).to_have_text("1 section")
+        expect(page.locator("#gtile-sections .gtstate")).to_have_text("Chorus, 0:04")
         # The Timeline is folded again in the views that show it closed.
         open_view(page, "notes")
         assert page.eval_on_selector("#gtimeline", "d => !d.open")

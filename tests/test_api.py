@@ -678,6 +678,14 @@ def test_tap_module_is_served_and_precached(client):
     assert "from './tap.js'" in run(client("GET","/capture")).text
     assert "'./tap.js'" in run(client("GET","/sw.js")).text
 
+def test_shape_module_is_served_and_precached(client):
+    # GROW.4: the studio and guide.js import shape.js statically.
+    js=run(client("GET","/shape.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function ideaBlock" in js.text
+    assert "from './shape.js'" in run(client("GET","/")).text
+    assert "'./shape.js'" in run(client("GET","/sw.js")).text
+
 def test_chat_project_mirrors_where_recordings_are_placed():
     # GROW.3: placed mirrors placement.js cleanPlaced: channels keyed like the mixer, clips in song order, not
     # overlapping, within 600 s, at most 64 a channel; `uses` may name it.
