@@ -124,3 +124,23 @@ def test_the_guided_sound_view_has_the_room_under_your_voice(browser, server_url
         room.fill("0.25")
         expect(page.locator("#roomout-voice")).to_have_text("25 %")
         expect(page.locator("#gundo")).to_have_attribute("title", "Undo: Room on your voice: 25 %")
+
+
+def test_before_in_the_guided_sound_view_plays_the_room_the_view_opened_with(browser, server_url):
+    # Review of PR #179: Before is the song as it was when the view opened, its room included, so a Room change can
+    # be compared there; After is the room as it is now.
+    with guided_page(browser, server_url) as page:
+        page.click("#gdemo")
+        open_view(page, "sound")
+        page.locator("#room-voice").fill("0.4")
+        expect(page.locator("#roomout-voice")).to_have_text("40 %")
+        page.click("#gbefore")
+        expect(page.locator("#gbefore")).to_have_attribute("aria-pressed", "true")
+        page.click("#gviewplay")
+        page.wait_for_function("(document.getElementById('timeline').dataset.mix || '').length > 0")
+        assert json.loads(page.get_attribute("#timeline", "data-mix"))["room"] == 0
+        page.click("#gviewstop")
+        page.click("#gafter")
+        page.click("#gviewplay")
+        page.wait_for_function("JSON.parse(document.getElementById('timeline').dataset.mix || '{}').room === 0.2")
+        page.click("#gviewstop")
