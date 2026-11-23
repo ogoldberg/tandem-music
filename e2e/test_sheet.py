@@ -125,3 +125,5 @@ def test_the_guided_share_step_opens_the_song_sheet(browser, server_url):
         assert sheet_lines(page) == [[None, [["words", "Twinkle twinkle"]]]]
         page.click("#sheetclose")
         expect(page.locator("#sheetview")).to_be_hidden()
+        # Closing it gives the focus back to the guided button that opened it, not the hidden studio one.
+        expect(page.locator("#gsongsheet")).to_be_focused()

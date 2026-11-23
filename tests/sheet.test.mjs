@@ -105,3 +105,11 @@ test("SHEET.1: lyricLines keeps each typed line's syllables, and syllables is th
   assert.deepEqual(lyricLines(text).flatMap(l => l.tokens), syllables(text));
   assert.deepEqual(lyricLines(""), []);
 });
+
+test("SHEET.1: a word sung a little late still takes the chord struck just before it, up to half a sixteenth", () => {
+  // At 120 bpm half a sixteenth is 62.5 ms. G is struck at 2 s; "two" is sung 30 ms late, then 100 ms late.
+  const at = late => songSheet({ bpm: 120, notes: [{ m: 60, t: 0, d: 1.8 }, { m: 62, t: 2 + late, d: 0.9 }],
+    harmony: [...chord(C, 0, 2), ...chord(G, 2, 2)], lyrics: "one two" });
+  assert.deepEqual(words(at(0.03)), [[null, ["[C]one [G]two"]]]);
+  assert.deepEqual(words(at(0.1)), [[null, ["[C G]one two"]]]);
+});

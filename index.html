@@ -873,8 +873,8 @@ function drawSheet(sheet){const box=$('sheet');box.replaceChildren();const h=she
    for(const g of l.segments){const seg=sheetEl('span','seg'+(g.joined?' joined':''));seg.append(sheetEl('span','chord',g.chords.join(' ')),sheetEl('span','syl',g.text));if(g.chords.length)seg.dataset.chords=g.chords.join(' ');row.append(seg)}
    sec.append(row)}
   box.append(sec)}}
-function closeSheet(){$('sheetview').hidden=true;document.body.classList.remove('sheeton');$('songsheet').focus?.()}
-$('songsheet').onclick=()=>{try{const sheet=songSheet(state,{key:shownKey(),title:songName()});drawSheet(sheet);$('sheetview').hidden=false;document.body.classList.add('sheeton');$('sheetview').scrollTop=0;$('sheetprint').focus();status('The song sheet is open: print it or save it as a PDF')}catch(e){status(e.message)}};
+let sheetOpener=null;function closeSheet(){$('sheetview').hidden=true;document.body.classList.remove('sheeton');const back=sheetOpener?.isConnected&&sheetOpener.offsetParent?sheetOpener:$('songsheet');sheetOpener=null;back.focus?.()}
+$('songsheet').onclick=()=>{try{const sheet=songSheet(state,{key:shownKey(),title:songName()});drawSheet(sheet);if($('sheetview').hidden)sheetOpener=document.activeElement;$('sheetview').hidden=false;document.body.classList.add('sheeton');$('sheetview').scrollTop=0;$('sheetprint').focus();status('The song sheet is open: print it or save it as a PDF')}catch(e){status(e.message)}};
 $('sheetprint').onclick=()=>window.print();
 $('sheetclose').onclick=closeSheet;
 // While the sheet is open keys stay on it, wherever the focus is, so Space or Undo do not change the song under it; Esc closes it.
