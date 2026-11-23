@@ -127,3 +127,9 @@ def test_the_guided_share_step_opens_the_song_sheet(browser, server_url):
         expect(page.locator("#sheetview")).to_be_hidden()
         # Closing it gives the focus back to the guided button that opened it, not the hidden studio one.
         expect(page.locator("#gsongsheet")).to_be_focused()
+        # Safari and the Mac app's WKWebView do not focus a clicked button: opened with the focus elsewhere, closing it
+        # still gives the focus to the guided button shown, not the hidden studio one.
+        page.evaluate("() => { document.activeElement.blur(); document.getElementById('gsongsheet').click(); }")
+        expect(page.locator("#sheetview")).to_be_visible()
+        page.click("#sheetclose")
+        expect(page.locator("#gsongsheet")).to_be_focused()

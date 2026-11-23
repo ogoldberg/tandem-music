@@ -350,7 +350,7 @@ const PLACE_IDS = {
   fixed: "swupdate audiorescue sheetprint sheetclose",
   top: "gundo gredo gsettings undo=#gundo redo=#gredo",
   nav: "gback gnext gviewprev gviewdone gviewnext",
-  sing: "grecord gimport gopen gdemo gnewsong gchange gcapture gopenfolder gtap taptempo=#gtap record=#grecord finish=#grecord load=#gopen newsong=#gnewsong " +
+  sing: "gresumekeep gresumenew grecord gimport gopen gdemo gnewsong gchange gcapture gopenfolder gtap taptempo=#gtap record=#grecord finish=#grecord load=#gopen newsong=#gnewsong " +
     "demo=#gdemo import=#gimport openfolder=#gopenfolder capturelink=#gcapture mode=[data-mode=melody]",
   "sing:options": "grecopts countin recclick recsong reclayer calibrate pitchguide",
   take: "gtakeplay gvoice gnotes gboth gstopnotes gtakekeep gtakeagain gtakeshare",
@@ -398,3 +398,47 @@ export const CONTROL_PLACES = Object.freeze(Object.fromEntries(Object.entries(PL
     const i = entry.indexOf("=");
     return i < 0 ? [entry, Object.freeze({ place, via: null })] : [entry.slice(0, i), Object.freeze({ place, via: entry.slice(i + 1) })];
   }))));
+
+// RESUME.1: the card that says, when Tandem opens on a song kept from last time, what that song is, so a take is never
+// recorded into it (with it playing) by surprise. project is the restored draft, name the song's name, seconds the
+// recording's length (0 with none), changedAt the time the draft last changed (ms, or null when unknown, as for a
+// draft kept before RESUME.1), now the time it is.
+export function resumeCard(project, { name = "", seconds = 0, changedAt = null, now = Date.now() } = {}) {
+  const p = project ?? {}, has = songLines(p, { recorded: seconds > 0 }).map(l => l.view);
+  const notes = p.notes?.length ?? 0;
+  const words = {
+    voice: "a " + clock(seconds) + " recording",
+    notes: plural(notes, "note"),
+    words: "words",
+    chords: isChords(p.harmony ?? []) ? "chords" : "a harmony line",
+    voice2: "a second voice",
+    beat: "a beat",
+  };
+  const parts = has.map(v => words[v]);
+  if (!parts.length && (p.layers?.length ?? 0) > 0) parts.push(plural(p.layers.length, "layer"));
+  if (!parts.length && (p.sections?.length ?? 0) > 0) parts.push(plural(p.sections.length, "section"));
+  const what = parts.length ? list(parts) : "your work";
+  return {
+    title: String(name).trim() || "Untitled song",
+    what: what[0].toUpperCase() + what.slice(1),
+    when: changedAt == null ? "" : "Last changed " + ago(now - changedAt),
+  };
+}
+
+// RESUME.1: how long ago, in words: just now, minutes, hours, yesterday, days, then weeks.
+export function ago(ms) {
+  const min = Math.floor(Math.max(0, ms) / 60000), hours = Math.floor(min / 60), days = Math.floor(hours / 24);
+  if (min < 1) return "just now";
+  if (min < 60) return plural(min, "minute") + " ago";
+  if (hours < 24) return plural(hours, "hour") + " ago";
+  if (days < 2) return "yesterday";
+  if (days < 14) return days + " days ago";
+  return plural(Math.floor(days / 7), "week") + " ago";
+}
+
+// RESUME.1: the Sing step's line while the song has anything in it: the take goes into this song, and whether the song
+// plays while it is recorded (#recsong).
+export function intoLine(name, { plays = true } = {}) {
+  const title = String(name).trim() || "Untitled song";
+  return "Recording into “" + title + "”: " + (plays ? "the song plays while you sing." : "the song stays quiet while you sing.");
+}

@@ -257,6 +257,9 @@ def test_helpers_turned_off_are_not_run_and_the_settings_are_kept(browser, serve
         page.click('#steps [data-step="song"]')
         page.reload()
         page.wait_for_function("!document.body.inert")
+        # RESUME.1: a song in progress opens on Sing with Welcome back; Keep going is the step it was on.
+        expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Sing")
+        page.click("#gresumekeep")
         expect(page.locator('#steps [aria-current="step"]')).to_contain_text("Your song")
         page.click("#gsettings")
         expect(page.locator('[data-helper="notes"]')).not_to_be_checked()
