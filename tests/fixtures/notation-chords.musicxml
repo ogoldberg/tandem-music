@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  <work><work-title>Chord symbols fixture</work-title></work>
+  <identification><encoding><software>Tandem</software></encoding></identification>
+  <part-list>
+    <score-part id="P1"><part-name>Melody</part-name><score-instrument id="P1-I1"><instrument-name>flute</instrument-name></score-instrument><midi-instrument id="P1-I1"><midi-channel>1</midi-channel><midi-program>74</midi-program></midi-instrument></score-part>
+    <score-part id="P2"><part-name>Harmony</part-name><score-instrument id="P2-I1"><instrument-name>piano</instrument-name></score-instrument><midi-instrument id="P2-I1"><midi-channel>2</midi-channel><midi-program>1</midi-program></midi-instrument></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><key><fifths>-1</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>120</per-minute></metronome></direction-type><sound tempo="120"/></direction>
+      <harmony><root><root-step>F</root-step></root><kind>major</kind></harmony>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>8</duration><voice>1</voice><type>half</type><lyric number="1"><syllabic>single</syllabic><text>Here</text></lyric></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>8</duration><voice>1</voice><type>half</type><lyric number="1"><syllabic>single</syllabic><text>the</text></lyric></note>
+    </measure>
+    <measure number="2">
+      <harmony><root><root-step>G</root-step></root><kind>minor-seventh</kind></harmony>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>8</duration><voice>1</voice><type>half</type><lyric number="1"><syllabic>single</syllabic><text>chords</text></lyric></note>
+      <note><pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch><duration>8</duration><voice>1</voice><type>half</type><lyric number="1"><syllabic>single</syllabic><text>come,</text></lyric></note>
+    </measure>
+    <measure number="3">
+      <harmony><root><root-step>B</root-step><root-alter>-1</root-alter></root><kind>major-seventh</kind></harmony>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type><lyric number="1"><syllabic>single</syllabic><text>and</text></lyric></note>
+    </measure>
+    <measure number="4">
+      <harmony><root><root-step>F</root-step></root><kind>major</kind></harmony>
+      <harmony><root><root-step>C</root-step></root><kind>dominant</kind><offset>8</offset></harmony>
+      <note><pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type><lyric number="1"><syllabic>single</syllabic><text>go</text></lyric></note>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="1">
+      <attributes><divisions>4</divisions><key><fifths>-1</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>F</sign><line>4</line></clef></attributes>
+      <note><pitch><step>F</step><octave>3</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note>
+        <note><chord/><pitch><step>A</step><octave>3</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note>
+        <note><chord/><pitch><step>C</step><octave>4</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>G</step><octave>3</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note>
+        <note><chord/><pitch><step>B</step><alter>-1</alter><octave>3</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note>
+        <note><chord/><pitch><step>D</step><octave>4</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note>
+        <note><chord/><pitch><step>F</step><octave>4</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>B</step><alter>-1</alter><octave>3</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note>
+        <note><chord/><pitch><step>D</step><octave>4</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note>
+        <note><chord/><pitch><step>F</step><octave>4</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note>
+        <note><chord/><pitch><step>A</step><octave>4</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note>
+    </measure>
+    <measure number="4">
+      <note><pitch><step>F</step><octave>3</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+        <note><chord/><pitch><step>A</step><octave>3</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+        <note><chord/><pitch><step>C</step><octave>4</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+        <note><chord/><pitch><step>E</step><octave>3</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+        <note><chord/><pitch><step>G</step><octave>3</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+        <note><chord/><pitch><step>B</step><alter>-1</alter><octave>3</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+    </measure>
+  </part>
+</score-partwise>
