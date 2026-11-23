@@ -12,7 +12,7 @@ import numpy as np
 from playwright.sync_api import expect
 
 from test_guided import guided_page, open_view
-from test_studio import count, download
+from test_studio import IDB_DRAFT, count, download, wait_until
 
 SHOTS = Path(os.environ.get("TANDEM_E2E_SHOTS") or tempfile.gettempdir())
 
@@ -110,6 +110,43 @@ def test_a_genre_changes_the_chords_bass_beat_and_controls_and_none_keeps_todays
     assert "genre" not in saved(page, tmp_path)
     page.set_input_files("#projectfile", str(path))
     expect(page.locator("#genre")).to_have_value("jazz")
+
+
+def beat_controls(page):
+    return page.evaluate("['grid', 'swing', 'groove', 'ggroove', 'fill', 'gfill'].map(id => document.getElementById(id).value)")
+
+
+def test_the_beat_controls_follow_the_genre_when_a_song_opens_reloads_or_is_undone(studio, tmp_path):
+    """BEAT.2 follow-up: the quantize, starter beat and fill menus show the song's genre's choices however the genre came."""
+    page = studio
+    plain = beat_controls(page)
+    assert plain[2:] == ["straight", "straight", "build", "build"]
+    # Opened with a genre: jazz's grid, swing, shuffle and triplet fill.
+    open_tune(page, tmp_path, genre="jazz")
+    expect(page.locator("#genre")).to_have_value("jazz")
+    assert beat_controls(page) == ["2", "100", "shuffle", "shuffle", "triplet", "triplet"]
+    # A choice of one's own stays until the genre changes.
+    page.select_option("#fill", "light")
+    expect(page.locator("#gfill")).to_have_value("light")
+    page.select_option("#genre", "rock")
+    rock = ["4", "0", "straight", "straight", "roll", "roll"]
+    assert beat_controls(page) == rock
+    # Undo takes the genre back to jazz, and the menus with it; Redo to rock again.
+    page.click("#undo")
+    expect(page.locator("#genre")).to_have_value("jazz")
+    assert beat_controls(page)[2:] == ["shuffle", "shuffle", "triplet", "triplet"]
+    page.click("#redo")
+    expect(page.locator("#genre")).to_have_value("rock")
+    # A reload opens the draft with rock's menus, not the defaults.
+    page.select_option("#fill", "light")
+    wait_until(page, f"async () => (await ({IDB_DRAFT})())?.genre === 'rock'", "the draft keeps the genre")
+    page.reload()
+    expect(page.locator("#genre")).to_have_value("rock")
+    assert beat_controls(page) == rock
+    # No genre leaves the menus as they are.
+    page.select_option("#genre", "")
+    expect(page.locator("#genre")).to_have_value("")
+    assert beat_controls(page) == rock
 
 
 def test_detect_tempo_looks_in_the_genres_range(studio, tmp_path):

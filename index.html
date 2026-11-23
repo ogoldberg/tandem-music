@@ -486,8 +486,11 @@ $('groove').onchange=()=>{$('ggroove').value=$('groove').value;grooveAbout()};$(
 // the quantize controls, the starter beat and an empty band style follow it, and Generate, Detect tempo and
 // Transcribe (a beat) use it. Every choice can still be changed. No genre: everything as before.
 for(const s of [$('genre'),$('ggenre')]){const top=s.id==='genre';s.add(new Option(top?'Genre: none':'None',''));for(const g of GENRES)s.add(new Option(top?'Genre: '+g.name:g.name,g.id))}
-function renderGenre(){const g=genreById(state.genre);$('genre').value=$('ggenre').value=state.genre||'';$('ggenreabout').textContent=g?g.about:'None: plain chords held a bar and a straight beat, as Tandem always makes them'}
-function chooseGenre(id){const g=genreById(id||null),to=g?g.id:null;if((state.genre||null)===to){renderGenre();return}edit(g?'Genre: '+g.name:'No genre',()=>Object.assign(state,genreChanges(to)));genreControls(g);status(g?'Genre: '+g.name+'. '+g.about+'. Every choice can still be changed.':'No genre: Tandem\'s plain choices')}
+// The quantize, starter beat, fill and band style controls follow the song's genre whenever it changes: chosen, by the
+// chat, opened, restored or undone, and on a reload (BEAT.2). No genre leaves them as they are.
+let controlsGenre=null;
+function renderGenre(){const g=genreById(state.genre);if((g?.id??null)!==controlsGenre){controlsGenre=g?.id??null;genreControls(g)}$('genre').value=$('ggenre').value=state.genre||'';$('ggenreabout').textContent=g?g.about:'None: plain chords held a bar and a straight beat, as Tandem always makes them'}
+function chooseGenre(id){const g=genreById(id||null),to=g?g.id:null;if((state.genre||null)===to){renderGenre();return}edit(g?'Genre: '+g.name:'No genre',()=>Object.assign(state,genreChanges(to)));status(g?'Genre: '+g.name+'. '+g.about+'. Every choice can still be changed.':'No genre: Tandem\'s plain choices')}
 // The studio controls a genre sets (not in the project): the quantize grid, the starter beat and an empty band style.
 function genreControls(g){if(g){const b=g.beat;$('grid').value=String(b.division);$('qstrength').value=String(b.strength);$('swing').value=String(Math.round(b.swing*100));$('swing').oninput();$('groove').value=$('ggroove').value=g.groove;grooveAbout();$('fill').value=$('gfill').value=g.fill;fillAbout();const band=$('bandstyle'),own=band.value.trim();if(!own||GENRES.some(x=>x.band===own))band.value=g.band}}
 $('genre').onchange=e=>chooseGenre(e.target.value);$('ggenre').onchange=e=>chooseGenre(e.target.value);
@@ -750,7 +753,7 @@ $('marksection').onclick=()=>{if(!loopZone)return;const name=$('sectionname').va
 // the status says how far it runs), each one edit marking an
 // Intro or Outro section; in the guided Sections view with the Timeline.
 $('addintro').onclick=()=>{const bars=Number($('introbars').value);sectionEdit('Add a '+(bars===1?'one':'two')+'-bar intro',(p,lengths)=>addIntro(p,{bars,lengths}))};
-$('addending').onclick=()=>{let r;try{r=addEnding(state,{key:rollKey()})}catch(e){status(e.message);return}if(['notes','harmony','voice2','drums','sections'].every(k=>JSON.stringify(r[k])===JSON.stringify(state[k]??[]))){status('The ending is already there.');return}sectionEdit('Add an ending',()=>r);if(r.later!=null)status('Add an ending. The music after it still plays, to '+r.later.toFixed(1)+' s: mark it as a section and delete it to end the song there.')};
+$('addending').onclick=()=>{let r;const gains=mixGains(state,presentParts()),heard=Object.fromEntries(Object.entries(recordingLengths()).filter(([k])=>gains[k]>0));try{r=addEnding(state,{key:rollKey(),lengths:heard})}catch(e){status(e.message);return}if(['notes','harmony','voice2','drums','sections'].every(k=>JSON.stringify(r[k])===JSON.stringify(state[k]??[]))){status('The ending is already there.');return}sectionEdit('Add an ending',()=>r);if(r.later!=null)status('Add an ending. The music after it still plays, to '+r.later.toFixed(1)+' s: mark it as a section and delete it to end the song there.')};
 $('sectionrepeat').onclick=()=>{const x=blocks()[selSection];if(x)sectionEdit('Repeat '+x.name,(p,lengths)=>repeatSection(p,selSection,{lengths}),{block:true})};
 $('sectionearlier').onclick=()=>{const x=blocks()[selSection];if(x)sectionEdit('Move '+x.name+' earlier',(p,lengths)=>moveSection(p,selSection,-1,{lengths}),{block:true})};
 $('sectionlater').onclick=()=>{const x=blocks()[selSection];if(x)sectionEdit('Move '+x.name+' later',(p,lengths)=>moveSection(p,selSection,1,{lengths}),{block:true})};
@@ -1259,7 +1262,7 @@ $('polish').onclick=async()=>{
 // AI.7: each action is declared in actions.json and run by actions.js; the reply's actions are one edit.
 // AI.6: generate_harmony uses the key menu's choice as Generate does; an action that cannot run on this song is
 // skipped and its reason told in the chat. A genre the reply chose sets the studio's genre controls as the menu does.
-function apply(actions,problems=[],startedIn=gview){const genre=state.genre||null,changed=editIn(startedIn,'AI edit',()=>applyActions(state,actions,{key:menuKey(),problems}));if((state.genre||null)!==genre)genreControls(genreById(state.genre));return changed}
+function apply(actions,problems=[],startedIn=gview){const changed=editIn(startedIn,'AI edit',()=>applyActions(state,actions,{key:menuKey(),problems}));return changed}
 // PRACTICE.4: while a practice pass is marked on the melody roll its scores go with the message, and the model's reading
 // of them comes back apart from the reply, shown under its own label: it read the numbers, it did not hear the voice.
 const PRACTICE_CHAT_NOTES=256;

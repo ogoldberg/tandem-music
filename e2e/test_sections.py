@@ -354,6 +354,27 @@ def test_the_ending_keeps_the_music_after_it_and_says_so(studio, tmp_path):
     assert len(drums) == 12 + 2 + 8 and sorted(drums)[-8:] == [4 * BAR + q * BAR // 4 for q in range(8)]
 
 
+def test_the_ending_says_when_a_heard_recording_plays_past_it(studio, tmp_path):
+    """A take that runs on past the ending is reported once it is heard; muted, it is not. It is never cut."""
+    page = studio
+    open_song3(page, tmp_path)
+    page.select_option("#harmonykey", "0:major")
+    page.set_input_files("#audiofile", str(ramp_wav(tmp_path / "long.wav", seconds=9.5)))
+    expect(page.locator("#status")).to_have_text(re.compile(r"^Recorded 9\.5s"))
+    # The voice is muted by default: nothing heard plays past the ending (6 to 8 s).
+    expect(page.locator("#mute-voice")).to_have_attribute("aria-pressed", "true")
+    page.click("#addending")
+    expect(page.locator("#status")).to_have_text("Add an ending")
+    page.click("#undo")
+    page.click("#mute-voice")
+    expect(page.locator("#mute-voice")).to_have_attribute("aria-pressed", "false")
+    page.click("#addending")
+    expect(page.locator("#status")).to_have_text(
+        "Add an ending. The music after it still plays, to 9.5 s: mark it as a section and delete it to end the song there.")
+    assert sections(page) == [{"name": "Outro", "from": 6, "to": 8}]
+    expect(page.locator("#lanefill-voice")).to_be_hidden()
+
+
 def test_the_guided_sections_view_adds_an_intro_and_an_ending(browser, server_url, tmp_path):
     with guided_page(browser, server_url) as page:
         open_song3(page, tmp_path)

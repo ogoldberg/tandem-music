@@ -281,6 +281,19 @@ test("SONG.3: Add ending changes only its own bar: the chords, drums, harmony vo
   assert.equal(addEnding({ ...solo, voice2: [...solo.voice2, { m: 72, t: 10, d: 5 }] }, { key: C }).later, 15);
   // A section alone after the ending, with no notes there, is reported as well.
   assert.equal(addEnding({ ...p, sections: [{ name: "Solo", from: 8, to: 10 }] }, { key: C }).later, 10);
+  // A recording counted (heard, in the studio) that plays past the ending is reported: a whole take from zero by its
+  // length, a placed one by the end of its last clip, and one that stops by the ending is not.
+  assert.equal(addEnding(p, { key: C, lengths: { voice: 9.25 } }).later, 9.25);
+  assert.equal(addEnding(p, { key: C, lengths: { voice: 7.5 } }).later, null);
+  assert.equal(addEnding(p, { key: C, lengths: { voice: 8 } }).later, null);
+  const placedBand = { ...p, placed: { band: [{ from: 0, to: 4, at: 0 }, { from: 0, to: 3, at: 7.5 }] } };
+  assert.equal(addEnding(placedBand, { key: C, lengths: { band: 20 } }).later, 10.5);
+  assert.equal(addEnding({ ...p, placed: { band: [{ from: 0, to: 4, at: 0 }] } }, { key: C, lengths: { band: 20 } }).later, null);
+  // The latest of the recordings and the music after the ending.
+  assert.equal(addEnding(solo, { key: C, lengths: { voice: 7, "layer-a1": 13.5 } }).later, 13.5);
+  assert.equal(addEnding(solo, { key: C, lengths: { voice: 11 } }).later, 12);
+  // The recordings themselves are not moved or cut.
+  assert.equal(addEnding(p, { key: C, lengths: { voice: 9.25 } }).placed, null);
   // Again: nothing changes.
   const again = addEnding({ ...solo, ...r }, { key: C });
   for (const k of ["notes", "harmony", "voice2", "drums", "sections"]) assert.deepEqual(again[k], r[k], k);
