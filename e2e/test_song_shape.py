@@ -238,3 +238,28 @@ def test_a_block_is_named_and_moved_and_the_studio_has_the_same_tools(browser, s
         page.click('#sections .secblock[data-section="1"]')
         expect(page.locator("#sectionrepeat")).to_be_visible()
         expect(page.locator("#sectionrename")).to_have_value("Chorus")
+
+
+# A one-bar tune at 120 bpm (2 s bars) over a four-bar beat: the idea can be the beat's four bars or the tune's one.
+SHORT_TUNE = {"format": "tandem-project", "version": 1, "bpm": 120, "instrument": "piano", "melody_locked": True,
+              "notes": [{"m": m, "t": i * 0.5, "d": 0.5} for i, m in enumerate([60, 62, 64, 65])],
+              "drums": [{"k": "kick" if q % 2 == 0 else "snare", "t": q * 0.5} for q in range(16)]}
+
+
+def test_a_new_song_starts_with_the_whole_idea_not_only_the_tune(browser, server_url, tmp_path):
+    """Only as long as the tune belongs to the song it was ticked for: the next song opened starts on the whole idea."""
+    path = tmp_path / "short.json"
+    path.write_text(json.dumps(SHORT_TUNE))
+    with guided_page(browser, server_url) as page:
+        for song in range(2):
+            page.set_input_files("#projectfile", str(path))
+            wait_until(page, "() => document.getElementById('notecount').textContent.startsWith('4')", "the tune opened")
+            open_view(page, "sections")
+            expect(page.locator("#gideafitbox")).to_be_visible()
+            # Each song opens on the whole idea, the beat's four bars, with the box clear.
+            expect(page.locator("#gideafit")).not_to_be_checked()
+            expect(page.locator("#sections .secblock small")).to_have_text("4 bars")
+            if song == 0:
+                page.check("#gideafit")
+                expect(page.locator("#sections .secblock small")).to_have_text("1 bar")
+                page.click("#gviewback")

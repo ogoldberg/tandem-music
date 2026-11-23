@@ -10,7 +10,7 @@
 
 import { barGrid, beatSeconds, songBars } from "./bars.js";
 import { tonicChord } from "./harmony.js";
-import { cleanPlaced, clipsOf, deleteClips, moveClips, repeatClips, shiftClips, withClips } from "./placement.js";
+import { cleanPlaced, clipsOf, deleteClips, moveClips, placedSeconds, repeatClips, shiftClips, withClips } from "./placement.js";
 
 export const MAX_SECTIONS = 32;
 export const MAX_SECTION_NAME = 40;
@@ -233,8 +233,10 @@ export function addIntro(project, { bars = 2, lengths = {} } = {}) {
 // melody (harmony.js tonicChord), and the drums, when the song has some, stop on a kick and a snare together on its
 // first beat. A chord held into it stops where it starts. The melody, the harmony voice and the recordings are left as
 // they are. A section running into the ending stops at its start and one inside it gives way to the Outro. Adding it
-// again changes nothing. Returns {notes, harmony, voice2, drums, placed, sections, index}: index is the Outro's.
-export function addEnding(project, { key } = {}) {
+// again changes nothing. `lengths` are the recordings to count, by channel (as for Repeat): one that plays past the
+// ending counts in `later`. Returns {notes, harmony, voice2, drums, placed, sections, index, later}: index is the
+// Outro's, later the time the last thing after the ending stops, else null.
+export function addEnding(project, { key, lengths = {} } = {}) {
   const tune = (Array.isArray(project.notes) ? project.notes : []).filter(n => isTime(n.t) && isTime(n.d));
   if (!tune.length) throw Error("Add ending needs a tune: sing or write the melody first.");
   const last = tune.reduce((a, n) => (n.t > a.t + EPS || (Math.abs(n.t - a.t) <= EPS && n.t + n.d > a.t + a.d) ? n : a));
@@ -276,6 +278,8 @@ export function addEnding(project, { key } = {}) {
   const ends = [
     ...chordsAfter.map(n => n.t + n.d), ...drums.filter(h => h.t >= to - EPS).map(h => h.t),
     ...voice2.filter(n => n.t + n.d > to + EPS).map(n => n.t + n.d), ...after.map(x => x.to),
+    ...Object.entries(lengths || {}).filter(([, s]) => s > 0).map(([k, s]) => placedSeconds(project.placed, k, s))
+      .filter(t => t > to + EPS),
   ];
   return {
     notes: (project.notes || []).map(n => ({ ...n })),
