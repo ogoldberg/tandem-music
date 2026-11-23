@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  STEPS, HELPERS, DEFAULTS, PITCH_AMOUNTS, BEAT_STYLES, GUIDE_KEY, normalizeSettings, readSettings, writeSettings,
+  resumeCard, ago, intoLine, STEPS, HELPERS, DEFAULTS, PITCH_AMOUNTS, BEAT_STYLES, GUIDE_KEY, normalizeSettings, readSettings, writeSettings,
   afterTake, stepSummaries, isChords, speedText, pitchAmountName, nextStep, previousStep, planSentence, layerSentence, pastTense, takeReport,
   VIEWS, VIEW_GROUPS, viewById, nextView, previousView, playsText, beforeText, viewSummaries, suggestNext, MOVES, PLACES, CONTROL_PLACES,
   MORE_VIEWS, songLines, VIEW_PARTS, PART_VIEWS, studioPart, guidedPlace,
@@ -362,4 +362,43 @@ test("FIX.11: the Sing step's line for a layer says what happens to it, and a be
   assert.equal(layerSentence(true), "When you stop, Tandem keeps your beat as a layer over the song and reads it into the drums.");
   assert.equal(layerSentence(false), "When you stop, Tandem keeps the take as a layer over the song. The take the song uses stays as it is.");
   assert.doesNotMatch(layerSentence(false), /drums/);
+});
+
+test("RESUME.1: resumeCard names the song, says what is in it and when it last changed", () => {
+  const now = Date.UTC(2026, 10, 23, 12);
+  const n = (m, t) => ({ m, t, d: 0.5 });
+  const song = { notes: [n(60, 0), n(62, 1), n(64, 2)], harmony: [n(48, 0), n(52, 0)], drums: [{ k: "kick", t: 0 }], lyrics: "la la", voice2: [n(64, 0)] };
+  assert.deepEqual(resumeCard(song, { name: " Rain song ", seconds: 42.4, changedAt: now - 3 * 3600e3, now }),
+    { title: "Rain song", what: "A 0:42 recording, 3 notes, words, chords, a second voice and a beat", when: "Last changed 3 hours ago" });
+  // No name, one note, a harmony line (no two notes together), no time kept (a draft from before RESUME.1).
+  assert.deepEqual(resumeCard({ notes: [n(60, 0)], harmony: [n(48, 0), n(50, 1)] }, { now }),
+    { title: "Untitled song", what: "1 note and a harmony line", when: "" });
+  // Only a recording; only layers; only sections; nothing the lines name.
+  assert.equal(resumeCard({}, { seconds: 65, now }).what, "A 1:05 recording");
+  assert.equal(resumeCard({ layers: [{ id: "a" }, { id: "b" }] }, { now }).what, "2 layers");
+  assert.equal(resumeCard({ sections: [{ name: "Verse", from: 0, to: 4 }] }, { now }).what, "1 section");
+  assert.equal(resumeCard({ takes: { list: [], comp: [] } }, { now }).what, "Your work");
+});
+
+test("RESUME.1: ago in words, at each boundary", () => {
+  const m = 60e3, h = 60 * m, d = 24 * h;
+  assert.equal(ago(0), "just now");
+  assert.equal(ago(m - 1), "just now");
+  assert.equal(ago(-5 * m), "just now");
+  assert.equal(ago(m), "1 minute ago");
+  assert.equal(ago(59 * m), "59 minutes ago");
+  assert.equal(ago(h), "1 hour ago");
+  assert.equal(ago(23 * h + 59 * m), "23 hours ago");
+  assert.equal(ago(d), "yesterday");
+  assert.equal(ago(2 * d - 1), "yesterday");
+  assert.equal(ago(2 * d), "2 days ago");
+  assert.equal(ago(13 * d), "13 days ago");
+  assert.equal(ago(14 * d), "2 weeks ago");
+  assert.equal(ago(21 * d - 1), "2 weeks ago");
+  assert.equal(ago(21 * d), "3 weeks ago");
+});
+
+test("RESUME.1: intoLine names the song a take goes into and whether the song plays", () => {
+  assert.equal(intoLine("Rain song"), "Recording into “Rain song”: the song plays while you sing.");
+  assert.equal(intoLine("  ", { plays: false }), "Recording into “Untitled song”: the song stays quiet while you sing.");
 });
