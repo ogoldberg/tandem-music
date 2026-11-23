@@ -347,7 +347,7 @@ export const PLACES = Object.freeze({
 // UX.7: every control of index.html (a button, input, select, text box, fold, form or link with an id) and the guided screen
 // or fold that shows it. "a=b" is a studio control the guided view drives from b (a selector) instead of showing it.
 const PLACE_IDS = {
-  fixed: "swupdate audiorescue",
+  fixed: "swupdate audiorescue sheetprint sheetclose",
   top: "gundo gredo gsettings undo=#gundo redo=#gredo",
   nav: "gback gnext gviewprev gviewdone gviewnext",
   sing: "gresumekeep gresumenew grecord gimport gopen gdemo gnewsong gchange gcapture gopenfolder gtap taptempo=#gtap record=#grecord finish=#grecord load=#gopen newsong=#gnewsong " +
@@ -384,7 +384,7 @@ const PLACE_IDS = {
   "view:ask": "melodylock whatsent chatform prompt",
   settings: "ghelpersback gcleanup gpitchname gtuneengine gtranscriber gbeatstyle gshowall greset transcriber=#gtranscriber tuneengine=#gtuneengine",
   "settings:ai": "aiprovider aimodel aibaseurl aikey aisave aiforget connection api token connect",
-  share: "gshareplay gsharestop gsongname gsharevoice gsharesong gsavebundle gsavefolder gversionname gsaveversion gmoreapps gshareall songname=#gsongname " +
+  share: "gshareplay gsharestop gsongname gsharevoice gsharesong gsavebundle gsavefolder gversionname gsaveversion gmoreapps gshareall gsongsheet songname=#gsongname songsheet=#gsongsheet " +
     "sharesong=#gsharesong savebundle=#gsavebundle savefolder=#gsavefolder versionname=#gversionname saveversion=#gsaveversion " +
     "versionreplace=[data-press=versionreplace] versionkeep=[data-press=versionkeep] exportevolution=[data-press=exportevolution]",
   "share:apps": "exportwav=[data-press=exportwav] exportstems=[data-press=exportstems] exportmusicxml=[data-press=exportmusicxml] " +

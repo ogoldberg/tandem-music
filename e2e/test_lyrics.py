@@ -97,7 +97,9 @@ def test_export_musicxml_writes_the_words_under_the_melody(studio, tmp_path):
     type_words(page, WORDS)
     score = music21.converter.parse(str(download(page, "#exportmusicxml", tmp_path)), format="musicxml").stripTies()
     melody, harmony = score.parts
-    read = [(n.lyrics[0].text, n.lyrics[0].syllabic) if n.lyrics and n.lyrics[0].text else None for n in melody.flatten().notes]
+    # SHEET.1: the chord symbols over the melody are not notes.
+    sung = [n for n in melody.flatten().notes if not isinstance(n, music21.harmony.ChordSymbol)]
+    read = [(n.lyrics[0].text, n.lyrics[0].syllabic) if n.lyrics and n.lyrics[0].text else None for n in sung]
     assert read == [("Twin", "begin"), ("kle", "end"), ("twin", "begin"), ("kle", "end"), ("lit", "begin"), ("tle", "end"), None, ("star", "single")]
     assert " ".join(music21.text.assembleLyrics(melody).split()) == "Twinkle twinkle little star"
     assert not any(n.lyrics for n in harmony.flatten().notes)

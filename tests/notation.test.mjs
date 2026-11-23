@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { musicXml, partMeasures, spell, DIVISIONS, MEASURE } from "../notation.js";
+import { musicXml, partMeasures, spell, chordSymbols, DIVISIONS, MEASURE } from "../notation.js";
 
 // A small reader for what musicXml writes: parts -> measures -> notes, enough to check the score.
 function readScore(xml) {
@@ -178,4 +178,35 @@ test("the fixture project writes exactly the checked-in score the schema test va
   const project = JSON.parse(await readFile(new URL("./fixtures/notation-project.json", import.meta.url), "utf8"));
   const expected = await readFile(new URL("./fixtures/notation.musicxml", import.meta.url), "utf8");
   assert.equal(musicXml(project.project, { key: project.key, title: project.title }), expected);
+});
+
+test("SHEET.1: the chords fixture writes exactly the checked-in score the schema test validates", async () => {
+  const fixture = JSON.parse(await readFile(new URL("./fixtures/notation-chords.json", import.meta.url), "utf8"));
+  const expected = await readFile(new URL("./fixtures/notation-chords.musicxml", import.meta.url), "utf8");
+  assert.equal(musicXml(fixture.project, { key: fixture.key, title: fixture.title }), expected);
+});
+
+test("SHEET.1: chord symbols go over the first part where each chord starts, a repeat of the chord before is not written again", () => {
+  const chord = (ms, t, d) => ms.map(m => ({ m, t, d }));
+  // 120 bpm: a bar is 2 s. G for two bars (read as two chords, one a bar), then Em struck on beat 3 of bar 3, inside a rest.
+  const project = {
+    bpm: 120, notes: [{ m: 67, t: 0, d: 1 }, { m: 71, t: 2, d: 1 }, { m: 69, t: 4, d: 0.5 }],
+    harmony: [...chord([55, 59, 62], 0, 2), ...chord([55, 59, 62], 2, 2), ...chord([55, 59, 62], 4, 1), ...chord([52, 55, 59], 5, 1)],
+  };
+  assert.deepEqual(chordSymbols(project).map(c => [c.at, c.root, c.quality]), [[0, 7, "major"], [40, 4, "minor"]]);
+  const xml = musicXml(project);
+  const melody = xml.slice(xml.indexOf('<part id="P1">'), xml.indexOf('<part id="P2">'));
+  assert.equal((melody.match(/<harmony>/g) || []).length, 2);
+  assert.equal((xml.slice(xml.indexOf('<part id="P2">')).match(/<harmony>/g) || []).length, 0);
+  // Em is in measure 3 at sixteenth 8, inside the rest that starts at sixteenth 8 there: no offset; it comes before that rest.
+  const m3 = melody.match(/<measure number="3">([\s\S]*?)<\/measure>/)[1];
+  assert.match(m3, /<note><pitch><step>A<\/step>[\s\S]*?<harmony><root><root-step>E<\/root-step><\/root><kind>minor<\/kind><\/harmony>\s*<note><rest\/>/);
+  // Without a melody the symbols go over the harmony part, the first part written.
+  const alone = musicXml({ ...project, notes: [] });
+  assert.equal((alone.match(/<harmony>/g) || []).length, 2);
+  // A flat key spells the root with a flat.
+  const flat = musicXml({ bpm: 120, notes: [{ m: 70, t: 0, d: 2 }], harmony: chord([58, 62, 65], 0, 2) }, { key: { tonic: 5, mode: "major" } });
+  assert.match(flat, /<root-step>B<\/root-step><root-alter>-1<\/root-alter><\/root><kind>major<\/kind>/);
+  // No chords part, no symbols.
+  assert.doesNotMatch(musicXml({ bpm: 120, notes: [{ m: 60, t: 0, d: 1 }] }), /<harmony>/);
 });

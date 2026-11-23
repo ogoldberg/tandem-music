@@ -11,6 +11,7 @@
     <measure number="1">
       <attributes><divisions>4</divisions><key><fifths>-1</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
       <direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>96</per-minute></metronome></direction-type><sound tempo="96"/></direction>
+      <harmony><root><root-step>F</root-step></root><kind>major</kind></harmony>
       <note><pitch><step>F</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>Sing</text></lyric></note>
       <note><pitch><step>G</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>it</text></lyric></note>
       <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>begin</syllabic><text>slow</text></lyric></note>
@@ -18,6 +19,7 @@
       <note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><tie type="start"/><voice>1</voice><type>quarter</type><notations><tied type="start"/></notations><lyric number="1"><syllabic>single</syllabic><text>sing</text></lyric></note>
     </measure>
     <measure number="2">
+      <harmony><root><root-step>C</root-step></root><kind>major</kind></harmony>
       <note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><tie type="stop"/><voice>1</voice><type>quarter</type><notations><tied type="stop"/></notations></note>
       <note><pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch><duration>3</duration><voice>1</voice><type>eighth</type><dot/><lyric number="1"><syllabic>single</syllabic><text>it</text><extend type="start"/></lyric></note>
       <note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>16th</type><lyric number="1"><extend type="stop"/></lyric></note>
@@ -25,6 +27,7 @@
       <note><rest/><duration>2</duration><voice>1</voice><type>eighth</type></note>
     </measure>
     <measure number="3">
+      <harmony><root><root-step>B</root-step><root-alter>-1</root-alter></root><kind>major</kind></harmony>
       <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
       <note><pitch><step>F</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>and</text></lyric></note>
       <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>let</text></lyric></note>
@@ -33,6 +36,7 @@
       <note><pitch><step>D</step><alter>-1</alter><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>end</syllabic><text>ing</text></lyric></note>
     </measure>
     <measure number="4">
+      <harmony><root><root-step>F</root-step></root><kind>major</kind></harmony>
       <note><pitch><step>F</step><octave>4</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type><lyric number="1"><syllabic>single</syllabic><text>come</text></lyric></note>
     </measure>
   </part>

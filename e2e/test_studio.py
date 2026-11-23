@@ -1533,8 +1533,12 @@ def test_export_musicxml_writes_the_melody_and_harmony_as_sheet_music(studio, tm
     melody, harmony = score.parts
     assert (melody.partName, harmony.partName) == ("Melody", "Harmony")
     # 100 bpm: each 0.45 s step of the example is three sixteenths (0.75 of a quarter).
-    notes = [(n.pitch.midi, float(n.offset), float(n.quarterLength)) for n in melody.flatten().notes]
+    sung = [n for n in melody.flatten().notes if not isinstance(n, music21.harmony.ChordSymbol)]
+    notes = [(n.pitch.midi, float(n.offset), float(n.quarterLength)) for n in sung]
     assert notes == [(m, i * 0.75, 0.75) for i, m in enumerate([60, 64, 67, 69, 67, 64, 62, 60])]
+    # SHEET.1: the chord symbols over the melody: the chords strip's C, once, since the second bar's is the same.
+    symbols = [(c.figure, float(c.offset)) for c in melody.flatten().getElementsByClass(music21.harmony.ChordSymbol)]
+    assert symbols == [("C", 0.0)]
     chords = [(sorted(p.midi for p in c.pitches), float(c.offset)) for c in harmony.flatten().notes]
     assert chords == [([52, 55, 60], 0.0), ([52, 55, 60], 4.0)]
     key = melody.flatten().getElementsByClass(music21.key.Key).first()
