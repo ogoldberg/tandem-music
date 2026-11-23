@@ -47,9 +47,16 @@ VOICE_AT = """([seconds, starts, from, to]) => {
   // The samples of the take's stretch [from, to) at each start, and the largest gap between the first copy and the others.
   const n = Math.floor((to - from) * r), first = Math.round((starts[0] + from) * r);
   let peak = 0, gap = 0;
+  // Each copy starts on a whole sample, so it may sit a sample or two off the first: the best of those alignments counts.
   for (const s of starts.slice(1)) {
     const at = Math.round((s + from) * r);
-    for (let i = 0; i < n; i++) { peak = Math.max(peak, Math.abs(x[first + i])); gap = Math.max(gap, Math.abs(x[first + i] - x[at + i])); }
+    let best = Infinity;
+    for (let off = -2; off <= 2; off++) {
+      let g = 0;
+      for (let i = 0; i < n; i++) { peak = Math.max(peak, Math.abs(x[first + i])); g = Math.max(g, Math.abs(x[first + i] - x[at + off + i])); }
+      best = Math.min(best, g);
+    }
+    gap = Math.max(gap, best);
   }
   return { peak, gap };
 }"""
