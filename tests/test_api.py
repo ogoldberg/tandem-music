@@ -420,6 +420,15 @@ def test_chat_project_accepts_an_optional_mix():
         with pytest.raises(Exception):
             server.ChatProject(mix=bad)
 
+def test_chat_project_accepts_the_voices_room():
+    # FX.1: only the voice has a Room amount, 0 (dry) to 1.
+    mix={"voice":{"mute":False,"room":0.35}}
+    assert server.ChatProject(mix=mix).mix.model_dump(exclude_unset=True)==mix
+    for bad in ({"voice":{"room":1.05}},{"voice":{"room":-0.05}},{"voice":{"room":float("nan")}},{"melody":{"room":0.3}},
+                {"band":{"room":0.3}},{"layer-a1":{"room":0.3}}):
+        with pytest.raises(Exception):
+            server.ChatProject(mix=bad)
+
 def test_chat_project_accepts_recorded_layers_and_their_mixer_channels():
     # TRACK.1: the layer list as layers.js cleanLayers writes it, and a channel per layer under layer-<id>; never any audio.
     assert server.ChatProject().layers==[]

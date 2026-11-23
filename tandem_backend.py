@@ -481,6 +481,9 @@ class MixChannel(BaseModel):
     level: float = Field(default=0,ge=-30,le=6,allow_inf_nan=False)
     mute: bool | None = None
     solo: bool = False
+class VoiceChannel(MixChannel):
+    """FX.1: the voice's channel also has a Room amount, 0 (dry) to 1 (mixer.js cleanMix)."""
+    room: float = Field(default=0,ge=0,le=1,allow_inf_nan=False)
 class OwnMuteChannel(BaseModel):
     """MIX.1: the band, the voice as instrument and the sung harmony keep their mute in their own muted field."""
     model_config=ConfigDict(extra="forbid")
@@ -618,7 +621,7 @@ class ProjectMix(BaseModel):
                 raise ValueError(f"Unknown mix part: {key}")
             self.model_extra[key]=MixChannel.model_validate(value)
         return self
-    voice: MixChannel | None = None
+    voice: VoiceChannel | None = None
     melody: MixChannel | None = None
     harmony: MixChannel | None = None
     voice2: MixChannel | None = None

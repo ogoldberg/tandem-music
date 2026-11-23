@@ -100,3 +100,53 @@ test("levelText and scaled", () => {
   assert.equal(levelText(3.5), "+3.5 dB");
   assert.deepEqual([...scaled(Float32Array.from([1, -0.5, 0.25]), 0.5)], [0.5, -0.25, 0.125]);
 });
+
+// FX.1: a little room on the voice.
+import { ROOM_SECONDS, ROOM_PREDELAY, ROOM_WET, roomGains, roomImpulse, roomText, roundRoom } from "../mixer.js";
+
+test("the voice's room is kept in the mix on a 5 % grid, zero left out, and only the voice has one", () => {
+  assert.deepEqual(cleanMix({ voice: { room: 0.3 } }), { voice: { room: 0.3 } });
+  assert.deepEqual(cleanMix({ voice: { room: 0.149 } }), { voice: { room: 0.15 } });
+  assert.deepEqual(cleanMix({ voice: { room: 0, mute: true } }), {});
+  assert.equal(channel({}, "voice").room, 0);
+  assert.equal(channel({ mix: { voice: { room: 0.45 } } }, "voice").room, 0.45);
+  assert.equal("room" in channel({}, "melody"), false);
+  for (const bad of [-0.05, 1.05, NaN, "0.3", null]) assert.throws(() => cleanMix({ voice: { room: bad } }), /Invalid mix/, String(bad));
+  assert.throws(() => cleanMix({ melody: { room: 0.3 } }), /Invalid mix/);
+  assert.throws(() => setChannel({}, "drums", { room: 0.3 }), /Only your voice has a room/);
+  assert.deepEqual(setChannel({ voice: { level: -3 } }, "voice", { room: 0.2 }), { voice: { level: -3, room: 0.2 } });
+  assert.deepEqual(setChannel({ voice: { room: 0.2 } }, "voice", { room: 0 }), {});
+  assert.equal(roundRoom(0.15), 0.15);
+  assert.equal(roomText(0), "Dry");
+  assert.equal(roomText(0.3), "30 %");
+});
+
+test("zero room is the dry voice alone; the dry voice is never turned down", () => {
+  assert.deepEqual(roomGains(0), { dry: 1, wet: 0 });
+  assert.deepEqual(roomGains(undefined), { dry: 1, wet: 0 });
+  assert.deepEqual(roomGains(1), { dry: 1, wet: ROOM_WET });
+  close(roomGains(0.5).wet, ROOM_WET / 2);
+  assert.deepEqual(roomGains(4), { dry: 1, wet: ROOM_WET });
+  assert.ok(ROOM_WET <= 0.5, "a little room: the wet voice at most 6 dB under the dry one");
+});
+
+test("the room's impulse is a short gap, then a tail that falls 60 dB over ROOM_SECONDS, at unit energy", () => {
+  for (const rate of [44100, 48000, 22050]) {
+    const ir = roomImpulse(rate), gap = Math.round(ROOM_PREDELAY * rate), tail = Math.round(ROOM_SECONDS * rate);
+    assert.equal(ir.length, gap + tail, String(rate));
+    assert.ok(ir.subarray(0, gap).every(v => v === 0), "silent before the tail");
+    assert.notEqual(ir[gap + 1], 0);
+    let energy = 0;
+    for (const v of ir) energy += v * v;
+    close(energy, 1, 1e-4);
+    // The envelope in 20 ms windows: it falls steadily, about 60 dB from the start of the tail to its end.
+    const win = Math.round(0.02 * rate), rms = from => Math.sqrt(ir.subarray(from, from + win).reduce((a, v) => a + v * v, 0) / win);
+    const first = rms(gap + win), last = rms(ir.length - win);
+    const drop = 20 * Math.log10(first / last);
+    assert.ok(drop > 50 && drop < 70, `${rate}: fell ${drop.toFixed(1)} dB`);
+    const half = 20 * Math.log10(first / rms(gap + Math.round(tail / 2)));
+    assert.ok(half > 22 && half < 36, `${rate}: half way fell ${half.toFixed(1)} dB`);
+  }
+  assert.deepEqual(roomImpulse(44100), roomImpulse(44100), "the same tail every time");
+  assert.throws(() => roomImpulse(0), /Invalid sample rate/);
+});

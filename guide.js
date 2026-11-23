@@ -321,6 +321,8 @@ export const MOVES = Object.freeze([
   ["#drumroll", "slot-beat"], ["#grooveopts", "slot-beat-more"], ["#hitsgroup", "slot-beat-more"],
   // Sound: a mixer strip a part, the Mac app's band and voice as instrument, MIDI out under More.
   ...["voice", "melody", "harmony", "voice2", "voice2_sung", "drums"].map(part => ['.mixstrip[data-mix="' + part + '"]', "slot-mix-" + part]),
+  // FX.1: the voice's Room amount under its strip.
+  ["#roomctl", "slot-room-voice"],
   ["#bandtrack", "slot-band"], ['.mixstrip[data-mix="band"]', "slot-band"], ["#timbretrack", "slot-timbre"], ['.mixstrip[data-mix="timbre"]', "slot-timbre"],
   ["#midioutbox", "slot-sound-more"],
   // Takes, Practise, Ask Tandem, Settings and Share.
@@ -374,7 +376,7 @@ const PLACE_IDS = {
   "view:beat": "gbeat ggroove ggrooveadd gfill gfilladd gnodrums gmore-beat groove=#ggroove addgroove=#ggrooveadd fill=#gfill addfills=#gfilladd",
   "view:beat:more": "groovebars groovekeep drum addhit clearhits",
   "view:sound": "ggenre ginstrument gharminst gvoice2inst gmore-sound bandstyle bandfollows banddrums genband playbandtrack bandmute removeband " +
-    "timbreinstrument gentimbre playtimbretrack timbremute removetimbre genre=#ggenre instrument=#ginstrument harmonyinstrument=#gharminst " +
+    "room-voice timbreinstrument gentimbre playtimbretrack timbremute removetimbre genre=#ggenre instrument=#ginstrument harmonyinstrument=#gharminst " +
     "voice2instrument=#gvoice2inst",
   "view:sound:more": "midioutput midichannel",
   "view:sections": "gtimeline gideafit sectionrepeat sectionearlier sectionlater sectiondelete sectionrename introbars addintro addending",
