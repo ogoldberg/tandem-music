@@ -280,6 +280,10 @@ def actions_js():
 def tap_js():
     return FileResponse(Path(__file__).resolve().parent / "tap.js", media_type="text/javascript")
 
+@app.get("/shape.js", include_in_schema=False)
+def shape_js():
+    return FileResponse(Path(__file__).resolve().parent / "shape.js", media_type="text/javascript")
+
 @app.get("/placement.js", include_in_schema=False)
 def placement_js():
     return FileResponse(Path(__file__).resolve().parent / "placement.js", media_type="text/javascript")

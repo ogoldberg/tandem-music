@@ -31,7 +31,7 @@ DRAWN_LINE = ["linecancel", "linekeep"]
 # TAKE.1: the comp controls, shown once there are two takes.
 TAKES = ["compfrom", "compin", "comploop", "comptake", "compto"]
 # SONG.1: a section's tools are shown once a section is chosen in the Sections band.
-SECTION_TOOLS = ["sectionrepeat", "sectionearlier", "sectionlater", "sectiondelete", "sectionunmark"]
+SECTION_TOOLS = ["sectionrepeat", "sectionearlier", "sectionlater", "sectiondelete", "sectionunmark", "sectionrename"]
 # PRACTICE.1: Stop and Keep pass as a take, shown while practising or with a pass's marks on the roll.
 PRACTICE_BAR = ["practiceask", "practicekeep", "practicestop"]
 # PRACTICE.2: Forget range and progress, shown once a range or a stretch's progress is kept on the device.
@@ -85,10 +85,10 @@ def record_take(page, seconds=2.5):
 
 
 VIEW_IDS = ["voice", "notes", "timing", "words", "chords", "voice2", "beat", "sound", "sections", "takes", "practise", "ask"]
-VIEW_NAMES = ["Voice", "Notes", "Timing", "Words", "Chords", "Second voice", "Beat", "Sound", "Sections", "Takes", "Practise",
+VIEW_NAMES = ["Voice", "Notes", "Timing", "Words", "Chords", "Second voice", "Beat", "Sound", "Song shape", "Takes", "Practise",
               "Ask Tandem"]
 # UX.7: the views under More, whose edits are in test_guided_more.py.
-MORE_GROUP = ["sections", "takes", "practise"]
+MORE_GROUP = ["takes", "practise"]
 
 
 def open_view(page, view):
@@ -872,9 +872,10 @@ def test_every_change_view_makes_its_edit_and_done_shows_it_on_your_song(browser
         page.click("#gchords")
         expect(page.locator("#gharmstate")).to_have_text("Chords added")
         done_shows(page, "chords", "Chords added")
-        # The example already has a beat: with chords in, the suggestion is Share, on the bottom bar.
-        expect(page.locator("#gtiles .gtsuggest:visible")).to_have_count(0)
-        expect(page.locator("#gnext")).to_have_attribute("data-suggested", "true")
+        # The example already has a beat: with chords in, the suggestion is Song shape (GROW.4), the song being one block.
+        expect(page.locator("#gtiles .gtsuggest:visible")).to_have_count(1)
+        expect(page.locator("#gtile-sections .gtsuggest")).to_be_visible()
+        expect(page.locator("#gnext")).not_to_have_attribute("data-suggested", "true")
 
         check_view("voice2")
         page.click("#gvoice2create")
@@ -897,6 +898,7 @@ def test_every_change_view_makes_its_edit_and_done_shows_it_on_your_song(browser
         melody = page.eval_on_selector("#instrument", "s => s.selectedOptions[0].text")
         done_shows(page, "sound", f"Jazz, melody on {melody}")
 
+
         # Ask Tandem: the chat makes its edit from the view (the model's text canned; the server validates it).
         check_view("ask")
         expect(page.locator(".gview[data-view=ask] #chatform")).to_be_visible()
@@ -910,6 +912,15 @@ def test_every_change_view_makes_its_edit_and_done_shows_it_on_your_song(browser
         page.wait_for_function("document.getElementById('bpm').value === '90'")
         done_shows(page, "ask", "Your melody is protected")
         expect(page.locator("#gtile-timing .gtstate")).to_have_text("90 beats a minute")
+        # GROW.4: Song shape plays the idea again (last, since it pins the bar grid and the speed can then only double or
+        # halve); with two blocks the suggestion is Share, on the bottom bar.
+        check_view("sections")
+        page.click('#sections .secblock[data-section="0"]')
+        page.click("#sectionrepeat")
+        expect(page.locator("#sections .secblock")).to_have_count(2)
+        done_shows(page, "sections", re.compile(r"^Your idea, Your idea, \d:\d\d$"))
+        expect(page.locator("#gtiles .gtsuggest:visible")).to_have_count(0)
+        expect(page.locator("#gnext")).to_have_attribute("data-suggested", "true")
         # Every view was used, Voice and the More group aside.
         assert page.eval_on_selector_all("#gtiles .gtile", "els => els.filter(e => e.dataset.used === 'true').map(e => e.dataset.view)") == [
             v for v in VIEW_IDS[1:] if v not in MORE_GROUP]
@@ -960,11 +971,16 @@ def test_prev_next_and_the_jump_menu_walk_the_views_and_the_roll_is_in_one_view_
             expect(page.locator("#gviewjump")).to_have_value(VIEW_IDS[len(seen) - 1])
             # The roll and the Timeline fold are in the open view when it shows them, and nowhere on screen otherwise.
             view = VIEW_IDS[len(seen) - 1]
-            if view in ("notes", "timing", "words", "sections", "practise"):
+            if view in ("notes", "timing", "words", "practise"):
                 assert page.evaluate("document.getElementById('melodyroll').closest('.gview').dataset.view") == view
                 assert page.evaluate("document.getElementById('gtimeline').closest('.gview').dataset.view") == view
                 expect(page.locator("#melodyroll")).to_be_visible()
                 expect(page.locator("#gtimeline")).to_be_visible()
+            elif view == "sections":
+                # GROW.4: Song shape has the Timeline as its More fold, and no roll.
+                assert page.evaluate("document.getElementById('gtimeline').closest('.gview').dataset.view") == view
+                expect(page.locator("#gtimeline")).to_be_visible()
+                expect(page.locator("#melodyroll")).to_be_hidden()
             else:
                 expect(page.locator("#melodyroll")).to_be_hidden()
                 expect(page.locator("#gtimeline")).to_be_hidden()
