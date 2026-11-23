@@ -4,7 +4,7 @@
 // start point to the loop's end, then the loop again and again until Stop.
 import { layerSeconds } from "./layers.js";
 import { placedSeconds } from "./placement.js";
-import { lineNotes, mapLineNotes } from "./lines.js";
+import { linesNotes, mapLineNotes } from "./lines.js";
 
 // The shortest loop: a drag shorter than this is a click, and a shorter loop would stutter.
 export const MIN_LOOP = 0.25;
@@ -81,7 +81,7 @@ export function clipProject(project, from, to) {
 // of the longest part (a drum hit drawn 0.3 s wide), the band, the voice as instrument and the sung
 // harmony unless muted, and any `extra` notes shown (a harmony line being tried), at least 8 s.
 export function timelineEnd(project, extra = []) {
-  const notes = [...(project.notes || []), ...(project.harmony || []), ...(project.voice2 || []), ...lineNotes(project), ...extra];
+  const notes = [...(project.notes || []), ...(project.harmony || []), ...(project.voice2 || []), ...linesNotes(project), ...extra];
   const ends = notes.map(n => (n.t || 0) + (n.d || 0.3))
     .concat((project.drums || []).map(h => (h.t || 0) + 0.3))
     .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [placedSeconds(project.placed, k, project[k].seconds)] : []))

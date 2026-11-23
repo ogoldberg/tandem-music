@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   cleanLines, addLine, removeLine, changeLine, nextLineName, newLineId, lineKey, isLineKey, lineIdOf, lineChannel,
-  lineStemFile, lineTracks, lineNotes, LINE_CHANNELS, LINE_VELOCITY, MAX_LINES, MAX_LINE_NAME, MAX_LINE_NOTES,
+  lineStemFile, lineTracks, linesNotes, LINE_CHANNELS, LINE_VELOCITY, MAX_LINES, MAX_LINE_NAME, MAX_LINE_NOTES,
 } from "../lines.js";
 import { midiFile, arrangementSeconds, stemsZip, PROGRAMS, TICKS_PER_BEAT } from "../daw.js";
 import { musicXml } from "../notation.js";
@@ -92,7 +92,7 @@ test("a line's key, MIDI channel and stem file", () => {
   assert.equal(new Set(LINE_CHANNELS).size, LINE_CHANNELS.length);
   assert.deepEqual(lineTracks(song()).map(t => [t.key, t.channel, t.instrument]), [["line-g1", 3, "guitar"], ["line-f2", 4, "flute"]]);
   assert.deepEqual(lineTracks({}), []);
-  assert.deepEqual(lineNotes(song()).map(n => n.m), [64, 67, 79]);
+  assert.deepEqual(linesNotes(song()).map(n => n.m), [64, 67, 79]);
 });
 
 test("the backend mirrors the line limits, the line key and the uses name", async () => {

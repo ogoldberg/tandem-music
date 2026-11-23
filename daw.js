@@ -9,7 +9,7 @@ import { detectKey, MODES } from "./harmony.js";
 import { monoSamples } from "./recordings.js";
 import { isLayerKey, layerSeconds } from "./layers.js";
 import { placedSeconds } from "./placement.js";
-import { isLineKey, LINE_VELOCITY, lineNotes, lineStemFile, lineTracks } from "./lines.js";
+import { isLineKey, LINE_VELOCITY, linesNotes, lineStemFile, lineTracks } from "./lines.js";
 
 // 960 ticks per quarter note, the same resolution the single-track export used for its timing.
 export const TICKS_PER_BEAT = 960;
@@ -130,7 +130,7 @@ export function midiFile(project, { key = null } = {}) {
 // the voice played as an instrument (TIMBRE.1) and the sung harmony (HARM.3) unless muted, at least four, and one more second so
 // the last release is not cut.
 export function arrangementSeconds(project) {
-  const ends = [...(project.notes || []), ...(project.harmony || []), ...(Array.isArray(project.voice2) ? project.voice2 : []), ...lineNotes(project)].map(n => n.t + n.d + 1)
+  const ends = [...(project.notes || []), ...(project.harmony || []), ...(Array.isArray(project.voice2) ? project.voice2 : []), ...linesNotes(project)].map(n => n.t + n.d + 1)
     .concat((project.drums || []).map(h => h.t + 1))
     .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [placedSeconds(project.placed, k, project[k].seconds)] : []))
     .concat(layerSeconds(project, { heard: true }));

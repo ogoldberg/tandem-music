@@ -123,7 +123,7 @@ export function lineTracks(project) {
 }
 
 // Every note of every line, for how long the song is and where its bars are.
-export function lineNotes(project) {
+export function linesNotes(project) {
   return lineTracks(project).flatMap(l => l.notes);
 }
 
