@@ -29,21 +29,38 @@ export function cleanLyrics(text) {
 // The lyrics as tokens in order: {text, syllabic} for a syllable (syllabic is MusicXML's single,
 // begin, middle or end) or {hold: true} for "_".
 export function syllables(text) {
+  return lyricLines(text).flatMap(l => l.tokens);
+}
+
+// SHEET.1: the same tokens by the line they were typed on: [{tokens, stanza}], stanza true for a
+// line after a blank one. A word split across a line ("slow-" then "ly") is on its first line.
+export function lyricLines(text) {
   const out = [];
+  let stanza = false;
   // "slow- ly" and "slow -ly" are typed for "slow-ly"; join them first.
-  const words = cleanLyrics(text).replace(/\s*-+\s*/g, "-").split(/\s+/).filter(Boolean);
-  for (const word of words) {
-    // Underscores around a word are holds: "it_" is "it _", "_it" is "_ it".
-    const lead = word.match(/^_*/)[0].length, trail = word.match(/_*$/)[0].length;
-    for (let i = 0; i < lead; i++) out.push({ hold: true });
-    if (lead === word.length) continue;
-    const pieces = word.slice(lead, word.length - trail).split("-").filter(p => p && !/^_+$/.test(p));
-    pieces.forEach((p, i) => out.push({
-      text: p,
-      syllabic: pieces.length === 1 ? "single" : i === 0 ? "begin" : i === pieces.length - 1 ? "end" : "middle",
-    }));
-    for (let i = 0; i < trail; i++) out.push({ hold: true });
+  for (const line of cleanLyrics(text).replace(/\s*-+\s*/g, "-").split("\n")) {
+    const words = line.split(/\s+/).filter(Boolean);
+    if (!words.length) { stanza = out.length > 0; continue; }
+    const tokens = words.flatMap(wordTokens);
+    if (!tokens.length) continue;
+    out.push({ tokens, stanza });
+    stanza = false;
   }
+  return out;
+}
+
+function wordTokens(word) {
+  const out = [];
+  // Underscores around a word are holds: "it_" is "it _", "_it" is "_ it".
+  const lead = word.match(/^_*/)[0].length, trail = word.match(/_*$/)[0].length;
+  for (let i = 0; i < lead; i++) out.push({ hold: true });
+  if (lead === word.length) return out;
+  const pieces = word.slice(lead, word.length - trail).split("-").filter(p => p && !/^_+$/.test(p));
+  pieces.forEach((p, i) => out.push({
+    text: p,
+    syllabic: pieces.length === 1 ? "single" : i === 0 ? "begin" : i === pieces.length - 1 ? "end" : "middle",
+  }));
+  for (let i = 0; i < trail; i++) out.push({ hold: true });
   return out;
 }
 

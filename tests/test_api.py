@@ -686,6 +686,14 @@ def test_shape_module_is_served_and_precached(client):
     assert "from './shape.js'" in run(client("GET","/")).text
     assert "'./shape.js'" in run(client("GET","/sw.js")).text
 
+def test_sheet_module_is_served_and_precached(client):
+    # SHEET.1: the studio imports sheet.js statically.
+    js=run(client("GET","/sheet.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function songSheet" in js.text
+    assert "from './sheet.js'" in run(client("GET","/")).text
+    assert "'./sheet.js'" in run(client("GET","/sw.js")).text
+
 def test_chat_project_mirrors_where_recordings_are_placed():
     # GROW.3: placed mirrors placement.js cleanPlaced: channels keyed like the mixer, clips in song order, not
     # overlapping, within 600 s, at most 64 a channel; `uses` may name it.

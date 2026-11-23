@@ -16,6 +16,8 @@ from lxml import etree
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SCORE = FIXTURES / "notation.musicxml"
+# SHEET.1: a short song whose chords have a flat root, sevenths and one struck inside a held melody note.
+CHORDS = FIXTURES / "notation-chords.musicxml"
 XSD = FIXTURES / "musicxml-4.0"
 # What the fixture melody is: [MIDI pitch, onset, length] in beats, as it was meant before it was
 # sung a little early, late and short (make_notation_fixture.mjs).
@@ -39,10 +41,15 @@ def score():
     return music21.converter.parse(str(SCORE), format="musicxml").stripTies()
 
 
+def notes(part):
+    """The notes and chords sounding, without the chord symbols (SHEET.1), which music21 reads as chords too."""
+    return [n for n in part.flatten().notes if not isinstance(n, music21.harmony.ChordSymbol)]
+
+
 def sounding(part):
     """(MIDI pitches, onset, length) of every note or chord, ties joined, in quarter notes."""
     out = []
-    for n in part.flatten().notes:
+    for n in notes(part):
         pitches = tuple(sorted(p.midi for p in n.pitches))
         out.append((pitches, Fraction(n.offset), Fraction(n.quarterLength)))
     return out
@@ -111,13 +118,37 @@ WORDS = [
 def test_the_lyrics_read_back_syllable_by_syllable_on_the_melody(score):
     melody, harmony = score.parts
     read = []
-    for n in melody.flatten().notes:
+    for n in notes(melody):
         lyric = n.lyrics[0] if n.lyrics else None
         read.append((lyric.text, lyric.syllabic) if lyric and lyric.text else None)
     assert read == WORDS
     # music21 joins the syllables into the words as sung (the held note's empty lyric adds a space).
     assert " ".join(music21.text.assembleLyrics(melody).split()) == "Sing it slowly, sing it low, and let the morning come"
-    assert not any(n.lyrics for n in harmony.flatten().notes)
+    assert not any(n.lyrics for n in notes(harmony))
+
+
+def symbols(part):
+    return [(c.figure, c.chordKind, Fraction(c.offset)) for c in part.flatten().getElementsByClass(music21.harmony.ChordSymbol)]
+
+
+def test_the_chord_symbols_read_back_over_the_melody(score):
+    # SHEET.1: the chords part's chords as chord symbols on the melody, one where each starts.
+    melody, harmony = score.parts
+    assert symbols(melody) == [("F", "major", 0), ("C", "major", 4), ("B-", "major", 8), ("F", "major", 12)]
+    assert not symbols(harmony)
+
+
+def test_the_chords_fixture_is_valid_and_its_symbols_name_the_chords_under_them():
+    # A flat root, the sevenths, and C7 halfway through the held last note, written as an offset into it.
+    assert schema().validate(etree.parse(str(CHORDS)))
+    melody, harmony = music21.converter.parse(str(CHORDS), format="musicxml").stripTies().parts
+    assert symbols(melody) == [("F", "major", 0), ("Gm7", "minor-seventh", 4), ("B-maj7", "major-seventh", 8), ("F", "major", 12),
+                               ("C7", "dominant-seventh", 14)]
+    for c in melody.flatten().getElementsByClass(music21.harmony.ChordSymbol):
+        under = [n for n in notes(harmony) if n.offset == c.offset]
+        assert under and {p.pitchClass for p in under[0].pitches} == {p.pitchClass for p in c.pitches}
+    # The symbols are not notes: the melody reads back as its six notes.
+    assert [(p, t) for p, t, _ in sounding(melody)] == [((65,), 0), ((67,), 2), ((69,), 4), ((70,), 6), ((72,), 8), ((70,), 12)]
 
 
 def test_the_held_syllable_draws_its_extend_line_to_the_note_it_is_held_over():

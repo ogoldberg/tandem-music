@@ -284,6 +284,11 @@ def tap_js():
 def shape_js():
     return FileResponse(Path(__file__).resolve().parent / "shape.js", media_type="text/javascript")
 
+
+@app.get("/sheet.js", include_in_schema=False)
+def sheet_js():
+    return FileResponse(Path(__file__).resolve().parent / "sheet.js", media_type="text/javascript")
+
 @app.get("/placement.js", include_in_schema=False)
 def placement_js():
     return FileResponse(Path(__file__).resolve().parent / "placement.js", media_type="text/javascript")

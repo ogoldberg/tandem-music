@@ -7,6 +7,7 @@
 
 import { keySignature, PROGRAMS } from "./daw.js";
 import { assignLyrics, sixteenth, GRID } from "./lyrics.js";
+import { readChords } from "./harmony.js";
 
 // Divisions per quarter note: the grid is a sixteenth note, and a 4/4 measure is 16 of them.
 export const DIVISIONS = GRID;
@@ -124,6 +125,35 @@ function lyricXml(l) {
   return `<lyric number="1"><syllabic>${l.syllabic}</syllabic><text>${escape(l.text)}</text>${l.extend ? '<extend type="start"/>' : ""}</lyric>`;
 }
 
+// SHEET.1: MusicXML's chord kinds for harmony.js CHORD_QUALITIES.
+const KINDS = {
+  major: "major", minor: "minor", dom7: "dominant", maj7: "major-seventh", m7: "minor-seventh", sus2: "suspended-second",
+  sus4: "suspended-fourth", dim: "diminished", aug: "augmented", m7b5: "half-diminished", dim7: "diminished-seventh",
+};
+
+// The chords part's chords (readChords, the chord strip's symbols) as {at (sixteenth), root, quality}, a chord the same as
+// the one just before it with no silence between left out, and of two snapped to one sixteenth the later one.
+export function chordSymbols(project, { key = null } = {}) {
+  const bpm = finite(project.bpm) && project.bpm > 0 ? project.bpm : 100;
+  const out = [];
+  let prev = null;
+  for (const c of readChords(Array.isArray(project.harmony) ? project.harmony : [], { bpm, key })) {
+    const again = prev && prev.name === c.name && Math.abs(prev.t + prev.d - c.t) < 1e-3;
+    prev = c;
+    if (again) continue;
+    const at = sixteenth(c.t, bpm);
+    if (out.length && out[out.length - 1].at === at) out.pop();
+    out.push({ at, root: c.root, quality: c.quality });
+  }
+  return out;
+}
+
+function harmonyXml(c, sf, offset) {
+  const { step, alter } = spell(c.root, sf);
+  return `<harmony><root><root-step>${step}</root-step>${alter ? `<root-alter>${alter}</root-alter>` : ""}</root><kind>${KINDS[c.quality]}</kind>`
+    + (offset ? `<offset>${offset}</offset>` : "") + "</harmony>";
+}
+
 function noteXml(e, sf, lyric = null) {
   if (e.rest) {
     if (e.whole) return `<note><rest measure="yes"/><duration>${MEASURE}</duration><voice>1</voice></note>`;
@@ -140,7 +170,7 @@ function noteXml(e, sf, lyric = null) {
   }).join("\n        ");
 }
 
-// The project's melody (with its lyrics, LYR.1) and harmony as a MusicXML 4.0 partwise score: one part per part with notes,
+// The project's melody (with its lyrics, LYR.1, and the chord symbols over it, SHEET.1) and harmony as a MusicXML 4.0 partwise score: one part per part with notes,
 // named and with its General MIDI program, the key signature (and mode) when the key is known, 4/4
 // and the tempo. Throws when neither part has a note: drums are not written as notation.
 export function musicXml(project, { key = null, title = "Tandem" } = {}) {
@@ -158,6 +188,8 @@ export function musicXml(project, { key = null, title = "Tandem" } = {}) {
   // LYR.1: the lyrics go on the melody, by the sixteenth each syllable's note starts on.
   const lyrics = parts.map(p => (p.key === "notes" && typeof project.lyrics === "string" ? assignLyrics(p.notes, project.lyrics, bpm).byOnset : null));
   const bars = Math.max(...written.map(w => w.length));
+  // SHEET.1: the chord symbols go over the first part, the melody when there is one, as on a lead sheet.
+  const symbols = chordSymbols(project, { key });
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">',
@@ -187,7 +219,15 @@ export function musicXml(project, { key = null, title = "Tandem" } = {}) {
         lines.push(`      <attributes><divisions>${DIVISIONS}</divisions>${keyXml}<time><beats>4</beats><beat-type>4</beat-type></time>${clef}</attributes>`);
         if (i === 0) lines.push(`      <direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${round2(bpm)}</per-minute></metronome></direction-type><sound tempo="${round2(bpm)}"/></direction>`);
       }
-      for (const e of bar) lines.push("      " + noteXml(e, sf, e.onset != null ? lyrics[i]?.get(e.onset) : null));
+      const here = i === 0 ? symbols.filter(c => c.at >= n * MEASURE && c.at < (n + 1) * MEASURE) : [];
+      for (const e of bar) {
+        // Each chord before the note or rest it starts under, offset to where in it the chord starts.
+        for (const c of here) {
+          const pos = c.at - n * MEASURE;
+          if (pos >= e.at && pos < e.at + e.length) lines.push("      " + harmonyXml(c, sf, pos - e.at));
+        }
+        lines.push("      " + noteXml(e, sf, e.onset != null ? lyrics[i]?.get(e.onset) : null));
+      }
       lines.push("    </measure>");
     });
     lines.push("  </part>");
