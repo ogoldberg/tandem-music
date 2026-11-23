@@ -44,6 +44,13 @@ export function partChannels(channel) {
   return { melody: channel, harmony, voice2, drums: DRUM_CHANNEL, lines };
 }
 
+// The channels Stop silences: the melody's, the harmony's, the harmony voice's and the drums', and the channel of
+// each line the song has (CHAT.1), not the channels set aside for lines it does not have.
+export function songChannels(project, channel) {
+  const { melody, harmony, voice2, drums, lines } = partChannels(channel);
+  return [melody, harmony, voice2, drums, ...lines.slice(0, lineTracks(project).length)];
+}
+
 // What one MIDI message means for recording: a note starting or ending, or the sustain pedal.
 export function readMessage(data) {
   if (!data || data.length < 2) return null;

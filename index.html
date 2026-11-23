@@ -59,7 +59,7 @@ import {songSheet} from './sheet.js';
 import {dawProject} from './dawproject.js';
 import {tuneInChunks,sectionLimits,harmonyTargets,keepSpans,harmonyFingerprint,HARMONY_LOWEST,HARMONY_HIGHEST} from './tuning.js';
 import {STEPS,HELPERS,PITCH_AMOUNTS,BEAT_STYLES,normalizeSettings,readSettings,writeSettings,afterTake,stepSummaries,speedText,pitchAmountName,nextStep,previousStep,isChords,planSentence,layerSentence,takeReport,VIEWS,VIEW_GROUPS,viewById,nextView,previousView,playsText,beforeText,viewSummaries,suggestNext,songLines,MOVES,studioPart,guidedPlace,resumeCard,intoLine} from './guide.js';
-import {midiSupported,listPorts,partChannels,readMessage,createKeyRecorder,addTake,songEvents,silence,createSender,COUNT_IN_BEATS} from './midi.js';
+import {midiSupported,listPorts,partChannels,songChannels,readMessage,createKeyRecorder,addTake,songEvents,silence,createSender,COUNT_IN_BEATS} from './midi.js';
 import {estimateTempo,quantizeProject,barOrigin} from './groove.js';
 import {createTapper,tapText,TAP_MIN,TAP_RESET} from './tap.js';
 import {cleanGrid,speedChange,pinnedSpeedText} from './bars.js';
@@ -727,7 +727,7 @@ async function playback({lead=0,click=false,voice=false,from=0,loop=null,src=sta
  from=Math.max(0,from||0);if(loop&&from>=loop.end)loop=null;const now=ac.currentTime+.06+lead,events=[],channel=out?Number($('midichannel').value):0,song=out?createSender(events):null,buses=makeBuses(ac,music.gains,voiceRoom(src));
  const schedule=seg=>{const c=scheduleSong(ac,now,music,seg,{notes:!out,buses});if(out){const g=playing?.ac===ac?playing.gains:music.gains;for(const e of songEvents({...c,notes:g.melody?c.notes:[],harmony:g.harmony?c.harmony:[],voice2:g.voice2?c.voice2:[],drums:g.drums?c.drums:[],lines:(c.lines||[]).map(l=>g[lineKey(l.id)]?l:{...l,notes:[]})},channel))events.push({...e,t:e.t+seg.at})}};
  const plan=createPlan({from,loop});let seg=plan.next();const fill=()=>{while(seg&&now+seg.at<ac.currentTime+HORIZON){schedule(seg);seg=plan.next()}};fill();
- if(out)midiSent={out,channels:Object.values(partChannels(channel)).flat(),ons:[],until:0};if(song||click||loop)startTicker(ac,now,{song,out,click,beat:60/state.bpm,lead,fill});
+ if(out)midiSent={out,channels:songChannels(src,channel),ons:[],until:0};if(song||click||loop)startTicker(ac,now,{song,out,click,beat:60/state.bpm,lead,fill});
  playing={ac,zero:now,from,loop,buses,forceVoice:voice,gains:music.gains};if(!headFrame)headFrame=requestAnimationFrame(drawHeads);renderTimeline();
  const where=(from?' from '+from.toFixed(1)+' s':'')+(loop?', looping '+loop.start.toFixed(1)+' to '+loop.end.toFixed(1)+' s':'');status(out?'Playing to '+out.name+where:'Playing composition'+where+sampleNote(parts));return now}
 // PLAY.1: the timeline, the loop region and the playhead. Every roll and the timeline share one scale, so a time is at

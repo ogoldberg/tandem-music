@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  midiSupported, listPorts, partChannels, readMessage, createKeyRecorder, addTake, songEvents, silence, createSender,
+  midiSupported, listPorts, partChannels, songChannels, readMessage, createKeyRecorder, addTake, songEvents, silence, createSender,
   DRUM_CHANNEL, VELOCITY,
 } from "../midi.js";
 import { PROGRAMS, DRUM_NOTES, DRUM_SECONDS } from "../daw.js";
@@ -157,4 +157,14 @@ test("the sender sends only what is due within the lookahead, each event once", 
   assert.deepEqual(sent.at(-1), [3, 0.5]);
   assert.equal(s.pump(5, send), false);
   assert.equal(s.sent, 4);
+});
+
+test("Stop silences the part channels and only the channels of the lines the song has (CHAT.1)", () => {
+  const line = id => ({ id, name: id, instrument: "guitar", notes: [{ m: 60, t: 0, d: 1 }] });
+  assert.deepEqual(songChannels({ notes: [] }, 0), [0, 1, 2, 9]);
+  assert.deepEqual(songChannels({ notes: [], lines: [line("g1"), line("g2")] }, 0), [0, 1, 2, 9, 3, 4]);
+  // The line channels skip the drums' channel, as songEvents sends them.
+  const ch = partChannels(6);
+  assert.deepEqual(songChannels({ notes: [], lines: [line("g1"), line("g2")] }, 6), [6, 7, 8, 9, ...ch.lines.slice(0, 2)]);
+  assert.ok(!ch.lines.slice(0, 2).includes(9));
 });
