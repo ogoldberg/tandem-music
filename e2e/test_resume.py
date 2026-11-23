@@ -123,3 +123,37 @@ def test_start_a_new_song_keeps_the_old_one_as_a_version(browser, server_url):
         wait_until(page, f"async () => ((await ({KV_GET})('draft'))?.notes?.length ?? 1) === 0", "the empty song is the draft")
         reopen(page)
         expect(page.locator("#gresume")).to_be_hidden()
+
+
+# A second of a quiet tone as a 16-bit mono WAV, built in the page, kept as a recording and listed as an idea, the way
+# the capture page keeps one.
+ADD_IDEA = """async () => {
+  const {openKV}=await import('./storage.js');
+  const {createIdeaStore}=await import('./ideas.js');
+  const {openRecordings}=await import('./recordings.js');
+  const rate=16000, n=rate, buf=new ArrayBuffer(44+n*2), v=new DataView(buf);
+  const text=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  text(0,'RIFF');v.setUint32(4,36+n*2,true);text(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);
+  v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+  text(36,'data');v.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++)v.setInt16(44+i*2,Math.round(3000*Math.sin(2*Math.PI*220*i/rate)),true);
+  const store=await openRecordings(navigator.storage), kv=await openKV(indexedDB);
+  const link=await store.hold(async()=>{const l=await store.put(new Blob([buf],{type:'audio/wav'}));return l});
+  return (await createIdeaStore(kv).add({duration:1,audio:link})).id;
+}"""
+
+
+def test_opening_an_idea_from_the_phone_is_not_a_welcome_back(browser, server_url):
+    with guided_page(browser, server_url) as page:
+        with_example(page)
+        bpm = faster(page)
+        wait_until(page, f"async () => (await ({KV_GET})('draft'))?.bpm === {bpm}", "the change is the stored draft")
+        idea = page.evaluate(ADD_IDEA)
+        page.goto(f"/?idea={idea}")
+        page.wait_for_function(READY)
+        expect(page.locator("#status")).to_contain_text("Transcribe it to turn it into notes.")
+        # The idea is the song now (it has a recording), yet it was just opened, not kept from last time.
+        page.click('#steps [data-step="sing"]')
+        expect(page.locator("#gresume")).to_be_hidden()
+        expect(page.locator("#ginto")).to_be_visible()
+        expect(page.locator("#ginto")).to_contain_text("Recording into")
