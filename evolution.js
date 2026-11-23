@@ -8,6 +8,7 @@
 // the last section is the finished song: the mix Export WAV writes.
 import { layerSeconds } from "./layers.js";
 import { placedSeconds } from "./placement.js";
+import { lineNotes } from "./lines.js";
 
 export const STAGES = [
   { key: "original", kind: "take", label: "Your take, as recorded" },
@@ -18,6 +19,8 @@ export const STAGES = [
   { key: "harmony", kind: "part", label: "Chords" },
   { key: "voice2", kind: "part", label: "Harmony voice" },
   { key: "voice2_sung", kind: "part", label: "Harmony sung in your voice" },
+  // CHAT.1: every instrument line together, one stage.
+  { key: "lines", kind: "part", label: "The instrument lines" },
   { key: "drums", kind: "part", label: "Drums" },
   { key: "band", kind: "part", label: "Band" },
   { key: "timbre", kind: "part", label: "Your voice as an instrument" },
@@ -34,7 +37,7 @@ const DRUM_SECONDS = 0.25;
 // given). The rendered audio runs on a little after it so
 // the last notes ring; the sections cover the song, not that tail.
 export function contentSeconds(project, takeSeconds = 0, available = null) {
-  const notes = [...(project.notes || []), ...(project.harmony || []), ...(Array.isArray(project.voice2) ? project.voice2 : [])];
+  const notes = [...(project.notes || []), ...(project.harmony || []), ...(Array.isArray(project.voice2) ? project.voice2 : []), ...lineNotes(project)];
   const ends = notes.map(n => n.t + n.d)
     .concat((project.drums || []).map(h => h.t + DRUM_SECONDS))
     .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && (!available || available.includes(k)) && Number.isFinite(project[k].seconds) ? [placedSeconds(project.placed, k, project[k].seconds)] : []))

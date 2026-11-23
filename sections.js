@@ -1,6 +1,7 @@
 // SONG.1: song sections. A section is a named stretch of the song, {name, from, to} in seconds, kept in the
 // project's optional `sections` list in time order, never overlapping (gaps between them are allowed).
-// Repeat, Move and Delete edit every note part at once (SECTION_PARTS: melody, chords, harmony voice,
+// Repeat, Move and Delete edit every note part at once (SECTION_PARTS: melody, chords, harmony voice, the
+// instrument lines (CHAT.1, under `lines`),
 // drums) and, GROW.3 (ADR-018), where every recording plays (placement.js): no recording is cut or rewritten,
 // but its clips are repeated, moved and taken out with the notes, in the same edit.
 // A note or hit belongs to the section its start is in; a note keeps its length, except that Delete cuts a
@@ -10,6 +11,7 @@
 
 import { barGrid, beatSeconds, songBars } from "./bars.js";
 import { tonicChord } from "./harmony.js";
+import { MAX_LINE_NOTES } from "./lines.js";
 import { cleanPlaced, clipsOf, deleteClips, moveClips, placedSeconds, repeatClips, shiftClips, withClips } from "./placement.js";
 
 export const MAX_SECTIONS = 32;
@@ -99,26 +101,30 @@ export function renameSection(sections, i, name) {
 
 // Every note part of the project, each event moved by `shift(t)` (null drops it; an array of shifts
 // copies it once per shift), with the limits checked. `trim(n)` may give a note a new length.
+// CHAT.1: each instrument line's notes too, under `lines`, when the project has a line list.
 function rework(project, shift, trim = null) {
   const out = {};
-  for (const part of SECTION_PARTS) {
-    const events = Array.isArray(project[part]) ? project[part] : [];
-    const moved = [], copies = [];
-    for (const ev of events) {
-      const s = shift(ev.t);
-      if (s == null) continue;
-      const [first, ...more] = Array.isArray(s) ? s : [s];
-      const keep = { ...ev, t: round3(ev.t + first) };
-      if (trim && "d" in ev) keep.d = trim(ev, keep);
-      moved.push(keep);
-      for (const m of more) copies.push({ ...ev, t: round3(ev.t + m) });
-    }
-    const all = [...moved, ...copies];
-    if (all.length > MAX_EVENTS) throw Error(`The ${PART_NAMES[part]} would have more than ${MAX_EVENTS} notes.`);
-    if (all.some(ev => ev.t > MAX_TIME + EPS)) throw Error(`The ${PART_NAMES[part]} would go past ${MAX_TIME} seconds.`);
-    out[part] = all;
-  }
+  for (const part of SECTION_PARTS) out[part] = reworkEvents(Array.isArray(project[part]) ? project[part] : [], PART_NAMES[part], shift, trim);
+  if (Array.isArray(project.lines)) out.lines = project.lines.map(l => ({ ...l, notes: reworkEvents(l.notes || [], lineName(l), shift, trim, MAX_LINE_NOTES) }));
   return out;
+}
+const lineName = l => `line "${l.name}"`;
+
+function reworkEvents(events, name, shift, trim, max = MAX_EVENTS) {
+  const moved = [], copies = [];
+  for (const ev of events) {
+    const s = shift(ev.t);
+    if (s == null) continue;
+    const [first, ...more] = Array.isArray(s) ? s : [s];
+    const keep = { ...ev, t: round3(ev.t + first) };
+    if (trim && "d" in ev) keep.d = trim(ev, keep);
+    moved.push(keep);
+    for (const m of more) copies.push({ ...ev, t: round3(ev.t + m) });
+  }
+  const all = [...moved, ...copies];
+  if (all.length > max) throw Error(`The ${name} would have more than ${max} notes.`);
+  if (all.some(ev => ev.t > MAX_TIME + EPS)) throw Error(`The ${name} would go past ${MAX_TIME} seconds.`);
+  return all;
 }
 
 const inside = (t, s) => t >= s.from - EPS && t < s.to - EPS;
@@ -193,9 +199,9 @@ export function moveSection(project, i, dir, { lengths = {} } = {}) {
 
 // SONG.3: an intro and an ending, each one edit that marks an Intro or Outro section.
 export const INTRO_BARS = Object.freeze([1, 2]);
-const checkLimits = (part, events) => {
-  if (events.length > MAX_EVENTS) throw Error(`The ${PART_NAMES[part]} would have more than ${MAX_EVENTS} notes.`);
-  if (events.some(ev => ev.t > MAX_TIME + EPS)) throw Error(`The ${PART_NAMES[part]} would go past ${MAX_TIME} seconds.`);
+const checkLimits = (name, events, max = MAX_EVENTS) => {
+  if (events.length > max) throw Error(`The ${name} would have more than ${max} notes.`);
+  if (events.some(ev => ev.t > MAX_TIME + EPS)) throw Error(`The ${name} would go past ${MAX_TIME} seconds.`);
 };
 
 // One or two bars before the song's first bar (bars.js songBars: the bar after a pickup), playing the first bars of
@@ -218,8 +224,14 @@ export function addIntro(project, { bars = 2, lengths = {} } = {}) {
       : [];
     copied += copies.length;
     out[part] = [...copies, ...events.map(ev => ({ ...ev, t: round3(ev.t + by) }))];
-    checkLimits(part, out[part]);
+    checkLimits(PART_NAMES[part], out[part]);
   }
+  // CHAT.1: the lines are not copied into the intro; they move later with the melody.
+  if (Array.isArray(project.lines)) out.lines = project.lines.map(l => {
+    const notes = (l.notes || []).map(n => ({ ...n, t: round3(n.t + by) }));
+    checkLimits(lineName(l), notes, MAX_LINE_NOTES);
+    return { ...l, notes };
+  });
   if (!copied) throw Error("Add chords or a beat first: the intro plays the first bars of them before the tune.");
   const placed = rePlace(project, lengths, (clips, key) => shiftClips(clips, by, key));
   const moved = list.map(x => ({ ...x, from: round3(x.from + by), to: round3(x.to + by) }));
@@ -271,19 +283,22 @@ export function addEnding(project, { key, lengths = {} } = {}) {
     ...beat.filter(h => h.t < from - EPS).map(h => ({ ...h })), { k: "kick", t: from }, { k: "snare", t: from },
     ...beat.filter(h => h.t >= to - EPS).map(h => ({ ...h })),
   ] : [];
-  checkLimits("harmony", harmony);
-  checkLimits("drums", drums);
+  checkLimits(PART_NAMES.harmony, harmony);
+  checkLimits(PART_NAMES.drums, drums);
   const voice2 = (project.voice2 || []).map(n => ({ ...n }));
+  // CHAT.1: the lines are left as they are, like the harmony voice; one running past the ending counts in `later`.
+  const lines = Array.isArray(project.lines) ? project.lines.map(l => ({ ...l, notes: (l.notes || []).map(n => ({ ...n })) })) : null;
   const sections = cleanSections([...kept, { name: "Outro", from, to }, ...after]);
   const ends = [
     ...chordsAfter.map(n => n.t + n.d), ...drums.filter(h => h.t >= to - EPS).map(h => h.t),
     ...voice2.filter(n => n.t + n.d > to + EPS).map(n => n.t + n.d), ...after.map(x => x.to),
+    ...(lines || []).flatMap(l => l.notes).filter(n => n.t + n.d > to + EPS).map(n => n.t + n.d),
     ...Object.entries(lengths || {}).filter(([, s]) => s > 0).map(([k, s]) => placedSeconds(project.placed, k, s))
       .filter(t => t > to + EPS),
   ];
   return {
     notes: (project.notes || []).map(n => ({ ...n })),
-    harmony, voice2, drums,
+    harmony, voice2, drums, ...(lines ? { lines } : {}),
     placed: cleanPlaced(project.placed), sections, index: kept.length,
     later: ends.length ? round3(Math.max(...ends)) : null,
   };

@@ -10,6 +10,7 @@
 //   silent even when soloed.
 // - TRACK.1: every recorded layer has a channel of its own, under its key (layers.js layerKey, "layer-<id>"),
 //   with a level, a mute and a solo like a part; a layer is heard by default.
+// - CHAT.1: every instrument line has one too, under its key (lines.js lineKey, "line-<id>"), heard by default.
 // DOM-free so Node tests import it directly; tandem_backend.py's ProjectMix mirrors cleanMix.
 
 export const MIX_PARTS = Object.freeze(["voice", "melody", "harmony", "voice2", "voice2_sung", "drums", "band", "timbre"]);
@@ -19,12 +20,14 @@ export const LEVEL_MIN = -30;
 export const LEVEL_MAX = 6;
 export const LEVEL_STEP = 0.5;
 import { isLayerKey, layerKey } from "./layers.js";
+import { isLineKey, lineKey } from "./lines.js";
 
-const isPart = part => MIX_PARTS.includes(part) || isLayerKey(part);
-// Every channel of a project: the parts, then one per layer it has.
+const isPart = part => MIX_PARTS.includes(part) || isLayerKey(part) || isLineKey(part);
+// Every channel of a project: the parts, then one per line (CHAT.1) and one per layer it has.
 export function mixParts(project) {
   const layers = Array.isArray(project?.layers) ? project.layers : [];
-  return [...MIX_PARTS, ...layers.filter(l => l && typeof l.id === "string").map(l => layerKey(l.id))];
+  const lines = Array.isArray(project?.lines) ? project.lines : [];
+  return [...MIX_PARTS, ...lines.filter(l => l && typeof l.id === "string").map(l => lineKey(l.id)), ...layers.filter(l => l && typeof l.id === "string").map(l => layerKey(l.id))];
 }
 
 const DEFAULT_MUTE = part => part === "voice";

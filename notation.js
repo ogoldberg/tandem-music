@@ -8,6 +8,7 @@
 import { keySignature, PROGRAMS } from "./daw.js";
 import { assignLyrics, sixteenth, GRID } from "./lyrics.js";
 import { readChords } from "./harmony.js";
+import { lineTracks } from "./lines.js";
 
 // Divisions per quarter note: the grid is a sixteenth note, and a 4/4 measure is 16 of them.
 export const DIVISIONS = GRID;
@@ -170,12 +171,15 @@ function noteXml(e, sf, lyric = null) {
   }).join("\n        ");
 }
 
-// The project's melody (with its lyrics, LYR.1, and the chord symbols over it, SHEET.1) and harmony as a MusicXML 4.0 partwise score: one part per part with notes,
+// The project's melody (with its lyrics, LYR.1, and the chord symbols over it, SHEET.1), harmony, harmony voice and lines (CHAT.1) as a MusicXML 4.0 partwise score: one part per part with notes,
 // named and with its General MIDI program, the key signature (and mode) when the key is known, 4/4
 // and the tempo. Throws when neither part has a note: drums are not written as notation.
 export function musicXml(project, { key = null, title = "Tandem" } = {}) {
   const bpm = finite(project.bpm) && project.bpm > 0 ? project.bpm : 100;
-  const parts = PARTS.map(p => ({ ...p, notes: (Array.isArray(project[p.key]) ? project[p.key] : []).filter(n => n && finite(n.m) && finite(n.t) && finite(n.d) && n.d > 0) }))
+  // CHAT.1: each instrument line is a part after the harmony voice, named by the line, on its MIDI file channel.
+  const parts = [...PARTS.map(p => ({ ...p, program: project[p.instrument], notes: project[p.key] })),
+    ...lineTracks(project).map(l => ({ key: l.key, name: l.name, program: l.instrument, channel: l.channel, notes: l.notes }))]
+    .map(p => ({ ...p, notes: (Array.isArray(p.notes) ? p.notes : []).filter(n => n && finite(n.m) && finite(n.t) && finite(n.d) && n.d > 0) }))
     .filter(p => p.notes.length);
   if (!parts.length) throw Error("Nothing to write as notation yet: add melody or harmony notes first.");
   // MusicXML's lowest octave is 0, so MIDI 0-11 (below about 16 Hz) cannot be written. Refuse
@@ -199,10 +203,10 @@ export function musicXml(project, { key = null, title = "Tandem" } = {}) {
     "  <part-list>",
   ];
   parts.forEach((p, i) => {
-    const id = `P${i + 1}`, program = PROGRAMS[project[p.instrument]];
-    lines.push(`    <score-part id="${id}"><part-name>${p.name}</part-name>`
-      + (program == null ? "" : `<score-instrument id="${id}-I1"><instrument-name>${escape(project[p.instrument])}</instrument-name></score-instrument>`
-        + `<midi-instrument id="${id}-I1"><midi-channel>${i + 1}</midi-channel><midi-program>${program + 1}</midi-program></midi-instrument>`)
+    const id = `P${i + 1}`, program = PROGRAMS[p.program];
+    lines.push(`    <score-part id="${id}"><part-name>${escape(p.name)}</part-name>`
+      + (program == null ? "" : `<score-instrument id="${id}-I1"><instrument-name>${escape(p.program)}</instrument-name></score-instrument>`
+        + `<midi-instrument id="${id}-I1"><midi-channel>${p.channel != null ? p.channel + 1 : i + 1}</midi-channel><midi-program>${program + 1}</midi-program></midi-instrument>`)
       + "</score-part>");
   });
   lines.push("  </part-list>");

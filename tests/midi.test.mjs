@@ -24,10 +24,12 @@ test("listPorts names the connected ports and leaves out disconnected ones", () 
 
 test("the harmony goes on the channel after the melody's, skipping the drum channel", () => {
   // HARM.1: the harmony voice on the channel after the harmony's.
-  assert.deepEqual(partChannels(0), { melody: 0, harmony: 1, voice2: 2, drums: 9 });
-  assert.deepEqual(partChannels(7), { melody: 7, harmony: 8, voice2: 10, drums: 9 });
-  assert.deepEqual(partChannels(8), { melody: 8, harmony: 10, voice2: 11, drums: 9 });
-  assert.deepEqual(partChannels(15), { melody: 15, harmony: 0, voice2: 1, drums: 9 });
+  // CHAT.1: the instrument lines' channels follow the harmony voice's (tests/lines.test.mjs).
+  const fixed = c => { const { lines, ...rest } = partChannels(c); assert.equal(lines.length, 8); return rest; };
+  assert.deepEqual(fixed(0), { melody: 0, harmony: 1, voice2: 2, drums: 9 });
+  assert.deepEqual(fixed(7), { melody: 7, harmony: 8, voice2: 10, drums: 9 });
+  assert.deepEqual(fixed(8), { melody: 8, harmony: 10, voice2: 11, drums: 9 });
+  assert.deepEqual(fixed(15), { melody: 15, harmony: 0, voice2: 1, drums: 9 });
   assert.throws(() => partChannels(DRUM_CHANNEL), /other than 10/);
   assert.throws(() => partChannels(16));
 });

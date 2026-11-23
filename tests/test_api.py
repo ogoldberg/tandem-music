@@ -678,6 +678,14 @@ def test_tap_module_is_served_and_precached(client):
     assert "from './tap.js'" in run(client("GET","/capture")).text
     assert "'./tap.js'" in run(client("GET","/sw.js")).text
 
+def test_lines_module_is_served_and_precached(client):
+    # CHAT.1: the studio imports lines.js statically, so the page cannot start without it.
+    js=run(client("GET","/lines.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function cleanLines" in js.text
+    assert "from './lines.js'" in run(client("GET","/")).text
+    assert "'./lines.js'" in run(client("GET","/sw.js")).text
+
 def test_shape_module_is_served_and_precached(client):
     # GROW.4: the studio and guide.js import shape.js statically.
     js=run(client("GET","/shape.js"))

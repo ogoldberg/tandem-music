@@ -1,7 +1,7 @@
 // Export the song as a DAWproject file (EXP.3): the open exchange format of Bitwig, Studio One and
 // Cubase (https://github.com/bitwig/dawproject, version 1.0). A .dawproject file is a zip with
 // project.xml (tracks, mixer and arrangement), metadata.xml and the audio files. Melody, harmony, the
-// harmony voice (HARM.1) and drums are note clips on their own tracks (the same channels and drum keys
+// harmony voice (HARM.1), each instrument line (CHAT.1) and drums are note clips on their own tracks (the same channels and drum keys
 // as the MIDI file), and every recording the studio holds (the takes, the separated music, the band
 // and the voice played as an instrument, and each recorded layer, TRACK.1) is an audio clip on its own track, from zero, so it lines up
 // with the notes as the stems do; GROW.3: a placed recording is laid out where it plays in the song (placement.js
@@ -13,6 +13,7 @@ import { arrangementSeconds, DRUM_NOTES, DRUM_SECONDS, STEM_FILES } from "./daw.
 import { keyLabel } from "./harmony.js";
 import { isLayerKey, layerIdOf, layerKey, layerStemFile } from "./layers.js";
 import { placeKey, placeSamples } from "./placement.js";
+import { LINE_VELOCITY, lineTracks } from "./lines.js";
 
 export const DAWPROJECT_FILES = Object.freeze({ project: "project.xml", metadata: "metadata.xml" });
 export const DAWPROJECT_TYPE = "application/zip";
@@ -25,6 +26,10 @@ const NOTE_TRACKS = [
   { key: "voice2", name: "Harmony voice", channel: 2, vel: 80 / 127, color: "#14b8a6" },
 ];
 const DRUMS = { name: "Drums", channel: 9, vel: 90 / 127, color: "#f97316" };
+// CHAT.1: each instrument line is a note track after the harmony voice, named as in the studio, on its MIDI file channel.
+const LINE_COLOR = "#0ea5e9";
+const noteTracks = project => [...NOTE_TRACKS.map(p => ({ ...p, notes: project[p.key] })),
+  ...lineTracks(project).map(l => ({ key: l.key, name: l.name, channel: l.channel, vel: LINE_VELOCITY / 127, color: LINE_COLOR, notes: l.notes }))];
 // Audio tracks in the order they are listed, with their names in the DAW.
 export const AUDIO_TRACKS = Object.freeze([
   { slot: "band", name: "Band", color: "#22c55e" },
@@ -83,8 +88,8 @@ export function projectXml(project, { audio = {}, rate, application = "alpha" } 
   };
   const note = (time, duration, channelNo, key, vel) =>
     `<Note time="${num(beats(time))}" duration="${num(Math.max(beats(duration), 1e-6))}" channel="${channelNo}" key="${key}" vel="${num(vel)}" rel="${num(vel)}"/>`;
-  for (const part of NOTE_TRACKS) {
-    const notes = (project[part.key] || []).filter(n => n && finite(n.m) && finite(n.t) && finite(n.d) && n.d > 0);
+  for (const part of noteTracks(project)) {
+    const notes = (part.notes || []).filter(n => n && finite(n.m) && finite(n.t) && finite(n.d) && n.d > 0);
     if (notes.length) noteTrack(part.name, part.color, notes.map(n => note(Math.max(0, n.t), n.d, part.channel, Math.min(127, Math.max(0, Math.round(n.m))), part.vel)));
   }
   const hits = (project.drums || []).filter(h => h && finite(h.t) && DRUM_NOTES[h.k] != null);

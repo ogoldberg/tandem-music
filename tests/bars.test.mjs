@@ -187,7 +187,7 @@ test("a project without the new fields saves byte for byte as before, and one wi
 
 test("a file whose uses names a feature this Tandem does not know is refused", () => {
   // GROW.3 added placed.
-  assert.deepEqual(KNOWN_USES, ["grid", "placed"]);
+  assert.deepEqual(KNOWN_USES, ["grid", "placed", "lines"]);
   assert.deepEqual(checkUses(undefined), []);
   assert.deepEqual(checkUses(["grid"]), ["grid"]);
   assert.deepEqual(checkUses(["placed"]), ["placed"]);

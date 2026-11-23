@@ -24,11 +24,11 @@ export class VersionLimitError extends Error {
 }
 
 // SONG.2: whether a song has anything worth keeping before it is replaced (New song, Try an example, opening an
-// idea or a file): a recording, any note part, a generated part, a layer, takes, sections or words. A tempo, an
+// idea or a file): a recording, any note part (an instrument line too), a generated part, a layer, takes, sections or words. A tempo, an
 // instrument, a genre or a mixer setting alone is not a song.
 export function hasWork(p, { recording = false } = {}) {
   const some = x => Array.isArray(x) && x.length > 0;
-  return !!(recording || some(p.notes) || some(p.drums) || some(p.harmony) || some(p.voice2) || p.band || p.timbre
+  return !!(recording || some(p.notes) || some(p.drums) || some(p.harmony) || some(p.voice2) || some(p.lines) || p.band || p.timbre
     || p.voice2_sung || some(p.layers) || (p.takes && typeof p.takes === "object") || some(p.sections)
     || (typeof p.lyrics === "string" && p.lyrics.trim()));
 }
@@ -47,6 +47,9 @@ export function projectFromState(state) {
     harmony_instrument: state.harmony_instrument || "piano",
     // HARM.1: the harmony voice, when it has notes.
     ...(Array.isArray(state.voice2) && state.voice2.length ? { voice2: state.voice2, voice2_instrument: state.voice2_instrument || "piano" } : {}),
+    // CHAT.1: the instrument lines, when there are any (lines.js cleanLines), named in `uses`, since a Tandem that
+    // does not know them would open the song without them and drop them on the next save.
+    ...(hasLines(state) ? { lines: state.lines } : {}),
     // GEN.2: the generated band, when there is one (its audio is the "band" recording, never in the project).
     ...(state.band ? { band: state.band } : {}),
     // TIMBRE.1: the voice played as an instrument, when there is one (its audio is the "timbre" recording).
@@ -78,11 +81,12 @@ export function projectFromState(state) {
 
 // GROW.1: `uses` lists the optional features a file needs, by name. A file naming one this Tandem does not know was
 // made by a newer Tandem, whose song this one would open wrongly, so it is refused (checkUses) with NEWER_TANDEM.
-export const KNOWN_USES = Object.freeze(["grid", "placed"]);
+export const KNOWN_USES = Object.freeze(["grid", "placed", "lines"]);
 export const NEWER_TANDEM = "This song was made with a newer Tandem. Update, then open it again.";
+const hasLines = state => Array.isArray(state?.lines) && state.lines.length > 0;
 const hasPlaced = state => !!state?.placed && typeof state.placed === "object" && Object.keys(state.placed).length > 0;
 export function usesOf(state) {
-  return KNOWN_USES.filter(name => (name === "grid" && state?.grid && typeof state.grid === "object") || (name === "placed" && hasPlaced(state)));
+  return KNOWN_USES.filter(name => (name === "grid" && state?.grid && typeof state.grid === "object") || (name === "placed" && hasPlaced(state)) || (name === "lines" && hasLines(state)));
 }
 function usesPart(state) {
   const uses = usesOf(state);
