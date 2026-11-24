@@ -9,6 +9,7 @@ import { detectKey, MODES } from "./harmony.js";
 import { monoSamples } from "./recordings.js";
 import { isLayerKey, layerSeconds } from "./layers.js";
 import { placedSeconds } from "./placement.js";
+import { isLineKey, LINE_VELOCITY, linesNotes, lineStemFile, lineTracks } from "./lines.js";
 
 // 960 ticks per quarter note, the same resolution the single-track export used for its timing.
 export const TICKS_PER_BEAT = 960;
@@ -86,7 +87,8 @@ function track(head, events) {
 
 // The project as a type-1 MIDI file: a conductor track (tempo, 4/4, the key when known) and one
 // named track per part that has notes: Melody on channel 1, Harmony on channel 2 and the Harmony voice
-// on channel 3 with their General MIDI programs, Drums on channel 10.
+// on channel 3 with their General MIDI programs, then each instrument line (CHAT.1) by its name on its own
+// channel (lines.js LINE_CHANNELS: 4 to 9, then 11 and 12), Drums on channel 10.
 export function midiFile(project, { key = null } = {}) {
   const bpm = finite(project.bpm) && project.bpm > 0 ? project.bpm : 100;
   const ticks = t => Math.max(0, Math.round(t * TICKS_PER_BEAT * bpm / 60));
@@ -97,11 +99,12 @@ export function midiFile(project, { key = null } = {}) {
     conductor.push(meta(0x59, [sf & 255, mi]));
   }
   const tracks = [track(conductor, [])];
-  for (const part of PARTS) {
-    const notes = (project[part.key] || []).filter(n => n && finite(n.m) && finite(n.t) && finite(n.d) && n.d > 0);
+  const lines = lineTracks(project).map(l => ({ name: l.name, channel: l.channel, velocity: LINE_VELOCITY, program: l.instrument, notes: l.notes }));
+  for (const part of [...PARTS.map(p => ({ ...p, program: project[p.instrument], notes: project[p.key] })), ...lines]) {
+    const notes = (part.notes || []).filter(n => n && finite(n.m) && finite(n.t) && finite(n.d) && n.d > 0);
     if (!notes.length) continue;
     const head = [nameEvent(part.name)];
-    const program = PROGRAMS[project[part.instrument]];
+    const program = PROGRAMS[part.program];
     if (program != null) head.push([0xc0 | part.channel, program]);
     const events = [];
     for (const n of notes) {
@@ -123,11 +126,11 @@ export function midiFile(project, { key = null } = {}) {
   return Uint8Array.from(header.concat(...tracks));
 }
 
-// Seconds of audio the arrangement needs: every note and hit with a second of tail, the band (GEN.2)
+// Seconds of audio the arrangement needs: every note (the lines' too) and hit with a second of tail, the band (GEN.2)
 // the voice played as an instrument (TIMBRE.1) and the sung harmony (HARM.3) unless muted, at least four, and one more second so
 // the last release is not cut.
 export function arrangementSeconds(project) {
-  const ends = [...(project.notes || []), ...(project.harmony || []), ...(Array.isArray(project.voice2) ? project.voice2 : [])].map(n => n.t + n.d + 1)
+  const ends = [...(project.notes || []), ...(project.harmony || []), ...(Array.isArray(project.voice2) ? project.voice2 : []), ...linesNotes(project)].map(n => n.t + n.d + 1)
     .concat((project.drums || []).map(h => h.t + 1))
     .concat(["band", "timbre", "voice2_sung"].flatMap(k => project[k] && !project[k].muted && Number.isFinite(project[k].seconds) ? [placedSeconds(project.placed, k, project[k].seconds)] : []))
     .concat(layerSeconds(project, { heard: true }));
@@ -205,14 +208,17 @@ const padded = (samples, frames) => {
 // TRACK.1: `layers` lists every recorded layer as {file (layers.js layerStemFile), samples at its level};
 // each is a stem of its own, and the layers the mixer lets through are in `parts` under their key, so
 // mix.wav (and Export WAV) has them.
-export function stemsZip({ parts = {}, vocals = {}, layers = [], rate, midi, date }) {
+// CHAT.1: each instrument line is a part under its key (lines.js lineKey), named by its place in `lines`
+// (the project's list, lines.js lineStemFile: line-1.wav, ...), after the fixed parts.
+export function stemsZip({ parts = {}, vocals = {}, layers = [], lines = [], rate, midi, date }) {
   const present = names => names.filter(n => parts[n] || vocals[n]);
-  const partNames = [...present(PART_STEMS), ...Object.keys(parts).filter(isLayerKey)], vocalNames = present(VOCAL_STEMS);
+  const lineNames = Object.keys(parts).filter(isLineKey).sort((a, b) => lineStemFile(lines, a.slice(5)).localeCompare(lineStemFile(lines, b.slice(5)), "en", { numeric: true }));
+  const partNames = [...present(PART_STEMS), ...lineNames, ...Object.keys(parts).filter(isLayerKey)], vocalNames = present(VOCAL_STEMS);
   if (!partNames.length && !vocalNames.length && !layers.length) throw Error("Nothing to export yet: add notes or drums, or record a take.");
   const frames = Math.max(...partNames.map(n => parts[n].length), ...vocalNames.map(n => vocals[n].length), ...layers.map(l => l.samples.length));
   const files = [];
   if (partNames.length) files.push({ name: STEM_FILES.mix, data: encodeWav(sumStems(partNames.map(n => parts[n]), frames), rate) });
-  for (const n of partNames) if (!isLayerKey(n)) files.push({ name: STEM_FILES[n], data: encodeWav(padded(parts[n], frames), rate) });
+  for (const n of partNames) if (!isLayerKey(n)) files.push({ name: isLineKey(n) ? lineStemFile(lines, n.slice(5)) : STEM_FILES[n], data: encodeWav(padded(parts[n], frames), rate) });
   for (const n of vocalNames) files.push({ name: STEM_FILES[n], data: encodeWav(padded(vocals[n], frames), rate) });
   for (const l of layers) files.push({ name: l.file, data: encodeWav(padded(l.samples, frames), rate) });
   files.push({ name: STEM_FILES.midi, data: midi });

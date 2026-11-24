@@ -3,6 +3,7 @@
 // messages into project notes and the project into timed MIDI messages, so Node tests import it.
 
 import { PROGRAMS, DRUM_NOTES, DRUM_SECONDS } from "./daw.js";
+import { LINE_VELOCITY, lineTracks, MAX_LINES } from "./lines.js";
 
 export const DRUM_CHANNEL = 9;
 // The same velocities the MIDI file uses (daw.js): the harmony a little under the melody.
@@ -33,12 +34,21 @@ export function listPorts(map) {
 
 // The channels (0-based) the song is sent on: the melody on the chosen one, the harmony on the next
 // that is not the General MIDI drum channel, the harmony voice (HARM.1) on the one after that, the
-// drums on channel 10.
+// drums on channel 10. CHAT.1: `lines` lists the channels of the instrument lines, one each after the harmony
+// voice's in the same way, MAX_LINES of them (eleven channels and the drums', so none is used twice).
 export function partChannels(channel) {
   if (!Number.isInteger(channel) || channel < 0 || channel > 15 || channel === DRUM_CHANNEL) throw Error("Choose a MIDI channel from 1 to 16 other than 10");
   const after = c => (c + 1) % 16 === DRUM_CHANNEL ? (c + 2) % 16 : (c + 1) % 16;
-  const harmony = after(channel);
-  return { melody: channel, harmony, voice2: after(harmony), drums: DRUM_CHANNEL };
+  const harmony = after(channel), voice2 = after(harmony), lines = [];
+  for (let c = voice2; lines.length < MAX_LINES;) lines.push((c = after(c)));
+  return { melody: channel, harmony, voice2, drums: DRUM_CHANNEL, lines };
+}
+
+// The channels Stop silences: the melody's, the harmony's, the harmony voice's and the drums', and the channel of
+// each line the song has (CHAT.1), not the channels set aside for lines it does not have.
+export function songChannels(project, channel) {
+  const { melody, harmony, voice2, drums, lines } = partChannels(channel);
+  return [melody, harmony, voice2, drums, ...lines.slice(0, lineTracks(project).length)];
 }
 
 // What one MIDI message means for recording: a note starting or ending, or the sustain pedal.
@@ -110,6 +120,17 @@ export function songEvents(project, channel) {
       add(t + n.d, 1, [0x80 | c, m, 0]);
     }
   }
+  lineTracks(project).forEach((l, i) => {
+    const notes = l.notes.filter(n => n && finite(n.m) && finite(n.t) && finite(n.d) && n.d > 0);
+    if (!notes.length) return;
+    const c = ch.lines[i], program = PROGRAMS[l.instrument];
+    if (program != null) add(0, 0, [0xc0 | c, program]);
+    for (const n of notes) {
+      const m = Math.min(127, Math.max(0, Math.round(n.m))), t = Math.max(0, n.t);
+      add(t, 2, [0x90 | c, m, LINE_VELOCITY]);
+      add(t + n.d, 1, [0x80 | c, m, 0]);
+    }
+  });
   for (const h of project.drums || []) {
     if (!h || !finite(h.t) || DRUM_NOTES[h.k] == null) continue;
     const t = Math.max(0, h.t), note = DRUM_NOTES[h.k];

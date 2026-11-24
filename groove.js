@@ -125,7 +125,8 @@ export { barOrigin, ZERO_GRID_SHARE };
 // A pickup stays a pickup only when more onsets fall on the downbeats than on the offbeats;
 // with a pickup into even eighths the pickup's phase has as many onsets or more and is taken as the beat.
 // Durations are kept. Events that land on the same grid point merge (same pitch: the
-// longer note wins; same drum: one hit). Returns new {notes, drums, harmony, voice2}; the input is unchanged.
+// longer note wins; same drum: one hit). Returns new {notes, drums, harmony, voice2}, and `lines` (CHAT.1: each
+// instrument line's notes snapped the same way) when the project has a line list; the input is unchanged.
 export function quantizeProject(project, { division, swing = 0, strength = 1 }) {
   if (!Object.values(GRID_DIVISIONS).includes(division)) throw new Error(`Unsupported grid division: ${division}`);
   const bpm = Number(project.bpm);
@@ -133,7 +134,9 @@ export function quantizeProject(project, { division, swing = 0, strength = 1 }) 
   if (!(strength > 0 && strength <= 1)) throw new Error("Quantize strength must be above 0 and at most 1.");
   const notes = project.notes || [], drums = project.drums || [];
   const harmony = project.harmony || [], voice2 = project.voice2 || [];
-  if (!notes.length && !drums.length && !harmony.length && !voice2.length) return { notes: [], drums: [], harmony: harmony.map(n => ({ ...n })), voice2: voice2.map(n => ({ ...n })) };
+  const lines = Array.isArray(project.lines) ? project.lines : null;
+  const withLines = fn => (lines ? { lines: lines.map(l => ({ ...l, notes: fn(l.notes || []) })) } : {});
+  if (!notes.length && !drums.length && !harmony.length && !voice2.length && !(lines || []).some(l => (l.notes || []).length)) return { notes: [], drums: [], harmony: harmony.map(n => ({ ...n })), voice2: voice2.map(n => ({ ...n })), ...withLines(list => list.map(n => ({ ...n }))) };
   const beat = 60 / bpm;
   const origin = barOrigin(project);
   const step = beat / division;
@@ -161,6 +164,7 @@ export function quantizeProject(project, { division, swing = 0, strength = 1 }) 
     notes: snapNotes(notes),
     harmony: snapNotes(harmony),
     voice2: snapNotes(voice2),
+    ...withLines(snapNotes),
     drums: merged(drums.map(h => ({ ...h, t: snap(h.t) })), h => `${h.k}@${h.t}`, a => a),
   };
 }

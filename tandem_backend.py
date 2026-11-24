@@ -276,6 +276,10 @@ def takes_js():
 def actions_js():
     return FileResponse(Path(__file__).resolve().parent / "actions.js", media_type="text/javascript")
 
+@app.get("/lines.js", include_in_schema=False)
+def lines_js():
+    return FileResponse(Path(__file__).resolve().parent / "lines.js", media_type="text/javascript")
+
 @app.get("/tap.js", include_in_schema=False)
 def tap_js():
     return FileResponse(Path(__file__).resolve().parent / "tap.js", media_type="text/javascript")
@@ -426,7 +430,7 @@ GENRES={
 }
 GENRE_IDS=tuple(GENRES)
 # GROW.1: the optional features a project file may name in `uses`; must be versions.js KNOWN_USES (a Node test checks).
-KNOWN_USES=("grid","placed")
+KNOWN_USES=("grid","placed","lines")
 class ProjectNote(BaseModel):
     model_config=ConfigDict(extra="forbid")
     m: int = Field(ge=0,le=127)
@@ -511,6 +515,25 @@ class ProjectLayer(BaseModel):
     @classmethod
     def _name(cls,value):
         return _trimmed_name(value)
+LINE_KEY=re.compile(r"^line-[a-z0-9]{1,24}$")
+class ProjectLine(BaseModel):
+    """CHAT.1: an instrument line, a note part of its own besides the melody, chords and harmony voice
+    (lines.js cleanLines): a name, an instrument and its notes. Its mixer channel is line-<id>. No AI action
+    edits it."""
+    model_config=ConfigDict(extra="forbid")
+    id: str = Field(pattern=r"^[a-z0-9]{1,24}$")
+    # Trimmed and not blank, as cleanLines keeps it.
+    name: str = Field(min_length=1,max_length=40)
+    instrument: Literal[INSTRUMENTS]
+    notes: list[ProjectNote] = Field(default_factory=list,max_length=1024)
+    @field_validator("name")
+    @classmethod
+    def _name(cls,value):
+        return _trimmed_name(value)
+def _unique_line_ids(lines):
+    if len({l.id for l in lines})!=len(lines):
+        raise ValueError("Each line needs an id of its own")
+    return lines
 class ProjectTake(BaseModel):
     """TAKE.1: one kept take of your voice (takes.js cleanTakes). Its audio is a recording kept beside the
     project, never in it."""
@@ -612,12 +635,13 @@ class ProjectPlaced(BaseModel):
     voice2_sung: PlacedClips | None = None
 class ProjectMix(BaseModel):
     """MIX.1: the mixer, only the parts that differ from the defaults. No AI action edits it. TRACK.1: each
-    recorded layer's channel is under its key, layer-<id>, with a level, a mute and a solo."""
+    recorded layer's channel is under its key, layer-<id>, with a level, a mute and a solo; CHAT.1: each
+    instrument line's under line-<id>, the same."""
     model_config=ConfigDict(extra="allow")
     @model_validator(mode="after")
     def _layer_channels(self):
         for key,value in list((self.model_extra or {}).items()):
-            if not LAYER_KEY.match(key):
+            if not LAYER_KEY.match(key) and not LINE_KEY.match(key):
                 raise ValueError(f"Unknown mix part: {key}")
             self.model_extra[key]=MixChannel.model_validate(value)
         return self
@@ -670,6 +694,10 @@ class ChatProject(BaseModel):
     # LYR.1: the words typed for the melody (lyrics.js cleanLyrics: syllables split by spaces and
     # hyphens, "_" holds one over the next note), when there are any. No AI action edits them.
     lyrics: str = Field(default="",max_length=4000)
+    # CHAT.1: the instrument lines, when there are any, each a note part of its own with a name and an
+    # instrument. Before the harmony voice and the harmony, so those are cut first when the prompt is
+    # truncated. No AI action edits them.
+    lines: Annotated[list[ProjectLine],Field(max_length=8),AfterValidator(_unique_line_ids)] = Field(default_factory=list)
     # HARM.1: the harmony voice, a copy of the melody shifted (ADR-014). Before the harmony, since it
     # follows the melody note for note. No AI action edits it.
     voice2: list[ProjectNote] = Field(default_factory=list,max_length=1024)

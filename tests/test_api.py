@@ -459,6 +459,25 @@ def test_chat_project_accepts_song_sections_as_sections_js_writes_them():
         with pytest.raises(Exception):
             server.ChatProject(sections=bad)
 
+def test_chat_project_accepts_instrument_lines_and_their_mixer_channels():
+    # CHAT.1a: the line list as lines.js cleanLines writes it, a channel per line under line-<id>, and uses naming lines.
+    assert server.ChatProject().lines==[]
+    lines=[{"id":"g1","name":"Guitar","instrument":"guitar","notes":[{"m":76,"t":0.27,"d":0.3}]},
+           {"id":"b2","name":"Bass line","instrument":"bass","notes":[]}]
+    got=server.ChatProject(lines=lines,uses=["lines"])
+    assert [l.model_dump() for l in got.lines]==lines and got.uses==["lines"]
+    mix={"melody":{"level":-3},"line-g1":{"level":-6},"line-b2":{"mute":True,"solo":True}}
+    assert server.ChatProject(mix=mix,lines=lines).mix.model_dump(exclude_unset=True)==mix
+    line={"id":"g1","name":"Guitar","instrument":"guitar","notes":[]}
+    for bad in ([line,{**line,"name":"Other"}],[{**line,"instrument":"kazoo"}],[{**line,"name":""}],[{**line,"name":"   "}],
+                [{**line,"name":" Guitar"}],[{**line,"name":"x"*41}],[{**line,"id":"G1"}],[{**line,"id":""}],[{**line,"extra":1}],
+                [{**line,"notes":[{"m":60,"t":0,"d":0.5}]*1025}],[{**line,"id":f"l{i}"} for i in range(9)]):
+        with pytest.raises(Exception):
+            server.ChatProject(lines=bad)
+    for bad in ({"line-":{"mute":True}},{"line-x":{"muted":True}},{"line-x":{"level":7}},{"lines-x":{"mute":True}}):
+        with pytest.raises(Exception):
+            server.ChatProject(mix=bad)
+
 def test_layer_names_are_checked_as_layers_js_trims_them():
     # A name inside may hold anything cleanLayers keeps (a line break, U+0085); only what JavaScript's trim removes
     # may not start or end it.
@@ -686,6 +705,14 @@ def test_tap_module_is_served_and_precached(client):
     assert "from './tap.js'" in run(client("GET","/")).text
     assert "from './tap.js'" in run(client("GET","/capture")).text
     assert "'./tap.js'" in run(client("GET","/sw.js")).text
+
+def test_lines_module_is_served_and_precached(client):
+    # CHAT.1: the studio imports lines.js statically, so the page cannot start without it.
+    js=run(client("GET","/lines.js"))
+    assert js.status_code==200 and "javascript" in js.headers["content-type"]
+    assert "export function cleanLines" in js.text
+    assert "from './lines.js'" in run(client("GET","/")).text
+    assert "'./lines.js'" in run(client("GET","/sw.js")).text
 
 def test_shape_module_is_served_and_precached(client):
     # GROW.4: the studio and guide.js import shape.js statically.
