@@ -108,6 +108,32 @@ def test_a_line_plays_exports_saves_and_undoes_with_the_song(studio, tmp_path):
     assert saved(page, tmp_path)["lines"] == project()["lines"]
 
 
+def test_a_version_keeps_its_lines_and_restoring_one_without_lines_clears_them(studio, tmp_path):
+    page = studio
+    plain = project()
+    del plain["lines"], plain["mix"], plain["uses"]
+    open_song(page, tmp_path, plain, "plain.json")
+    expect(page.locator("#status")).to_have_text("Project opened")
+    page.fill("#versionname", "Plain")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: Plain")
+    open_song(page, tmp_path)
+    expect(page.locator("#status")).to_have_text("Project opened")
+    page.fill("#versionname", "With guitar")
+    page.click("#saveversion")
+    expect(page.locator("#status")).to_have_text("Saved version: With guitar")
+
+    # Restoring the version without lines drops the open song's line.
+    page.click('#versionlist button[title="Restore Plain"]')
+    expect(page.locator("#status")).to_contain_text("Restored version: Plain")
+    assert saved(page, tmp_path).get("lines") is None
+    # Restoring the version with a line brings it back, with its mixer level.
+    page.click('#versionlist button[title="Restore With guitar"]')
+    expect(page.locator("#status")).to_contain_text("Restored version: With guitar")
+    out = saved(page, tmp_path)
+    assert out["lines"] == project()["lines"] and out["mix"] == {"line-g1": {"level": -6}}
+
+
 def test_a_file_with_an_invalid_line_is_refused(studio, tmp_path):
     page = studio
     bad = project()
